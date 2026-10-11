@@ -43,6 +43,6 @@ async function main() {
 
 main().catch(error => {
   // Sin trazas ni mensajes del servidor: podrían incluir rutas o datos de conexión.
-  console.error(error && error.message && /^(Argumento|El recuento|Falta configurar|Nombre de|No se pudo escribir)/.test(error.message) ? error.message : 'No se pudo crear el respaldo. Revisa la conexión, TLS, permisos y el espacio en disco.');
+  console.error(error && error.message && /^(Argumento|El recuento|Falta configurar|Nombre de|No se pudo escribir|No se pudo leer el juego)/.test(error.message) ? error.message : 'No se pudo crear el respaldo. Revisa la conexión, TLS, permisos y el espacio en disco.');
   process.exitCode = 1;
 });

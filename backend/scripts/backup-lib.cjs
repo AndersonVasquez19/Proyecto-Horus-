@@ -11,6 +11,10 @@ const PAGE_ROWS = 1000;
 const EPHEMERAL_TABLES = new Set(['rate_limit_buckets']);
 const FIXED_STATEMENTS = new Set(['SET NAMES utf8mb4;', 'SET FOREIGN_KEY_CHECKS=0;', 'SET UNIQUE_CHECKS=0;', 'SET FOREIGN_KEY_CHECKS=1;', 'SET UNIQUE_CHECKS=1;']);
 const IDENT = /^[A-Za-z0-9_$]+$/;
+// Nombres de charset y colación de MySQL/MariaDB (p. ej. utf8mb4, utf8mb4_0900_ai_ci): minúsculas, números y guion bajo.
+const NAME_PART = /^[a-z0-9_]{1,64}$/;
+// Valores de las copias anteriores, que no registraban la colación.
+const FALLBACK_DATABASE = { charset: 'utf8mb4', collation: 'utf8mb4_unicode_ci' };
 
 const quoteId = name => { if (!IDENT.test(name)) throw new Error('Nombre de tabla o columna no admitido.'); return '`' + name + '`'; };
 
@@ -65,7 +69,18 @@ function validateManifest(manifest, hash) {
     if (!table || !IDENT.test(String(table.name)) || !Number.isInteger(table.dumped) || table.dumped < 0) return 'El manifiesto contiene una tabla no válida.';
   }
   if (manifest.sha256 && hash && manifest.sha256 !== hash) return 'El manifiesto no corresponde a este respaldo (firma distinta).';
+  // `database` es opcional (las copias anteriores no lo tienen), pero si existe debe ser válido: acabará en un CREATE DATABASE.
+  if (manifest.database !== undefined) {
+    const { charset, collation } = manifest.database || {};
+    if (!NAME_PART.test(String(charset)) || !NAME_PART.test(String(collation)) || typeof charset !== 'string' || typeof collation !== 'string' || !collation.startsWith(charset + '_')) return 'El manifiesto contiene un juego de caracteres o una colación no válidos.';
+  }
   return '';
+}
+
+// Charset y colación con los que crear la base restaurada. Sin manifiesto o sin el campo (copia anterior) se usa el valor histórico y se indica.
+function restoreDatabaseDefaults(manifest) {
+  if (manifest && manifest.database) return { ...manifest.database, recorded: true };
+  return { ...FALLBACK_DATABASE, recorded: false };
 }
 
 // Volcado consistente: una transacción de solo lectura con instantánea REPEATABLE READ. No bloquea tablas ni escribe nada en el servidor.
@@ -76,6 +91,10 @@ async function dumpDatabase({ db, write, includeEphemeral = false, now = new Dat
   try {
     const [[version]] = await db.query('SELECT VERSION() AS version');
     manifest.server = String(version.version).split('-')[0];
+    // Valores por defecto de la base (los heredan las tablas que se creen después). Se consultan al servidor, no se deducen de las tablas.
+    const [[defaults]] = await db.query('SELECT DEFAULT_CHARACTER_SET_NAME AS charset, DEFAULT_COLLATION_NAME AS collation FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE()');
+    if (!defaults || !NAME_PART.test(String(defaults.charset)) || !NAME_PART.test(String(defaults.collation))) throw new Error('No se pudo leer el juego de caracteres y la colación de la base.');
+    manifest.database = { charset: String(defaults.charset), collation: String(defaults.collation) };
     await write(BACKUP_MAGIC);
     await write('-- Contiene datos personales y hashes de contraseñas: guárdalo cifrado y fuera del repositorio.');
     for (const statement of ['SET NAMES utf8mb4;', 'SET FOREIGN_KEY_CHECKS=0;', 'SET UNIQUE_CHECKS=0;']) await write(statement);
@@ -136,4 +155,4 @@ function parseArgs(argv) {
   return args;
 }
 
-module.exports = { validateManifest, BACKUP_MAGIC, EPHEMERAL_TABLES, sqlValue, insertStatements, singleLine, isAllowedStatement, dumpDatabase, validateRestoreTarget, sha256File, parseArgs };
+module.exports = { restoreDatabaseDefaults, FALLBACK_DATABASE, validateManifest, BACKUP_MAGIC, EPHEMERAL_TABLES, sqlValue, insertStatements, singleLine, isAllowedStatement, dumpDatabase, validateRestoreTarget, sha256File, parseArgs };

@@ -13,7 +13,7 @@ const restoreScript = join(__dirname, '..', 'scripts', 'restore.cjs');
 
 type Row = Record<string, unknown>;
 // Base simulada: registra cada consulta y responde como lo haría MySQL. Nada se conecta a un servidor.
-function fakeDb(tables: Record<string, { ddl: string; rows: Row[]; pk?: string[] }>, countOverride: Record<string, number> = {}) {
+function fakeDb(tables: Record<string, { ddl: string; rows: Row[]; pk?: string[] }>, countOverride: Record<string, number> = {}, schema = { charset: 'utf8mb4', collation: 'utf8mb4_0900_ai_ci' }) {
   const log: string[] = [];
   const db = {
     log,
@@ -22,6 +22,7 @@ function fakeDb(tables: Record<string, { ddl: string; rows: Row[]; pk?: string[]
       let m: RegExpMatchArray | null;
       if (/^(SET SESSION|START TRANSACTION|ROLLBACK)/.test(sql)) return [[]];
       if (sql.startsWith('SELECT VERSION()')) return [[{ version: '8.0.36' }]];
+      if (sql.includes('information_schema.SCHEMATA')) return [[{ charset: schema.charset, collation: schema.collation }]];
       if (sql.includes('information_schema.TABLES')) return [Object.keys(tables).sort().map(name => ({ name }))];
       if ((m = sql.match(/^SHOW CREATE TABLE `(\w+)`/))) return [[{ Table: m[1], 'Create Table': tables[m[1]].ddl }]];
       if ((m = sql.match(/^SELECT COUNT\(\*\) AS n FROM `(\w+)`/))) return [[{ n: countOverride[m[1]] ?? tables[m[1]].rows.length }]];
@@ -77,6 +78,9 @@ test('el volcado solo lee: instantánea REPEATABLE READ de solo lectura, sin esc
   assert.equal(ephemeral.dumped, 0, 'las cuotas temporales conservan estructura, no datos');
   assert.ok(!lines.some(line => line.startsWith('INSERT INTO `rate_limit_buckets`')));
   assert.deepEqual(manifest.migrations, ['00000000-initial']);
+  assert.deepEqual(manifest.database, { charset: 'utf8mb4', collation: 'utf8mb4_0900_ai_ci' }, 'el manifiesto registra charset y colación de la base, consultados al servidor');
+  assert.ok(db.log.some(sql => /information_schema\.SCHEMATA.*DATABASE\(\)/.test(sql)));
+  assert.doesNotMatch(JSON.stringify(manifest), /password|mysql:\/\//i, 'sin secretos ni cadenas de conexión');
 });
 
 test('si el recuento cambia durante el volcado se aborta en lugar de entregar un respaldo incoherente', async () => {
@@ -173,5 +177,46 @@ test('restore: un manifiesto manipulado detiene todo antes de conectarse', () =>
       assert.equal(result.status, 1, manifest); assert.match(result.stderr, /manifiesto/i);
       assert.doesNotMatch(result.stderr, /No se pudo restaurar/, 'falló por el manifiesto, no por intentar conectar');
     }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('colación: un manifiesto antiguo (sin database) sigue siendo válido y restaura con el valor histórico', () => {
+  const old = { tables: [{ name: 'contactos', rows: 1, dumped: 1 }], sha256: 'abc' };
+  assert.equal(lib.validateManifest(old, 'abc'), '');
+  assert.deepEqual(lib.restoreDatabaseDefaults(old), { charset: 'utf8mb4', collation: 'utf8mb4_unicode_ci', recorded: false });
+  assert.deepEqual(lib.restoreDatabaseDefaults(null), { charset: 'utf8mb4', collation: 'utf8mb4_unicode_ci', recorded: false }, 'sin archivo de manifiesto');
+});
+
+test('colación: los valores registrados se conservan tal cual (0900_ai_ci y unicode_ci)', () => {
+  for (const collation of ['utf8mb4_0900_ai_ci', 'utf8mb4_unicode_ci']) {
+    const manifest = { tables: [], database: { charset: 'utf8mb4', collation } };
+    assert.equal(lib.validateManifest(manifest, 'abc'), '');
+    assert.deepEqual(lib.restoreDatabaseDefaults(manifest), { charset: 'utf8mb4', collation, recorded: true });
+  }
+});
+
+test('colación: valores maliciosos o inválidos en el manifiesto se rechazan antes de cualquier SQL', () => {
+  const bad = [
+    { charset: 'utf8mb4', collation: 'utf8mb4_unicode_ci`; DROP DATABASE x; --' },
+    { charset: "utf8mb4' OR '1", collation: 'utf8mb4_unicode_ci' },
+    { charset: 'utf8mb4', collation: 'UTF8MB4_UNICODE_CI' },
+    { charset: 'utf8mb4', collation: 'latin1_swedish_ci' },
+    { charset: 'utf8mb4', collation: '' }, { charset: '', collation: '' },
+    { charset: 'utf8mb4', collation: 5 }, { charset: ['utf8mb4'], collation: 'utf8mb4_unicode_ci' },
+    { charset: 'utf8mb4', collation: 'utf8mb4_' + 'a'.repeat(70) }, null, 'utf8mb4_unicode_ci', {},
+  ];
+  for (const database of bad) assert.match(lib.validateManifest({ tables: [], database }, 'abc'), /colación no válidos/, JSON.stringify(database));
+});
+
+test('colación: restore con un manifiesto de colación hostil se detiene antes de conectarse', () => {
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), 'horus-backup-test-'));
+  try {
+    const body = gzipSync([lib.BACKUP_MAGIC, 'SET NAMES utf8mb4;', ''].join('\n'));
+    const file = join(dir, 'ok.sql.gz'); writeFileSync(file, body);
+    writeFileSync(file + '.sha256', createHash('sha256').update(body).digest('hex') + '  ok.sql.gz\n');
+    writeFileSync(file + '.manifest.json', JSON.stringify({ tables: [], database: { charset: 'utf8mb4', collation: 'x`; DROP DATABASE y; --' } }));
+    const result = runRestore(['--file=' + file, '--target=horus_restore_ok', '--yes']);
+    assert.equal(result.status, 1); assert.match(result.stderr, /colación no válidos/);
+    assert.doesNotMatch(result.stderr, /No se pudo restaurar/, 'falló por el manifiesto, no por intentar conectar');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
