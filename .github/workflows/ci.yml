@@ -76,6 +76,7 @@ jobs:
 
   # MySQL efímero del propio runner: se crea y se destruye con el job, con una contraseña de un solo uso que no es un secreto.
   # test:integration crea y elimina solo una base horus_prisma_test_<UUID>, aplica init + migraciones (dos veces), db:check y las pruebas de módulos.
+  # backup-collation.integration.cjs solo usa este servidor (DB_HOST local; exige BACKUP_COLLATION_TEST_DB=true): crea y elimina únicamente horus_collation_src_<hex> y horus_restore_col_<hex>.
   # Se lanza con `docker run` (y no como service) porque necesita argumentos del servidor: mysql_native_password, como en docker-compose.local.yml.
   integration:
     name: Integración (MySQL efímero)
@@ -115,6 +116,10 @@ jobs:
       - run: npm ci
       - name: Integración con MySQL
         run: npm run test:integration
+      - name: Integración de la colación en db:backup y db:restore
+        run: node --test test/backup-collation.integration.cjs
+        env:
+          BACKUP_COLLATION_TEST_DB: 'true'
       - name: Retirar MySQL
         if: always()
         working-directory: .
