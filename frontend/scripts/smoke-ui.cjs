@@ -419,7 +419,10 @@ async function main(){
   adminCourseRequests.length=0;
   await adminSend('Page.navigate',{url:origin+'/admin/dashboard?section=cursos'});
   await adminWait('document.querySelector("h1")?.textContent==="Cursos"&&document.querySelectorAll(".hp-nav-subitem").length===3');
-  assert.ok(adminCourseRequests.length>0&&adminCourseRequests.every(search=>new URLSearchParams(search).get('tipo')==='curso'),'La dirección antigua solo muestra cursos.');
+  // The list must have finished loading (no "Cargando" status, footer rendered) before the request log is read; the h1 and the menu appear earlier.
+  // Cards are not awaited: the loops above delete the only "curso" fixture, so an empty list is a valid final state here.
+  await adminWait('location.search==="?section=cursos"&&!document.querySelector(".hp-empty[role=status]")&&!!document.querySelector(".hp-pagination")&&!document.querySelector(".hp-empty[role=alert]")');
+  assert.ok(adminCourseRequests.length>0&&adminCourseRequests.every(search=>new URLSearchParams(search).get('tipo')==='curso'),'La dirección antigua solo muestra cursos. Solicitudes registradas: '+JSON.stringify(adminCourseRequests));
   // Sidebar: Ajustes replaces "Cuentas y acceso" and "Crear administrador".
   await adminSend('Page.navigate',{url:origin+'/admin/dashboard?section=resumen'});
   await adminWait('!!document.querySelector(".hp-sidebar-bottom")');
