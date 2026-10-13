@@ -1,7 +1,7 @@
 import { createValidationPipe } from './common/validation';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { trustedProxies } from './common/trusted-proxies';
+import { proxyTrustWarning, trustedProxies } from './common/trusted-proxies';
 import { adminDocsAuthenticator, configureHttpSecurity, setupSwagger } from './common/security';
 import { PrismaService } from './database/prisma.service';
 import { Logger } from '@nestjs/common';
@@ -11,6 +11,8 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.set('trust proxy', trustedProxies(process.env.TRUSTED_PROXY_CIDRS));
+  const proxyWarning = proxyTrustWarning(process.env);
+  if (proxyWarning) logger.warn(proxyWarning);
   app.enableShutdownHooks();
 
   // Prefijo global /api para mantener compatibilidad total con el frontend
