@@ -8,6 +8,13 @@ datasource db {
   url = env("DATABASE_URL")
 }
 
+// Roles administrativos (deben coincidir con ADMIN_ROLES de src/permissions/roles.ts; lo comprueba una prueba).
+enum AdminRol {
+  GERENTE_GENERAL
+  COORDINADORA_INSTITUCIONAL
+  SECRETARIA
+}
+
 model AdminUser {
   id Int @id @default(autoincrement())
   nombre String @db.VarChar(100)
@@ -15,6 +22,8 @@ model AdminUser {
   password String @db.VarChar(255)
   activo Boolean @default(true)
   session_version Int @default(1)
+  // NULL = cuenta sin rol asignado. Sin valor predeterminado: ningún rol se concede de forma implícita. Todavía no lo consulta ninguna ruta.
+  rol AdminRol?
   createdAt DateTime @default(now()) @db.DateTime(0)
   updatedAt DateTime @updatedAt @db.DateTime(0)
   @@map("admin_users")

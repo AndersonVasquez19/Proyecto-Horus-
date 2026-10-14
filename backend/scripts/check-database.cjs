@@ -12,6 +12,7 @@ function expectedColumns() {
   );
   const added = [
     ['admin_users','activo','tinyint',false],['admin_users','session_version','int',false],
+    ['admin_users','rol',"ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL','SECRETARIA')",true],
     ['newsletter_subscribers','consent_at','datetime',true],
     ['attention_records','contacto_id','int',true],['attention_records','reclamacion_id','int',true],
     ...[['id','int'],['recurso','varchar(20)'],['registro_id','int'],['estado','varchar(20)'],['responsable','varchar(100)'],['notas','text'],['respuesta','text'],['revision','int'],['historial','json'],['updatedAt','datetime']].map(([name,type])=>['attention_records',name,type,false]),
