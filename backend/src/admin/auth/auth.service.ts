@@ -19,7 +19,8 @@ export class AuthService {
     return this.jwtService.sign({ id: user.id, email: user.email, version: user.session_version });
   }
 
-  async register(dto: RegisterDto) {
+  // La cuenta nace siempre sin rol. Su alta y el registro de auditoría (quién la creó) se confirman en la misma transacción.
+  async register(dto: RegisterDto, actorId: number | null) {
     const exists = await this.prisma.adminUser.findFirst({ where: { email: dto.email.toLowerCase().trim() } });
     if (exists) {
       throw new ConflictException({ ok: false, mensaje: 'Ya existe un administrador con ese correo.' });
@@ -28,11 +29,18 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(dto.password, BCRYPT_COST);
     let user: AdminUser;
     try {
-      user = await this.prisma.adminUser.create({ data: {
-        nombre: dto.nombre.trim(),
-        email: dto.email.toLowerCase().trim(),
-        password: hashedPassword,
-      } });
+      user = await this.prisma.$transaction(async tx => {
+        const created = await tx.adminUser.create({ data: {
+          nombre: dto.nombre.trim(),
+          email: dto.email.toLowerCase().trim(),
+          password: hashedPassword,
+        } });
+        await tx.adminAuditoria.create({ data: {
+          origen: 'panel', actor_id: actorId, cuenta_id: created.id, operacion: 'cuenta_creada',
+          rol_anterior: null, rol_nuevo: null, activo_anterior: null, activo_nuevo: created.activo, resultado: 'aplicado',
+        } });
+        return created;
+      });
     } catch (error) {
       if (isUniqueViolation(error)) throw new ConflictException({ ok: false, mensaje: 'Ya existe un administrador con ese correo.' });
       throw error;

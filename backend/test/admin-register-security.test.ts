@@ -38,7 +38,14 @@ function fakeDatabase() {
       return { count: found.length };
     },
   };
-  return { rows, client: { adminUser } };
+  // Auditoría y transacción simuladas: si la función de la transacción falla, se descartan las filas y los registros que añadió.
+  const audit: any[] = [];
+  const client: any = { adminUser, adminAuditoria: { create: async ({ data }: any) => { audit.push({ ...data }); return data; } } };
+  client.$transaction = async (run: (tx: any) => unknown) => {
+    const saved = { rows: rows.map(row => ({ ...row })), audit: audit.length };
+    try { return await run(client); } catch (error) { rows.splice(0, rows.length, ...saved.rows); audit.length = saved.audit; throw error; }
+  };
+  return { rows, audit, client };
 }
 
 const values: Record<string, string> = { JWT_SECRET: secret, MAIL_USER: 'noreply@example.test' };
@@ -92,6 +99,7 @@ test('nobody can create an administrator without a valid session', async () => {
       assert.equal(result.data?.token, undefined);
     }
     assert.equal(db.rows.length, before, 'ninguna cuenta nueva');
+    assert.equal(db.audit.length, 0, 'sin cuenta creada no hay registro de auditoría');
   } finally { await app.close(); }
 });
 
@@ -113,7 +121,11 @@ test('an authorized session creates plain administrators: no token is returned a
     assert.deepEqual(Object.keys(created.data.user).sort(), ['email', 'id', 'nombre']);
     assert.equal(db.rows.length, 2);
     assert.notEqual(db.rows[1].password, newAdmin.password, 'la contraseña se guarda cifrada');
+    assert.equal((db.rows[1] as any).rol, undefined, 'la cuenta nace sin rol');
+    // Auditoría (M-4): quién creó qué cuenta, sin correo, nombre, contraseña ni token.
+    assert.deepEqual(db.audit, [{ origen: 'panel', actor_id: db.rows[0].id, cuenta_id: db.rows[1].id, operacion: 'cuenta_creada', rol_anterior: null, rol_nuevo: null, activo_anterior: null, activo_nuevo: true, resultado: 'aplicado' }]);
     assert.equal((await call('register', 'POST', newAdmin, login.data.token)).status, 409);
+    assert.equal(db.audit.length, 1, 'un correo repetido no deja registro');
     // La cuenta nueva entra por el login normal y obtiene exactamente los mismos permisos que cualquier administrador.
     const second = await call('login', 'POST', { email: newAdmin.email, password: newAdmin.password });
     assert.equal(second.status, 200);

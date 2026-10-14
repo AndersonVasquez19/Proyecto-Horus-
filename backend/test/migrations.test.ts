@@ -15,7 +15,8 @@ const statements = (sql: string) => sql.split(';').map(s => s.trim()).filter(Boo
 const REQUIRED_ORDER = ['20260909-create-catalogo', '20260921-create-cotizaciones', '20261002-complete-institutional', '20261002-original-design', '20261002-create-convenios',
   '20261003-remove-otros-category', '20261009-chatbot-metrics', '20261010-newsletter-default-novedades', '20261011-cotizaciones-idempotencia'];
 // Las que el código desplegado necesita ya aplicadas (RAILWAY.md debe decirlo): el cliente Prisma selecciona sus columnas.
-const REQUIRED_BEFORE_DEPLOY = ['20261009-chatbot-metrics', '20261011-cotizaciones-idempotencia', '20261014-admin-rol'];
+// 20261014-admin-auditoria: el alta de cuentas y su activación o desactivación escriben en admin_auditoria dentro de su transacción.
+const REQUIRED_BEFORE_DEPLOY = ['20261009-chatbot-metrics', '20261011-cotizaciones-idempotencia', '20261014-admin-rol', '20261014-admin-auditoria'];
 const ALLOWED_UPDATES = new Set(['20261002-complete-institutional', '20261009-chatbot-metrics']);
 
 test('migraciones: cada archivo SQL está registrado en migrate.cjs y viceversa, sin duplicados', () => {
@@ -73,6 +74,21 @@ test('migraciones: la 20261014 añade solo la columna rol (nula, sin valor prede
   assert.ok(!/rol AdminRol[^\n]*@default/.test(schema));
   assert.ok(check.includes("['admin_users','rol',") && check.includes('GERENTE_GENERAL'));
   assert.ok(versions.indexOf('20261014-admin-rol') > versions.indexOf('20261011-cotizaciones-idempotencia'));
+});
+
+test('migraciones: la 20261014-admin-auditoria crea solo la tabla de auditoría, sin datos personales ni claves foráneas, reflejada en schema.prisma y db:check', () => {
+  const sql = statements(read('20261014-admin-auditoria'));
+  assert.equal(sql.length, 1);
+  assert.match(sql[0], /^CREATE TABLE IF NOT EXISTS `admin_auditoria` \(/);
+  assert.ok(!/FOREIGN KEY|REFERENCES/i.test(sql[0]), 'el historial no depende de que la cuenta exista');
+  assert.ok(!/`(email|correo|nombre|password|token|ip)`/i.test(sql[0]), 'no guarda correos, nombres, contraseñas, tokens ni IP');
+  const columns = [...sql[0].matchAll(/^\s*`([a-z_A-Z]+)` /gm)].map(match => match[1]);
+  assert.deepEqual(columns, ['id', 'createdAt', 'origen', 'actor_id', 'operador', 'cuenta_id', 'operacion', 'rol_anterior', 'rol_nuevo', 'activo_anterior', 'activo_nuevo', 'resultado', 'motivo']);
+  const schema = readFileSync(join(__dirname, '..', 'prisma', 'schema.prisma'), 'utf8'), check = readFileSync(join(__dirname, '..', 'scripts', 'check-database.cjs'), 'utf8');
+  assert.match(schema, /model AdminAuditoria \{[\s\S]*?@@map\("admin_auditoria"\)/);
+  for (const column of columns) assert.ok(check.includes("['" + column + "',"), 'db:check debe esperar admin_auditoria.' + column);
+  for (const index of ['admin_auditoria_cuenta_idx', 'admin_auditoria_actor_idx']) assert.ok(sql[0].includes(index) && schema.includes(index) && check.includes(index), index);
+  assert.ok(versions.indexOf('20261014-admin-auditoria') > versions.indexOf('20261014-admin-rol'), 'usa el tipo de rol de la migración anterior');
 });
 
 test('migraciones: la 20261011 es aditiva y admite filas existentes (columnas nulas, índice único que tolera varios NULL)', () => {

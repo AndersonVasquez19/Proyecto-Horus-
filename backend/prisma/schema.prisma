@@ -29,6 +29,46 @@ model AdminUser {
   @@map("admin_users")
 }
 
+enum AdminAuditoriaOrigen {
+  panel
+  terminal
+}
+
+enum AdminAuditoriaOperacion {
+  cuenta_creada
+  cuenta_activada
+  cuenta_desactivada
+  rol_asignado
+  rol_retirado
+}
+
+enum AdminAuditoriaResultado {
+  aplicado
+  rechazado
+}
+
+// Registro de solo inserción de los cambios de cuentas y privilegios (M-4). Se escribe en la misma transacción que el cambio.
+// Sin claves foráneas a propósito: el historial no impide ni sigue el borrado de una cuenta. No guarda correos, contraseñas,
+// tokens ni IP: la cuenta se identifica por su id (los id de InnoDB no se reutilizan).
+model AdminAuditoria {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  origen AdminAuditoriaOrigen
+  actor_id Int? // cuenta que hizo el cambio desde el panel; NULL desde la terminal
+  operador String? @db.VarChar(100) // terminal: quién ejecutó el script (declarado)
+  cuenta_id Int
+  operacion AdminAuditoriaOperacion
+  rol_anterior AdminRol?
+  rol_nuevo AdminRol?
+  activo_anterior Boolean?
+  activo_nuevo Boolean?
+  resultado AdminAuditoriaResultado
+  motivo String? @db.VarChar(200)
+  @@index([cuenta_id, createdAt], map: "admin_auditoria_cuenta_idx")
+  @@index([actor_id, createdAt], map: "admin_auditoria_actor_idx")
+  @@map("admin_auditoria")
+}
+
 model AdminItem {
   id Int @id @default(autoincrement())
   titulo String @db.VarChar(150)

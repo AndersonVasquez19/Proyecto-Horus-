@@ -39,8 +39,10 @@ test('auth normalizes identity, preserves password spaces and rejects bcrypt tru
 });
 
 test('registration handles a unique-key race as 409', async () => {
-  const service = new AuthService({ adminUser: { findFirst: async () => null, create: async () => { throw new PrismaClientKnownRequestError('Duplicate', { code: 'P2002', clientVersion: '6.19.0' }); } } } as any, {} as any);
-  await assert.rejects(() => service.register(account), ConflictException);
+  const client: any = { adminUser: { findFirst: async () => null, create: async () => { throw new PrismaClientKnownRequestError('Duplicate', { code: 'P2002', clientVersion: '6.19.0' }); } }, adminAuditoria: { create: async () => assert.fail('sin cuenta creada no hay auditoría') } };
+  client.$transaction = async (run: (tx: any) => unknown) => run(client);
+  const service = new AuthService(client, {} as any);
+  await assert.rejects(() => service.register(account, 1), ConflictException);
 });
 
 test('JWT rejects malformed identities before querying the database', async () => {

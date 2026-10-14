@@ -40,7 +40,15 @@ function expectedColumns() {
       ['id','int'], ['convenio_id','int'], ['imagen_url','varchar(2048)'], ['orden','int'], ['createdAt','datetime'],
     ].map(([name,type])=>({table:'convenio_fotos',name,type,nullable:false,unique:name==='id'})),
   ];
-  return [...chatbot, ...idempotencia, ...convenios, ...legacy.map(column=>column.table==='cursos'&&['modalidad','duracion'].includes(column.name)?{...column,nullable:true}:column.table==='servicios'&&column.name==='categoria'?{...column,type:"ENUM('cableado','camaras','soporte','asesoramiento')"}:column),...added,...visual];
+  const ROL = "ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL','SECRETARIA')";
+  const auditoria = [
+    ['id','int',false], ['createdAt','datetime(3)',false], ['origen',"ENUM('panel','terminal')",false], ['actor_id','int',true],
+    ['operador','varchar(100)',true], ['cuenta_id','int',false],
+    ['operacion',"ENUM('cuenta_creada','cuenta_activada','cuenta_desactivada','rol_asignado','rol_retirado')",false],
+    ['rol_anterior',ROL,true], ['rol_nuevo',ROL,true], ['activo_anterior','tinyint',true], ['activo_nuevo','tinyint',true],
+    ['resultado',"ENUM('aplicado','rechazado')",false], ['motivo','varchar(200)',true],
+  ].map(([name,type,nullable])=>({table:'admin_auditoria',name,type,nullable,unique:name==='id'}));
+  return [...auditoria, ...chatbot, ...idempotencia, ...convenios, ...legacy.map(column=>column.table==='cursos'&&['modalidad','duracion'].includes(column.name)?{...column,nullable:true}:column.table==='servicios'&&column.name==='categoria'?{...column,type:"ENUM('cableado','camaras','soporte','asesoramiento')"}:column),...added,...visual];
 }
 function normalizeType(type) { return type.toLowerCase().replace(/\binteger\b/g, 'int').replace(/int\(\d+\)/g, 'int').replace(/\s/g, ''); }
 async function check(db) {
@@ -61,7 +69,7 @@ async function check(db) {
   for(const referenced of ['contactos','reclamaciones']) if(!constraints.some(row=>row.TABLE_NAME==='attention_records'&&row.REFERENCED_TABLE_NAME===referenced&&['RESTRICT','NO ACTION'].includes(row.DELETE_RULE))) problems.push('attention_records: falta protección de referencia a '+referenced);
   if (!indexes.some(row=>row.TABLE_NAME==='attention_records'&&row.INDEX_NAME==='attention_record_resource'&&Number(row.NON_UNIQUE)===0)) problems.push('attention_records: falta índice único de recurso');
   if (!constraints.some(row=>row.TABLE_NAME==='convenio_fotos'&&row.REFERENCED_TABLE_NAME==='convenios'&&row.DELETE_RULE==='CASCADE')) problems.push('convenio_fotos: falta referencia con borrado en cascada');
-  for (const [table,index] of [['convenios','convenios_visible_orden_idx'],['convenios','convenios_orden_idx'],['convenio_fotos','convenio_fotos_convenio_orden_idx']]) if(!indexes.some(row=>row.TABLE_NAME===table&&row.INDEX_NAME===index)) problems.push(table+': falta índice '+index);
+  for (const [table,index] of [['admin_auditoria','admin_auditoria_cuenta_idx'],['admin_auditoria','admin_auditoria_actor_idx'],['convenios','convenios_visible_orden_idx'],['convenios','convenios_orden_idx'],['convenio_fotos','convenio_fotos_convenio_orden_idx']]) if(!indexes.some(row=>row.TABLE_NAME===table&&row.INDEX_NAME===index)) problems.push(table+': falta índice '+index);
   return problems;
 }
 if (require.main === module) (async () => {

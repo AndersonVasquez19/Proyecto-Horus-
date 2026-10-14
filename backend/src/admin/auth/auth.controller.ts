@@ -20,8 +20,8 @@ export class AuthController {
   @ApiOperation({ summary: 'Crear un administrador (requiere sesión de administrador)' })
   @ApiResponse({ status: 201, description: 'Administrador creado exitosamente' })
   @ApiResponse({ status: 401, description: 'Sin sesión válida' })
-  async register(@Body() dto: RegisterDto) {
-    const { token: _issued, ...created } = await this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @CurrentUser('id') actor: number) {
+    const { token: _issued, ...created } = await this.authService.register(dto, actor);
     return created;
   }
 
