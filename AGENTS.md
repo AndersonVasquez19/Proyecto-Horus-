@@ -63,6 +63,7 @@ Usa npm y respeta los lockfiles. Ambos paquetes declaran Node.js 22.x; verifica 
 | `backend/` | `npm run prisma:generate` | Regenerar el cliente Prisma sin conexión a MySQL |
 | `backend/` | `npm run db:check` | Comparar el esquema MySQL mediante consultas de lectura |
 | `backend/` | `npm run test:integration` | Compilar y probar creando/eliminando una base MySQL temporal; revisar el destino antes |
+| `frontend/` | `node scripts/integration-panel.cjs` | Integración real del panel (React ↔ NestJS ↔ MySQL 8.4 desechable en Docker, Edge). Exige `PANEL_IT_DB=true` y el `server_uuid` del contenedor; no forma parte de la CI. Procedimiento, casos cubiertos y pendientes: [docs/procedimientos/integracion-panel.md](docs/procedimientos/integracion-panel.md) |
 | `frontend/` | `npm ci` | Instalación reproducible |
 | `frontend/` | `npm run dev` | Desarrollo con Vite |
 | `frontend/` | `npm run check` | Comprobar TypeScript |
