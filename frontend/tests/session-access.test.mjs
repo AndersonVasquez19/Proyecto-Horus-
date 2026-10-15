@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ACCESS_MODES, ADMIN_ROLES, hasPermission, parseSession } from '../src/panel/context/sessionAccess.ts'
+import { ACCESS_DENIED, LOGIN_FAILURE, REFRESH_AFTER_DENIED_MS, REFRESH_ON_FOCUS_MS, RESTORE_FAILURE, classifySessionFailure, createRefreshGate, sameAccess } from '../src/panel/context/sessionRefresh.ts'
 
 // Contrato de sesión del backend (login y /admin/me) interpretado por el panel. Todo ficticio. Los permisos de estas pruebas son
 // listas arbitrarias: el panel no tiene matriz propia, copia lo que informa el backend.
@@ -130,4 +131,82 @@ test('el rol y los permisos viven solo en memoria: el módulo no toca el almacen
   assert.ok(!/sessionStorage/.test(context))
   // La identidad no se reconstruye del JWT: el panel no decodifica el token.
   assert.ok(!/atob\(|JSON\.parse\(|split\('\.'\)/.test(context), 'el contexto no interpreta el contenido del JWT')
+})
+
+// ---- E3.4.4, fase 1: revalidación de la sesión abierta, 401 frente a 403 y fallo de /admin/me tras el login ----
+test('intervalo mínimo: el foco consulta como mucho una vez cada 30 s y un 403, una cada 5 s (sin ráfagas ni bucles)', () => {
+  let now = 1000
+  const gate = createRefreshGate(() => now)
+  assert.equal(gate.request('focus'), true, 'la primera revalidación se permite')
+  let allowed = 0
+  for (let i = 0; i < 200; i++) { now += 100; if (gate.request('focus') || gate.request('denied')) allowed++ } // 20 s de foco y 403 continuos
+  assert.equal(allowed, 4, 'en 20 s de avisos continuos solo pasan las de cada 5 s (403), nunca una por aviso')
+  now += REFRESH_AFTER_DENIED_MS - 1
+  assert.equal(gate.request('denied'), false)
+  now += 1
+  assert.equal(gate.request('denied'), true)
+  now += REFRESH_ON_FOCUS_MS - 1
+  assert.equal(gate.request('focus'), false)
+  now += 1
+  assert.equal(gate.request('focus'), true)
+  // Una validación hecha por otro camino (login, restauración, reintento) también cuenta.
+  now += 60_000; gate.mark()
+  assert.equal(gate.request('focus'), false)
+  assert.equal(gate.request('denied'), false)
+  now += REFRESH_AFTER_DENIED_MS
+  assert.equal(gate.request('denied'), true)
+  // Por defecto usa el reloj monótono del navegador, leído en cada llamada.
+  assert.equal(createRefreshGate().request('focus'), true)
+})
+
+test('sameAccess: detecta cambios de rol, permisos, modo o contrato; el orden de los permisos no importa', () => {
+  const access = (rol, permisos, modo = 'heredado') => parseSession(full(rol, permisos, modo)).access
+  const legacy = parseSession({ ok: true, user: identity }).access
+  assert.equal(sameAccess(access('SECRETARIA', ['mensajes:leer', 'mensajes:crear']), access('SECRETARIA', ['mensajes:crear', 'mensajes:leer'])), true)
+  assert.equal(sameAccess(legacy, parseSession({ ok: true, user: identity }).access), true, 'backend antiguo estable')
+  assert.equal(sameAccess(access(null, []), access(null, [])), true, 'cuenta sin rol estable')
+  const changes = [
+    [access('SECRETARIA', ['mensajes:leer']), access('COORDINADORA_INSTITUCIONAL', ['mensajes:leer'])], // cambio de rol
+    [access('SECRETARIA', ['mensajes:leer', 'mensajes:crear']), access('SECRETARIA', ['mensajes:leer'])], // permiso retirado
+    [access('SECRETARIA', ['mensajes:leer']), access('SECRETARIA', ['mensajes:leer', 'cursos:leer'])], // permiso añadido
+    [access('SECRETARIA', ['mensajes:leer']), access('SECRETARIA', ['cursos:leer'])], // mismo tamaño, otro permiso
+    [access('SECRETARIA', ['mensajes:leer'], 'heredado'), access('SECRETARIA', ['mensajes:leer'], 'por_roles')], // cambio de modo
+    [legacy, access(null, [])], // backend antiguo frente a cuenta sin rol
+    [access('GERENTE_GENERAL', ['cursos:leer']), access(null, [])], // rol retirado
+  ]
+  for (const [a, b] of changes) { assert.equal(sameAccess(a, b), false, JSON.stringify([a, b])); assert.equal(sameAccess(b, a), false) }
+  assert.equal(sameAccess(null, legacy), false)
+  assert.equal(sameAccess(null, null), true)
+})
+
+test('fallos de /admin/me: 401, 403, red o servidor temporal y respuesta incompatible se distinguen', () => {
+  const http = status => Object.assign(new Error('texto del servidor ER_SECRET'), { status })
+  assert.equal(classifySessionFailure(http(401)), 'unauthorized')
+  assert.equal(classifySessionFailure(http(403)), 'forbidden', '403 no es una sesión vencida')
+  for (const error of [new TypeError('Failed to fetch'), Object.assign(new Error('aborted'), { name: 'AbortError' }), http(408), http(429), http(500), http(502), http(503), http(504), null, undefined])
+    assert.equal(classifySessionFailure(error), 'temporary', String(error?.status ?? error?.name ?? error))
+  for (const status of [200, 204, 302, 400, 404, 405]) assert.equal(classifySessionFailure(http(status)), 'incompatible', String(status))
+  assert.equal(classifySessionFailure(http(401), true), 'incompatible', 'una respuesta con forma inesperada nunca concede nada')
+})
+
+test('mensajes: claros, en español, sin texto del servidor y sin decir que la sesión venció ante un 403', () => {
+  for (const kind of ['unauthorized', 'forbidden', 'temporary', 'incompatible']) assert.ok(LOGIN_FAILURE[kind].startsWith('No pudimos abrir tu sesión'), kind)
+  assert.notEqual(new Set(Object.values(LOGIN_FAILURE)).size, 1, 'cada motivo tiene su mensaje')
+  assert.ok(RESTORE_FAILURE.temporary.startsWith('No pudimos validar tu sesión'))
+  assert.ok(RESTORE_FAILURE.incompatible.includes('no es compatible con este panel'))
+  for (const text of [ACCESS_DENIED, LOGIN_FAILURE.forbidden, RESTORE_FAILURE.forbidden]) assert.ok(!/venci|expir|terminó/i.test(text), text)
+  assert.ok(/permiso/.test(ACCESS_DENIED))
+  for (const text of [ACCESS_DENIED, ...Object.values(LOGIN_FAILURE), ...Object.values(RESTORE_FAILURE)]) assert.ok(!/\b(40\d|50\d)\b|status|token|JWT|Forbidden|Unauthorized/i.test(text), text)
+})
+
+test('403 en las peticiones del panel: mensaje uniforme, sin el texto ni el cuerpo del servidor, sin cerrar la sesión ni avisar desde /admin/me', () => {
+  const api = source('services/panelApi.ts')
+  const denied = api.slice(api.indexOf('response.status === 403'), api.indexOf('if (!response.ok'))
+  assert.ok(/throw new PanelApiError\(ACCESS_DENIED, 403\)/.test(denied), 'mensaje uniforme, sin cuerpo')
+  assert.ok(/path !== 'me'/.test(denied) && /reportAccessDenied\(token\)/.test(denied), 'avisa para revalidar, salvo el propio /admin/me (evita un bucle)')
+  assert.ok(!/reportExpiredSession/.test(denied), 'un 403 no cierra la sesión')
+  assert.ok(/reportAccessDenied/.test(source('components/ImageUpload.tsx')) && /denied \|\|/.test(source('components/ImageUpload.tsx')), 'la subida de imágenes trata el 403 igual y detiene el lote')
+  const context = source('context/AdminAuthContext.tsx')
+  assert.ok(/ACCESS_DENIED_EVENT/.test(context) && /revalidate\('denied'\)/.test(context) && /revalidate\('focus'\)/.test(context))
+  assert.ok(!/setInterval/.test(context), 'sin consultas periódicas: solo foco, pestaña visible y 403, con intervalo mínimo')
 })

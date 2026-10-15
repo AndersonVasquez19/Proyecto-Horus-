@@ -6,3 +6,11 @@ export const SESSION_EXPIRED_EVENT = 'horus:session-expired'
 export function reportExpiredSession(token: string | null | undefined) {
   window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: { token: token ?? null } }))
 }
+
+// Aviso de que el servidor denegó (HTTP 403) una operación con una sesión válida. NO cierra la sesión: los permisos pudieron cambiar,
+// así que el contexto vuelve a consultar /admin/me (con un intervalo mínimo) si el token sigue siendo el de la sesión activa.
+export const ACCESS_DENIED_EVENT = 'horus:access-denied'
+
+export function reportAccessDenied(token: string | null | undefined) {
+  window.dispatchEvent(new CustomEvent(ACCESS_DENIED_EVENT, { detail: { token: token ?? null } }))
+}

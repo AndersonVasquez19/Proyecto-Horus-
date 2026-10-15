@@ -5,6 +5,7 @@ import { useAdminAuth } from '../context';
 import { loginAdmin } from '../services';
 import { authError } from '../services/authErrors';
 import { safeAdminReturn } from '../context/returnPath';
+import { LOGIN_FAILURE } from '../context/sessionRefresh';
 import AdminAuthLayout from '../components/AdminAuthLayout';
 import AdminPasswordField from '../components/AdminPasswordField';
 import PanelIcon from '../components/PanelIcon';
@@ -17,7 +18,7 @@ export default function AdminLogin() {
   const state = location.state as { from?: unknown; expired?: unknown } | null;
   const returnTo = safeAdminReturn(state?.from) ?? "/admin/dashboard"; // solo rutas internas del panel validadas
   const expired = state?.expired === true;
-  const { login, isAuthenticated, checking } = useAdminAuth();
+  const { login, isAuthenticated, checking, loginFailure } = useAdminAuth();
   const awaitingPanel = useRef(false); // login correcto cuyo panel aún no se abrió (puede faltar validar la sesión con /admin/me)
   const [form, setForm] = useState({ email: '', password: '' });
   const [mensaje, setMensaje] = useState('');
@@ -37,13 +38,14 @@ export default function AdminLogin() {
     if (isAuthenticated) startTransition(() => navigate(returnTo, { replace: true }));
   }, [isAuthenticated, navigate, returnTo]);
 
-  // Tras un login correcto el formulario sigue bloqueado hasta abrir el panel. Si la validación con /admin/me falla (servidor caído,
-  // respuesta incompatible, sesión rechazada), el formulario no puede quedar bloqueado para siempre: se libera con un aviso genérico.
+  // Tras un login correcto el formulario sigue bloqueado hasta abrir el panel. Si la validación con /admin/me falla (sesión rechazada,
+  // 403, servidor caído o respuesta incompatible), el contexto ya descartó el token y el formulario se libera con el motivo, sin texto del
+  // servidor; para reintentar basta con volver a enviarlo (los datos ingresados se conservan).
   useEffect(() => {
     if (!awaitingPanel.current || checking || isAuthenticated) return;
     awaitingPanel.current = false; locked.current = false;
-    setLoading(false); setMensaje('No pudimos abrir tu sesión. Inténtalo nuevamente en unos minutos.');
-  }, [checking, isAuthenticated]);
+    setLoading(false); setMensaje(loginFailure ? LOGIN_FAILURE[loginFailure] : 'No pudimos abrir tu sesión. Inténtalo nuevamente en unos minutos.');
+  }, [checking, isAuthenticated, loginFailure]);
 
   // Download the panel while the user fills in the form so signing in opens it right away.
   useEffect(() => { void import('./AdminDashboard'); }, []);

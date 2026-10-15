@@ -2,7 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { API_BASE } from '../../apiBase';
 import { useAdminAuth } from '../context';
 import { PanelApiError } from '../services/panelApi';
-import { reportExpiredSession } from '../context/sessionEvents';
+import { reportAccessDenied, reportExpiredSession } from '../context/sessionEvents';
+import { ACCESS_DENIED } from '../context/sessionRefresh';
 
 type UploadResult = { name: string; state: 'pending' | 'uploading' | 'success' | 'error'; message?: string };
 
@@ -35,7 +36,7 @@ export default function ImageUpload({ onUploaded, multiple = false, disabled = f
         const abort = () => request.abort();
         batch.signal.addEventListener('abort', abort, { once: true });
         const timeout = window.setTimeout(abort, 30000);
-        let sessionExpired = false;
+        let sessionExpired = false, denied = false;
         update(index, 'uploading');
         try {
           const body = new FormData(); body.append('file', file);
@@ -44,6 +45,8 @@ export default function ImageUpload({ onUploaded, multiple = false, disabled = f
           });
           sessionExpired = response.status === 401;
           if (sessionExpired) reportExpiredSession(token);
+          denied = response.status === 403; // sin permiso: mensaje uniforme, la sesión sigue abierta y el resto del lote no se envía
+          if (denied) { reportAccessDenied(token); throw new Error(ACCESS_DENIED); }
           const data = await response.json() as { path?: string; message?: string | string[] };
           if (!response.ok || !data.path) throw new Error(Array.isArray(data.message) ? data.message.join(' · ') : data.message || 'No se pudo subir la imagen.');
           window.clearTimeout(timeout);
@@ -56,7 +59,7 @@ export default function ImageUpload({ onUploaded, multiple = false, disabled = f
           const message = request.signal.aborted ? 'La carga tardó demasiado.' : e instanceof Error ? e.message : 'No se pudo subir la imagen.';
           update(index, 'error', message);
           if (!multiple) setError(message);
-          if (sessionExpired || (e instanceof PanelApiError && e.status === 401)) break;
+          if (sessionExpired || denied || (e instanceof PanelApiError && e.status === 401)) break;
         } finally {
           window.clearTimeout(timeout);
           batch.signal.removeEventListener('abort', abort);

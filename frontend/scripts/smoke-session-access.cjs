@@ -1,6 +1,8 @@
 // Sesión administrativa y contrato de roles (H-BACK-01, E3.4.2) con API simulada: nada real (ni cuentas, ni datos, ni correo). Edge por DevTools.
 // Cubre: login y restauración de sesión con los tres roles, una cuenta sin rol, un backend antiguo (sin rol/permisos/acceso), contratos
 // parciales, mal formados o incoherentes, roles manipulados en el almacenamiento local, 401 frente a 403 y sincronización entre pestañas.
+// E3.4.4 (fase 1): revalidación con /admin/me al recuperar el foco y tras un 403 (intervalo mínimo, sin bucles), cambios y retirada de
+// permisos con una sección abierta, errores temporales al revalidar, cambios entre pestañas y login correcto seguido de un fallo de /me.
 // El estado se lee del contexto real de React (árbol de fibras) solo desde este script: la aplicación no expone nada para las pruebas.
 const { start, sleep, KEY } = require('./smoke-kit.cjs');
 
@@ -22,7 +24,8 @@ const ACCOUNTS = {
   [FORGED]: SEC, // un JWT con rol de gerente en su contenido, pero el backend lo reconoce como la secretaria
 };
 const TOKEN_OF = { gerente: 'tk-gerente', coord: 'tk-coord', sec: 'tk-sec', norol: 'tk-norol' };
-const fresh = () => ({ login: 'nuevo', me: 'nuevo', meDelay: 0, messages: 'ok', expired: new Set(), requests: [] });
+// perm: cambios de rol o permisos hechos «en el backend» con la sesión abierta (token → { rol?, permisos? }); modo: acceso.modo informado.
+const fresh = () => ({ login: 'nuevo', me: 'nuevo', meDelay: 0, messages: 'ok', settings: 'ok', modo: 'heredado', perm: {}, expired: new Set(), requests: [] });
 let sim = fresh();
 
 // Distintas formas de la respuesta (login y /me comparten forma): contrato nuevo, backend antiguo, parcial, mal formado, incoherente.
@@ -32,13 +35,16 @@ const shape = (acc, mode) => {
   if (mode === 'parcial') return { user: { ...user, rol: acc.rol } };
   if (mode === 'malformado') return { user: { ...user, rol: 'ROOT', permisos: ['cuentas:crear'] }, acceso: { modo: 'heredado' } };
   if (mode === 'incoherente') return { user: { ...user, rol: null, permisos: ['cuentas:crear'] }, acceso: { modo: 'heredado' } };
-  return { user: { ...user, rol: acc.rol, permisos: acc.permisos }, acceso: { modo: 'heredado' } };
+  return { user: { ...user, rol: acc.rol, permisos: acc.permisos }, acceso: { modo: sim.modo } };
 };
+const current = token => ACCOUNTS[token] && { ...ACCOUNTS[token], ...sim.perm[token] };
 
 const handler = async (req, res, { route, url, json, body }) => {
   if (route.startsWith('/__s/')) {
-    const [, , key, value] = route.split('/');
-    if (key === 'clear') sim = fresh(); else if (key === 'expire') sim.expired.add(decodeURIComponent(value)); else sim[key] = key === 'meDelay' ? Number(value) : decodeURIComponent(value);
+    const [, , key, value, extra] = route.split('/');
+    if (key === 'clear') sim = fresh(); else if (key === 'expire') sim.expired.add(decodeURIComponent(value)); else if (key === 'unexpire') sim.expired.delete(decodeURIComponent(value));
+    else if (key === 'perm') sim.perm[decodeURIComponent(value)] = JSON.parse(decodeURIComponent(extra));
+    else sim[key] = key === 'meDelay' ? Number(value) : decodeURIComponent(value);
     return json({ ok: true }) || true;
   }
   if (route === '/__log') return json({ requests: sim.requests }) || true;
@@ -56,10 +62,15 @@ const handler = async (req, res, { route, url, json, body }) => {
     if (sim.meDelay) await sleep(sim.meDelay);
     if (!ACCOUNTS[token] || sim.expired.has(token)) return json({ message: 'Unauthorized' }, 401) || true;
     if (sim.me === '503') return json({ message: 'Internal server error ER_SECRET' }, 503) || true;
-    return json({ ok: true, ...shape(ACCOUNTS[token], sim.me) }) || true;
+    if (sim.me === '403') return json({ ok: false, mensaje: 'Forbidden ER_SECRET' }, 403) || true;
+    if (sim.me === '404') return json({ message: 'Cannot GET /api/admin/me ER_SECRET' }, 404) || true;
+    if (sim.me === 'drop') { req.socket.destroy(); return true; } // red caída: sin respuesta
+    return json({ ok: true, ...shape(current(token), sim.me) }) || true;
   }
   if (!ACCOUNTS[token] || sim.expired.has(token)) return json({ message: 'Unauthorized' }, 401) || true;
   const sub = route.slice('/api/admin/'.length);
+  if (sub === 'settings' && req.method === 'PUT' && sim.settings === '403') return json({ ok: false, mensaje: 'No tienes permiso para realizar esta operación. ER_SECRET' }, 403) || true;
+  if (sub === 'settings' && req.method === 'GET') return json({ ok: true, settings: [{ clave: 'empresa_nombre', valor: 'Horus Group', descripcion: 'Nombre comercial', grupo: 'empresa' }] }) || true;
   if (sub === 'messages' && sim.messages === '403') return json({ ok: false, mensaje: 'No tienes permiso para realizar esta operación.' }, 403) || true;
   if (sub === 'messages' && sim.messages === '401') return json({ message: 'Unauthorized' }, 401) || true;
   if (sub === 'stats') return json({ ok: true, stats: { mensajes: { total: 0, nuevos: 0, enProceso: 0, atendidos: 0, archivados: 0 }, contenido: { total: 0 }, catalogo: {} }, actividadReciente: { mensajes: [] } }) || true;
@@ -226,6 +237,145 @@ const READ_CONTEXT = `(() => {
     await b.evaluate('localStorage.setItem(' + JSON.stringify(KEY) + ", 'tk-ajeno'); 1"); await sleep(1500);
     const after = await ctx(a);
     ck(after.auth && after.access.rol === 'GERENTE_GENERAL' && (await stored(a)) === 'tk-gerente', 'un token que el backend rechaza no sustituye la sesión validada ni su acceso'); }
+
+  // ===== 8. E3.4.4, fase 1: permisos que cambian con la sesión abierta =====
+  // El intervalo mínimo entre revalidaciones (30 s con foco, 5 s tras un 403) se adelanta moviendo el reloj monótono SOLO de la página de
+  // prueba (performance.now), sin esperar: la aplicación no expone nada para las pruebas.
+  const skew = (p, ms) => p.evaluate('(() => { if (!window.__horusSkew) { const base = performance.now.bind(performance); window.__horusSkew = { ms: 0 }; performance.now = () => base() + window.__horusSkew.ms; } window.__horusSkew.ms += ' + ms + '; return 1 })()');
+  const FOCUS = "window.dispatchEvent(new Event('focus')); 1";
+  const later = async (p, ms = 31000) => { await skew(p, ms); await p.evaluate(FOCUS); };
+  const perm = (token, value) => fetch(origin + '/__s/perm/' + encodeURIComponent(token) + '/' + encodeURIComponent(JSON.stringify(value)));
+  const waitMe = async n => { for (let i = 0; i < 60 && (await meCalls()).length < n; i++) await sleep(100); return (await meCalls()).length; };
+  const count = async route => (await requests()).filter(r => r.route === route).length;
+  const DENIED = 'Tu cuenta no tiene permiso para realizar esta acción';
+  const NO_RESUMEN = "document.querySelector('aside nav') && !document.querySelector('aside nav').innerText.includes('Resumen')";
+  const inbox = async p => { await p.wait(PANEL, 'panel'); await p.wait("location.pathname === '/admin/messages' && document.querySelector('.hw-insights button')", 'bandeja'); };
+
+  console.log('\n== PERMISOS QUE CAMBIAN CON LA SESIÓN ABIERTA (revalidación con /admin/me)');
+  await clean();
+  { const p = await restore('tk-coord', '/admin/messages'); await inbox(p); const before = await navLabels(p);
+    for (let i = 0; i < 5; i++) await p.evaluate(FOCUS);
+    await sleep(500);
+    ck((await meCalls()).length === 1, 'recuperar el foco varias veces seguidas no repite /admin/me (intervalo mínimo)', (await meCalls()).length);
+    await perm('tk-coord', { permisos: [...PERMS.coord].reverse() }); await later(p); await waitMe(2); await sleep(300);
+    ck((await meCalls()).length === 2 && same(await navLabels(p), before), 'pasado el intervalo el foco revalida; los mismos permisos (en otro orden) no cambian el panel', (await meCalls()).length);
+    await perm('tk-coord', { rol: 'SECRETARIA', permisos: PERMS.sec }); await later(p); await p.wait(NO_RESUMEN, 'menú con los permisos nuevos');
+    const c = await ctx(p);
+    ck(c.auth && c.token === 'tk-coord' && c.access.rol === 'SECRETARIA' && same(c.access.permisos, PERMS.sec) && (await stored(p)) === 'tk-coord' && (await p.path()) === '/admin/messages',
+      'cambio de rol informado por el backend: se adopta sin cerrar la sesión ni salir de la sección abierta', c);
+    ck(!(await navLabels(p)).includes('Educación') && (await navLabels(p)).includes('Mensajes'), 'el menú se adapta a los permisos nuevos', await navLabels(p));
+    await perm('tk-coord', { rol: 'SECRETARIA', permisos: ['mensajes:crear'] });
+    await skew(p, 31000); await p.send('Page.bringToFront'); await p.evaluate("document.dispatchEvent(new Event('visibilitychange')); 1");
+    await p.wait("document.querySelector('[data-panel-access=denegado]')", 'aviso de acceso no autorizado');
+    const listed = await count('/api/admin/messages'); await sleep(1500); const after = await ctx(p);
+    ck(await count('/api/admin/messages') === listed && after.auth && same(after.access.permisos, ['mensajes:crear']) && (await stored(p)) === 'tk-coord' && !(await p.evaluate("!!document.querySelector('.hw-insights')")),
+      'permiso de lectura retirado con la bandeja abierta (al volver a la pestaña): la sección se desmonta, no hace más solicitudes y la sesión sigue abierta', after);
+    ck(!/venció|terminó/.test(await p.text()), 'la retirada de un permiso no se presenta como una sesión vencida'); }
+
+  console.log('\n== 403 EN UNA OPERACIÓN: MENSAJE CLARO, SESIÓN ABIERTA Y SIN BUCLES');
+  await clean();
+  { const p = await restore('tk-sec', '/admin/messages'); await inbox(p);
+    await ctl('messages', '403'); await skew(p, 6000); const me0 = (await meCalls()).length;
+    await p.evaluate("document.querySelectorAll('.hw-insights button')[1].click(); 1");
+    await p.wait('document.body.innerText.includes(' + JSON.stringify(DENIED) + ')', 'mensaje de acceso denegado'); await sleep(1500);
+    const c = await ctx(p), text = await p.text(), me1 = (await meCalls()).length, list1 = await count('/api/admin/messages');
+    ck(c.auth && c.access.rol === 'SECRETARIA' && (await stored(p)) === 'tk-sec' && (await p.path()).startsWith('/admin/messages'), '403 en una operación: la sesión sigue abierta, con su acceso y en la misma sección', c);
+    ck(!/venció|terminó|No tienes permiso para realizar esta operación|ER_SECRET|statusCode/.test(text), '403: mensaje uniforme del panel; ni «Tu sesión venció» ni el texto del servidor');
+    ck(me1 === me0 + 1, 'el 403 provoca una sola revalidación de los permisos con /admin/me', { me0, me1 });
+    await sleep(1500);
+    ck((await meCalls()).length === me1 && await count('/api/admin/messages') === list1, 'tras el acceso denegado no hay reintentos automáticos ni consultas repetidas');
+    await p.evaluate("document.querySelectorAll('.hw-insights button')[2].click(); 1"); await sleep(1000);
+    ck((await meCalls()).length === me1 && await count('/api/admin/messages') === list1 + 1, 'un segundo 403 inmediato (acción de la persona) no vuelve a consultar /admin/me dentro del intervalo'); }
+  await clean();
+  { const p = await restore('tk-sec', '/admin/messages'); await inbox(p);
+    await perm('tk-sec', { permisos: ['mensajes:crear'] }); await ctl('messages', '403'); await skew(p, 6000);
+    await p.evaluate("document.querySelectorAll('.hw-insights button')[1].click(); 1");
+    await p.wait("document.querySelector('[data-panel-access=denegado]')", 'aviso tras la revalidación'); const c = await ctx(p);
+    ck(c.auth && same(c.access.permisos, ['mensajes:crear']) && (await stored(p)) === 'tk-sec', '403 cuya revalidación confirma la retirada del permiso: la sección se desmonta y la sesión sigue abierta', c); }
+  await clean(); await perm('tk-coord', { permisos: [...PERMS.coord, 'configuracion:leer'] }); await ctl('settings', '403');
+  { // En el backend ya se retiró configuracion:editar, pero esta pestaña aún lo tenía: el guardado recibe 403.
+    const p = await open(); await p.go('/__empty'); await p.evaluate('localStorage.setItem(' + JSON.stringify(KEY) + ", 'tk-coord'); 1");
+    await perm('tk-coord', { permisos: [...PERMS.coord, 'configuracion:leer', 'configuracion:editar'] });
+    await p.go('/admin/dashboard?section=ajustes'); await p.wait("document.querySelector('.hp-settings-card input:not(:disabled)')", 'formulario de empresa editable');
+    await perm('tk-coord', { permisos: [...PERMS.coord, 'configuracion:leer'] });
+    await p.type('.hp-settings-card input', 0, 'Nombre en edición'); await skew(p, 6000); await p.click('button', 'Guardar configuración');
+    await p.wait("document.querySelector('[data-panel-readonly]')", 'modo consulta tras la revalidación');
+    const state = await p.evaluate("({ value: document.querySelector('.hp-settings-card input').value, error: document.querySelector('.hp-error')?.innerText || '', disabled: document.querySelector('.hp-settings-card fieldset').disabled })");
+    const c = await ctx(p);
+    ck(state.value === 'Nombre en edición' && state.error.startsWith(DENIED) && state.disabled && c.auth && (await stored(p)) === 'tk-coord',
+      '403 al guardar: el borrador se conserva a la vista, se informa sin datos técnicos y, revalidado el permiso, la sección pasa a modo consulta', state);
+    ck(!/ER_SECRET|venció/.test(await p.text()), 'sin texto del servidor ni «sesión vencida»'); }
+
+  console.log('\n== ERRORES TEMPORALES O RESPUESTAS INESPERADAS AL REVALIDAR');
+  await clean();
+  { const p = await restore('tk-sec', '/admin/messages'); await inbox(p);
+    await perm('tk-sec', { permisos: [...PERMS.sec, 'estadisticas:leer'] }); // el cambio no debe adoptarse a partir de una respuesta fallida
+    // Llamadas de la aplicación a /admin/me, contadas dentro de la página: con la conexión cortada sin respuesta («drop») el propio navegador
+    // repite la petición en otra conexión antes de dar el error a fetch, así que el registro del servidor no mide lo que hace el panel.
+    await p.evaluate("(() => { const original = window.fetch; window.__horusMe = 0; window.fetch = (input, init) => { if (String(input && input.url || input).endsWith('/admin/me')) window.__horusMe++; return original(input, init); }; return 1 })()");
+    const appMe = () => p.evaluate('window.__horusMe');
+    for (const mode of ['503', 'drop', '403', '404', 'malformado']) {
+      await ctl('me', mode); const n = (await meCalls()).length, a = await appMe(); await later(p); await waitMe(n + 1); await sleep(700);
+      const c = await ctx(p); const sidebar = await p.evaluate('!!document.querySelector(".hp-sidebar") && !!document.querySelector(".hw-insights")');
+      ck((await appMe()) === a + 1 && (mode === 'drop' || (await meCalls()).length === n + 1) && c.auth && c.access.rol === 'SECRETARIA' && same(c.access.permisos, PERMS.sec) && !c.sessionError && (await stored(p)) === 'tk-sec' && sidebar && (await p.path()) === '/admin/messages',
+        '/admin/me «' + mode + '» al revalidar: una sola consulta; se conserva el acceso conocido, sin inventar permisos, sin cerrar la sesión y sin desmontar la sección', { mode, app: (await appMe()) - a, server: (await meCalls()).length - n, c });
+    }
+    const settled = (await meCalls()).length, settledApp = await appMe(); await sleep(2000);
+    ck((await meCalls()).length === settled && (await appMe()) === settledApp, 'los fallos al revalidar (incluido un 403 de /admin/me) no generan reintentos ni bucles');
+    await ctl('me', 'nuevo'); await later(p); await p.wait("document.querySelector('aside nav').innerText.includes('Resumen')", 'menú tras la recuperación');
+    ck(same((await ctx(p)).access.permisos, [...PERMS.sec, 'estadisticas:leer']), 'recuperado el servidor, la siguiente revalidación adopta los permisos nuevos');
+    await ctl('expire', 'tk-sec'); await later(p); await p.wait("location.pathname === '/admin/login'", 'login tras el 401 al revalidar'); const c = await ctx(p);
+    ck(!c.auth && c.access === null && (await stored(p)) === null && c.endReason === 'expired' && (await p.text()).includes('Tu sesión terminó'), '401 al revalidar: se aplica el cierre de sesión de siempre', c); }
+
+  console.log('\n== BACKEND ANTIGUO Y CUENTA SIN ROL AL REVALIDAR');
+  await clean(); await ctl('me', 'antiguo');
+  { const p = await restore('tk-sec'); await p.wait(PANEL, 'panel (antiguo)'); const before = await navLabels(p); await later(p); await waitMe(2); await sleep(300); const c = await ctx(p);
+    ck((await meCalls()).length === 2 && c.access.contract === 'antiguo' && c.access.permisos.length === 0 && same(await navLabels(p), before) && same(before, first), 'backend antiguo: la revalidación mantiene el panel heredado completo, sin roles inventados', c.access); }
+  await clean();
+  { const p = await restore('tk-norol'); await p.wait(PANEL, 'panel (sin rol)'); const before = await navLabels(p); await later(p); await waitMe(2); await sleep(300);
+    ck(same(await navLabels(p), before) && same(before, first), 'cuenta sin rol en modo heredado: la revalidación conserva el panel completo');
+    await ctl('modo', 'por_roles'); await later(p); await p.wait("document.querySelector('[data-panel-access=sin-rol]')", 'aviso de cuenta sin rol'); const c = await ctx(p);
+    ck(c.auth && c.access.mode === 'por_roles' && c.access.rol === null && !(await navLabels(p)).includes('Resumen'), 'si el backend pasa a por_roles, la cuenta sin rol deja de ver las secciones de trabajo (sesión abierta, aviso propio)', c.access); }
+
+  console.log('\n== PERMISOS QUE CAMBIAN ENTRE PESTAÑAS');
+  await clean();
+  { const a = await restore('tk-coord'); await a.wait(PANEL, 'pestaña A'); const b = await restore('tk-coord'); await b.wait(PANEL, 'pestaña B');
+    await perm('tk-coord', { rol: 'SECRETARIA', permisos: PERMS.sec });
+    await later(b); await b.wait(NO_RESUMEN, 'pestaña B con los permisos nuevos');
+    ck((await ctx(a)).access.rol === 'COORDINADORA_INSTITUCIONAL', 'la otra pestaña no recibe permisos por el almacenamiento: los obtiene del backend al revalidar');
+    await later(a); await a.wait(NO_RESUMEN, 'pestaña A al volver a ella'); const c = await ctx(a);
+    const blob = await a.evaluate('JSON.stringify(localStorage) + JSON.stringify(sessionStorage)');
+    ck(c.auth && c.access.rol === 'SECRETARIA' && same(c.access.permisos, PERMS.sec) && c.token === 'tk-coord' && (await stored(a)) === 'tk-coord' && !ROLE_WORDS.test(blob),
+      'al volver a la otra pestaña, ésta revalida y adopta el mismo acceso (la misma sesión, sin guardar rol ni permisos)', c); }
+
+  console.log('\n== LOGIN CORRECTO SEGUIDO DE UN FALLO DE /admin/me');
+  const AFTER_LOGIN = { '401': 'no la aceptó', '403': 'no permitió comprobar', '503': 'no respondió', drop: 'no respondió', malformado: 'no es compatible', '404': 'no es compatible' };
+  for (const [mode, phrase] of Object.entries(AFTER_LOGIN)) {
+    await clean(); await ctl('login', 'antiguo'); if (mode === '401') await ctl('expire', 'tk-gerente'); else await ctl('me', mode);
+    const p = await open(); await p.go('/admin/login'); await submit(p, 'gerente');
+    await p.wait('document.querySelector("#login-error")', 'aviso tras el fallo de /admin/me (' + mode + ')');
+    const c = await ctx(p), text = await p.text('#login-error');
+    const form = await p.evaluate('({ sidebar: !!document.querySelector(".hp-sidebar"), disabled: document.querySelector(".admin-auth__submit").disabled, email: document.querySelector("#email").value, password: document.querySelector("#password").value.length > 0 })');
+    ck(text.startsWith('No pudimos abrir tu sesión') && text.includes(phrase) && !/ER_SECRET|Internal|Unauthorized|Forbidden|Cannot|ROOT/.test(text), 'login + /admin/me «' + mode + '»: motivo propio y sin datos técnicos', text);
+    ck(!c.auth && c.access === null && c.token === null && (await stored(p)) === null && c.endReason !== 'expired' && !form.sidebar && !form.disabled && form.email && form.password,
+      'login + /admin/me «' + mode + '»: sin sesión a medias (token descartado) y formulario libre con los datos ingresados', { c, form });
+    await ctl('me', 'antiguo'); await ctl('unexpire', 'tk-gerente'); const n = (await meCalls()).length;
+    await p.evaluate(SUBMIT); await p.wait(PANEL, 'panel al reintentar (' + mode + ')'); const again = await ctx(p);
+    ck(again.auth && again.access.contract === 'antiguo' && (await stored(p)) === 'tk-gerente' && (await meCalls()).length === n + 1, 'login + /admin/me «' + mode + '»: al reintentar con el servidor disponible el panel abre (una sola validación)', again);
+  }
+
+  console.log('\n== LOGIN FALLIDO CON LA SESIÓN DE OTRA PESTAÑA GUARDADA');
+  await clean(); await ctl('login', 'antiguo');
+  { const x = await restore('tk-coord'); await x.wait(PANEL, 'pestaña con la sesión anterior');
+    await ctl('me', '503'); const y = await open(); await y.go('/admin/login'); await y.wait('document.querySelector("#email") && !document.querySelector(".admin-auth__submit").disabled', 'formulario de login');
+    await submit(y, 'gerente'); await y.wait('document.querySelector("#login-error")', 'aviso tras el fallo de /admin/me');
+    const cy = await ctx(y), cx = await ctx(x);
+    ck(!cy.auth && cy.access === null && cy.token === null && (await stored(y)) === 'tk-coord' && (await y.text('#login-error')).includes('no respondió'),
+      'login fallido: el token nuevo se descarta, se restablece el guardado antes y esta pestaña NO lo adopta como sesión', cy);
+    ck(cx.auth && cx.token === 'tk-coord' && cx.access.rol === 'COORDINADORA_INSTITUCIONAL' && cx.user.email === 'coord@example.test', 'la otra pestaña conserva su sesión y su acceso, sin mezclarse con la cuenta del login fallido', cx);
+    // La sesión restablecida fue revocada en el servidor: al volver a la pestaña se valida con /admin/me y el 401 la descarta; nunca abre el panel.
+    await ctl('me', 'nuevo'); await ctl('expire', 'tk-coord'); await later(y); await sleep(1000); const after = await ctx(y);
+    ck(!after.auth && after.access === null && (await stored(y)) === null && !(await y.evaluate('!!document.querySelector(".hp-sidebar")')), 'una sesión anterior revocada no se recupera tras el login fallido (401 al validarla)', after); }
 
   k.finish('Sesión administrativa y contrato de roles');
 })().catch(error => { console.error('FALLO DEL SMOKE:', error.message); process.exit(1); });
