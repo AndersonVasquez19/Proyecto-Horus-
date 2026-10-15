@@ -128,7 +128,7 @@ jobs:
           node --test test/admin-scripts.integration.cjs
         env:
           ADMIN_SCRIPTS_TEST_DB: 'true'
-      # H-BACK-01 E3.5 y E3.6 (preparatorias; AccessGuard sigue SIN registrarse en el AppModule normal). Mismas barreras que M-3, todas antes de
+      # H-BACK-01 E3.5 y E3.6 (desde E3.6, AccessGuard está registrada en el AppModule normal y ACCESS_MODE = por_roles). Mismas barreras que M-3, todas antes de
       # crear nada: activación explícita, DB_HOST de bucle local, server_uuid de la conexión = el leído aquí con docker exec dentro del contenedor
       # de este job, servidor con Uptime < 1 h y sin tablas en ninguna base ajena a las del sistema. Van en serie y después de M-3 y de
       # test:integration porque cada una elimina su propia base: si un paso previo dejara tablas, estas pruebas FALLAN (no se debilitan las
@@ -154,7 +154,7 @@ jobs:
           node --test -r ./test/isolate-env.cjs test/admin-access-readiness.integration.cjs
         env:
           ACCESS_READINESS_TEST_DB: 'true'
-      - name: Integración de AccessGuard con HTTP real (E3.6, solo en el módulo de prueba)
+      - name: Integración de AccessGuard con HTTP real (E3.6, AppModule normal)
         run: |
           ACCESS_GUARD_HTTP_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
           export ACCESS_GUARD_HTTP_TEST_SERVER_UUID

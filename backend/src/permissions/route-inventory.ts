@@ -1,7 +1,7 @@
 import type { Permission } from './permissions';
 import type { FollowUpOperation, RouteAccess } from './access';
 
-// Inventario escrito a mano de las rutas HTTP actuales y de la clasificación que exigirá AccessGuard cuando se active (ver access.ts).
+// Inventario escrito a mano de las rutas HTTP actuales y de la clasificación que exige AccessGuard, activa desde E3.6 (ver access.ts).
 // No lo consume la guard: la guard lee los decoradores de los controladores. Una prueba compara ambos y falla si alguien añade una
 // ruta sin clasificar o si un decorador no coincide con este inventario. Las rutas van sin el prefijo global «api».
 export type { RouteAccess } from './access';

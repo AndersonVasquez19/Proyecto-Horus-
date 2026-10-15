@@ -2,7 +2,7 @@
 // Módulo puro, sin React ni red (lo cargan también las pruebas de Node).
 //
 // IMPORTANTE: esta información es solo para adaptar la interfaz. NO autoriza nada: la autorización efectiva es siempre del backend
-// (AccessGuard, que hoy sigue sin activarse: `acceso.modo` vale «heredado»). Por eso:
+// (AccessGuard, activa desde E3.6: `acceso.modo` vale «por_roles»; «heredado» solo llega de un backend anterior). Por eso:
 //  - `permisos` se copia tal como llega del backend; el panel no tiene su propia matriz de permisos.
 //  - El rol y los permisos viven solo en la memoria de la sesión: nunca se guardan en localStorage/sessionStorage ni se leen de ahí.
 //  - Una respuesta incompleta o incoherente no concede nada: se trata como inválida.

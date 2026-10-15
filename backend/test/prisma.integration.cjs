@@ -44,6 +44,15 @@ test('Prisma works against MySQL and legacy-compatible SQL in an isolated databa
     assert.equal(total, require('../scripts/migrate.cjs').versions.length);
     client = prisma();
     const catalog = new CatalogoService(client);
+    // E3.6: AppModule registra AccessGuard, así que las cuentas ficticias necesitan un rol explícito para operar. Se asigna como
+    // admin:assign-role (rol y session_version + 1, que revoca la sesión anterior) y se emite una sesión NUEVA con el login real.
+    async function withRole(app, account, rol, password) {
+      await client.adminUser.update({ where: { id: account.user.id }, data: { rol, session_version: { increment: 1 } } });
+      const session = await app.get(AuthService).login({ email: account.user.email, password });
+      assert.equal(session.user.rol, rol);
+      assert.equal(session.acceso.modo, 'por_roles');
+      return { ...session, user: { ...account.user, ...session.user } };
+    }
     await t.test('Nest modules initialize with the shared Prisma provider', async () => {
       const { AppModule } = require('../dist/app.module');
       const app = await NestFactory.createApplicationContext(AppModule, { logger: false, abortOnError: false });
@@ -72,6 +81,9 @@ test('Prisma works against MySQL and legacy-compatible SQL in an isolated databa
         await app.listen(0, '127.0.0.1');
         const origin = await app.getUrl();
         auth = await app.get(AuthService).register({ nombre: 'Conservación test', email: 'conservacion@example.test', password: 'Temporary-test-123!' }, null);
+        const unassigned = auth.token;
+        auth = await withRole(app, auth, 'GERENTE_GENERAL', 'Temporary-test-123!');
+        assert.equal((await fetch(origin + '/api/admin/cursos', { headers: { Authorization: 'Bearer ' + unassigned } })).status, 401, 'la asignación revoca el JWT anterior');
         const request = async (route, method = 'GET', body) => {
           const response = await fetch(origin + '/api/' + route, { method, headers: {
             Authorization: 'Bearer ' + auth.token,
@@ -140,7 +152,10 @@ test('Prisma works against MySQL and legacy-compatible SQL in an isolated databa
       app.setGlobalPrefix('api'); app.useGlobalPipes(createValidationPipe());
       await app.listen(0, '127.0.0.1');
       const origin = await app.getUrl();
-      const auth = await app.get(AuthService).register({ nombre: 'Convenios test', email: 'convenios-test@example.com', password: 'Temporary-test-123!' });
+      const registered = await app.get(AuthService).register({ nombre: 'Convenios test', email: 'convenios-test@example.com', password: 'Temporary-test-123!' });
+      // Sin rol solo hay autoservicio: 403 en convenios. La coordinadora gestiona convenios y sus fotos.
+      assert.equal((await fetch(origin + '/api/admin/convenios', { headers: { Authorization: 'Bearer ' + registered.token } })).status, 403);
+      const auth = await withRole(app, registered, 'COORDINADORA_INSTITUCIONAL', 'Temporary-test-123!');
       const request = async (route, method = 'GET', body, authenticated = false) => {
         const response = await fetch(origin + '/api/' + route, { method, headers: {
           ...(authenticated ? { Authorization: 'Bearer ' + auth.token } : {}),
@@ -220,8 +235,9 @@ test('Prisma works against MySQL and legacy-compatible SQL in an isolated databa
         origin = await start();
         // El primer administrador se crea por el proceso controlado (servicio/CLI): el registro HTTP exige una sesión.
         assert.equal((await fetch(origin + '/api/admin/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: 'Intruso', email: 'intruso@example.com', password }) })).status, 401);
-        const first = await app.get(AuthService).register({ nombre: 'Admin global A', email: 'global-a@example.com', password });
-        adminIds.push(first.user.id);
+        const registeredFirst = await app.get(AuthService).register({ nombre: 'Admin global A', email: 'global-a@example.com', password });
+        adminIds.push(registeredFirst.user.id);
+        const first = await withRole(app, registeredFirst, 'GERENTE_GENERAL', password);
         const form = new FormData();
         const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jQxQAAAAASUVORK5CYII=', 'base64');
         form.append('file', new Blob([png], { type: 'image/png' }), 'global.png');
@@ -246,8 +262,9 @@ test('Prisma works against MySQL and legacy-compatible SQL in an isolated databa
         // Alta autorizada: la hace el primer administrador con su sesión y la cuenta nueva entra por el login normal.
         const created = await request('admin/register', first.token, 'POST', { nombre: 'Admin global B', email: 'global-b@example.com', password });
         assert.equal(created.token, undefined);
-        const second = { user: created.user, token: (await request('admin/login', null, 'POST', { email: 'global-b@example.com', password })).token };
-        adminIds.push(second.user.id);
+        adminIds.push(created.user.id);
+        // La cuenta nace sin rol; con el rol de coordinadora (que lee todo lo de esta lista) entra con una sesión nueva.
+        const second = await withRole(app, created, 'COORDINADORA_INSTITUCIONAL', password);
         assert.notEqual(first.user.id, second.user.id);
         const lists = ['cursos', 'servicios', 'preguntas-frecuentes', 'galeria', 'convenios', 'settings'];
         const snapshots = {};

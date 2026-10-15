@@ -1,8 +1,8 @@
 // Navegación del panel según los permisos de la sesión (H-BACK-01, E3.4.3, fase 1). Módulo puro, sin React ni red (lo cargan también
 // las pruebas de Node).
 //
-// IMPORTANTE: ocultar una sección es solo un filtro visual; la autorización efectiva es siempre del backend (AccessGuard, que hoy
-// sigue sin activarse). Aquí no hay matriz de permisos por rol: cada sección declara el permiso de LECTURA que exige el endpoint que
+// IMPORTANTE: ocultar una sección es solo un filtro visual; la autorización efectiva es siempre del backend (AccessGuard, activa
+// desde E3.6). Aquí no hay matriz de permisos por rol: cada sección declara el permiso de LECTURA que exige el endpoint que
 // carga al abrirse (ver backend/src/permissions/route-inventory.ts), y la sesión aporta la lista de permisos que informó el backend.
 // El nombre del rol no se usa para decidir nada.
 import type { SessionAccess } from './sessionAccess';

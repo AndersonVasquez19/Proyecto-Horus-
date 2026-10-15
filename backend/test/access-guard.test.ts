@@ -28,8 +28,9 @@ import { AccessGuard, AccountAccessService, FORBIDDEN_MESSAGE, NO_ROLE_MESSAGE }
 import { ACCESS_METADATA } from '../src/permissions/access.decorators';
 import { requirementFor } from '../src/permissions/access';
 
-// E3.3: la guard se prueba registrándola SOLO dentro de estos módulos de prueba. Cuentas simuladas en memoria, servicios sustituidos,
-// sin MySQL, sin correo y sin red fuera de 127.0.0.1. Secreto ficticio.
+// E3.3/E3.6: la guard se prueba en módulos de prueba que replican el registro global de AppModule (APP_GUARD). Cuentas simuladas en
+// memoria, servicios sustituidos, sin MySQL, sin correo y sin red fuera de 127.0.0.1. Secreto ficticio. El registro en el AppModule
+// real se comprueba al final de este archivo (estructura) y con HTTP real en test/access-guard-http.integration.cjs.
 const secret = 'isolated-access-guard-secret-32-characters!';
 const settings = { get: (key: string) => (key === 'JWT_SECRET' ? secret : undefined) };
 const jwt = new JwtService({ secret, signOptions: { expiresIn: '8h', issuer: 'horus-api', audience: 'horus-panel' } });
@@ -299,9 +300,10 @@ test('acciones condicionadas al recurso: seguimiento según :recurso y cambios d
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// E3.3 no cambia el comportamiento efectivo
+// Los decoradores solo son metadatos: sin la guard registrada no protegen nada
 // ---------------------------------------------------------------------------------------------------------------
-test('sin AccessGuard (configuración real actual) los decoradores no cambian nada: rige solo JwtAuthGuard', async () => {
+// Hipótesis de reversión incompleta (no admitida): por eso registro y ACCESS_MODE van juntos (session-access.test.ts).
+test('sin AccessGuard (reversión incompleta, no admitida) los decoradores no cambian nada: rige solo JwtAuthGuard', async () => {
   const { app, db, call } = await start(false);
   try {
     // Cualquier sesión válida, incluso sin rol, sigue entrando como hoy; sin sesión, 401; lo público sigue público.
@@ -323,11 +325,21 @@ function sourceFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? sourceFiles(path.join(dir, entry.name)) : entry.name.endsWith('.ts') ? [path.join(dir, entry.name)] : []);
 }
 
-test('AccessGuard no está registrada en la aplicación: ni APP_GUARD ni @UseGuards ni módulo que la provea', () => {
+test('AccessGuard está registrada una sola vez, en AppModule, como APP_GUARD después de PublicRateLimitGuard (E3.6)', () => {
   const src = path.join(__dirname, '..', 'src');
-  const appModule = fs.readFileSync(path.join(src, 'app.module.ts'), 'utf8');
-  assert.deepEqual(appModule.match(/provide:\s*APP_GUARD[^}]*/g)?.map(text => text.replace(/\s+/g, ' ').trim()), ['provide: APP_GUARD, useClass: PublicRateLimitGuard']);
   const code = (file: string) => fs.readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  const users = sourceFiles(src).filter(file => /\b(AccessGuard|AccountAccessService)\b/.test(code(file))).map(file => path.relative(src, file).replace(/\\/g, '/'));
-  assert.deepEqual(users, ['permissions/access.guard.ts']);
+  const appModule = code(path.join(src, 'app.module.ts'));
+  // Orden de la lista = orden de ejecución de las guards globales: primero el límite de frecuencia, después la autorización.
+  assert.deepEqual(appModule.match(/provide:\s*APP_GUARD[^}]*/g)?.map(text => text.replace(/\s+/g, ' ').trim()),
+    ['provide: APP_GUARD, useClass: PublicRateLimitGuard', 'provide: APP_GUARD, useClass: AccessGuard']);
+  // Dependencias de la guard como proveedores de AppModule; JwtStrategy sigue en AuthModule y no se duplica aquí.
+  const providers = appModule.match(/providers:\s*\[([\s\S]*?)\]\s*,\s*imports:/)?.[1] ?? '';
+  assert.match(providers, /^\s*JwtAuthGuard\s*,\s*AccountAccessService\s*,/);
+  assert.ok(!/JwtStrategy/.test(appModule), 'JwtStrategy no se registra en AppModule');
+  assert.match(code(path.join(src, 'admin/auth/auth.module.ts')), /providers:\s*\[[^\]]*\bJwtStrategy\b/);
+  // Nadie más la registra ni la usa (ni @UseGuards ni otro APP_GUARD), y no hay interruptor por entorno.
+  const users = sourceFiles(src).filter(file => /\b(AccessGuard|AccountAccessService)\b/.test(code(file))).map(file => path.relative(src, file).replace(/\\/g, '/')).sort();
+  assert.deepEqual(users, ['app.module.ts', 'permissions/access.guard.ts']);
+  assert.equal(sourceFiles(src).filter(file => /UseGuards\([^)]*AccessGuard/.test(code(file))).length, 0);
+  assert.ok(!/process\.env/.test(appModule), 'el registro no depende de variables de entorno');
 });

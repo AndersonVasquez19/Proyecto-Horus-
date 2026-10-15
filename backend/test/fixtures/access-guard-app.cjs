@@ -1,9 +1,10 @@
-// H-BACK-01, E3.6 fase preparatoria: arranque de PRUEBA del NestJS compilado (backend/dist) con AccessGuard registrada como guard global.
-// Solo lo lanza test/access-guard-http.integration.cjs como proceso hijo (canal IPC). No está en src/, no se compila a dist/ ni se despliega,
-// y no lee ninguna variable que active o desactive la guard: la aplicación normal (dist/main.js + AppModule) sigue sin ella.
+// H-BACK-01, E3.6: arranque de PRUEBA del NestJS compilado (backend/dist) con el AppModule REAL, que desde E3.6 registra él mismo
+// PublicRateLimitGuard → AccessGuard como guards globales. Solo lo lanza test/access-guard-http.integration.cjs como proceso hijo (canal IPC).
+// No está en src/, no se compila a dist/ ni se despliega, y no lee ninguna variable que active o desactive la guard.
 //
-// Composición candidata para E3.6: AppModule sin cambios + JwtAuthGuard + AccountAccessService + { provide: APP_GUARD, useClass: AccessGuard }.
-// Añade un controlador de sondeo SOLO de prueba (sin clasificar y mal declarado) para comprobar la denegación por defecto con la guard real.
+// Este módulo NO registra guards ni proveedores propios (ni APP_GUARD, ni AccessGuard, ni sus dependencias): toda la autorización
+// procede de AppModule. Solo añade un controlador de sondeo de prueba (sin clasificar y mal declarado) para comprobar la denegación
+// por defecto con la guard global real, que también se aplica a él.
 // El resto replica dist/main.js (prefijo api, proxy de confianza, cabeceras/CORS, ValidationPipe), salvo Swagger y que escucha solo en 127.0.0.1.
 //
 // Ciclo de vida: el proceso no sobrevive a la prueba que lo lanzó. Si se pierde el canal IPC (la prueba termina, falla o la matan),
@@ -38,7 +39,7 @@ process.on('disconnect', shutdown);
 require('reflect-metadata');
 const dist = join(__dirname, '..', '..', 'dist');
 const { Controller, Get, Module, SetMetadata } = require('@nestjs/common');
-const { APP_GUARD, NestFactory } = require('@nestjs/core');
+const { NestFactory } = require('@nestjs/core');
 const { AppModule } = require(join(dist, 'app.module.js'));
 const { JwtAuthGuard } = require(join(dist, 'common/guards/jwt-auth.guard.js'));
 const { JwtStrategy } = require(join(dist, 'admin/auth/jwt.strategy.js'));
@@ -64,7 +65,6 @@ class AccessGuardTestModule {}
 Reflect.decorate([Module({
   imports: [AppModule],
   controllers: [ProbeController],
-  providers: [JwtAuthGuard, AccountAccessService, { provide: APP_GUARD, useClass: AccessGuard }],
 })], AccessGuardTestModule);
 
 async function bootstrap() {
@@ -88,10 +88,17 @@ async function bootstrap() {
     PublicRateLimitGuard: globalGuards.includes(PublicRateLimitGuard.name),
     AccessGuard: globalGuards.includes(AccessGuard.name),
   };
+  // Qué módulo declara cada APP_GUARD (Nest los guarda con un token «APP_GUARD (UUID: …)» en el módulo que los registra).
+  const guardProviders = [];
+  for (const moduleRef of app.container.getModules().values()) {
+    for (const [token, wrapper] of moduleRef.providers) {
+      if (typeof token === 'string' && token.startsWith('APP_GUARD')) guardProviders.push({ module: moduleRef.metatype?.name ?? '?', guard: wrapper.metatype?.name ?? '?' });
+    }
+  }
   const routes = app.getHttpAdapter().getInstance()._router.stack
     .filter(layer => layer.route)
     .flatMap(layer => Object.keys(layer.route.methods).map(method => ({ method: method.toUpperCase(), path: layer.route.path })));
-  process.send({ ready: true, globalGuards, resolved, routes });
+  process.send({ ready: true, globalGuards, guardProviders, resolved, routes });
 }
 
 bootstrap().catch(error => {

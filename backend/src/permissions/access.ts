@@ -1,7 +1,7 @@
 import { Permission, isPermission, seguimientoPermission } from './permissions';
 
-// Cómo se protege cada ruta HTTP. Lo declaran los decoradores de access.decorators.ts sobre los controladores y lo exigirá AccessGuard.
-// Etapa E3.3: preparado, pero AccessGuard NO está registrado en ninguna ruta ni como guard global; hoy rige solo JwtAuthGuard.
+// Cómo se protege cada ruta HTTP. Lo declaran los decoradores de access.decorators.ts sobre los controladores y lo exige AccessGuard,
+// registrada como guard global en app.module.ts desde E3.6.
 //
 //  publica       Sin sesión (formularios y contenido públicos, login y recuperación de contraseña).
 //  autenticada   Cualquier sesión válida, incluso de una cuenta sin rol: autoservicio (/admin/me, cambio de la propia contraseña).

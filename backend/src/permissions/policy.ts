@@ -1,7 +1,7 @@
 import { ADMIN_ROLES, AdminRole, isAdminRole } from './roles';
 import { ALL_PERMISSIONS, Permission, isPermission } from './permissions';
 
-// Matriz de permisos por rol. La consulta AccessGuard (E3.3), que todavía no está activada en ninguna ruta.
+// Matriz de permisos por rol. La consulta AccessGuard (E3.3), registrada como guard global desde E3.6 (app.module.ts).
 // Regla de diseño: denegación por defecto. Lo que no figura aquí, está denegado; las operaciones sin clasificar
 // no se conceden a la coordinadora ni a la secretaria.
 //

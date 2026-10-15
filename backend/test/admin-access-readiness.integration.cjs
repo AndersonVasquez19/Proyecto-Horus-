@@ -5,9 +5,10 @@
 //   ACCESS_READINESS_TEST_DB=true ACCESS_READINESS_TEST_SERVER_UUID=<@@server_uuid leído por docker exec> DB_HOST=127.0.0.1 DB_PORT=<puerto>
 //   DB_USER=root DB_PASS=<clave de un solo uso>  node --test -r ./test/isolate-env.cjs test/admin-access-readiness.integration.cjs
 //
-// AccessGuard NO se activa: la API arranca tal cual (ACCESS_MODE = heredado). Lo que haría la guard en `por_roles` se calcula aparte con la
-// misma lógica compilada que ella usa (requirementFor + canAll sobre ROUTE_INVENTORY) y el estado real de cada cuenta en la base; se marca
-// [PREVISTO]. Todo lo demás es real: procesos admin:create / admin:assign-role auditados y respuestas HTTP del NestJS.
+// Desde E3.6 la API arranca tal cual (dist/main.js + AppModule) y AccessGuard ya está activa (ACCESS_MODE = por_roles): las respuestas
+// HTTP de esta prueba son las de la aplicación normal con autorización por roles. El recuento por ruta de lo que decide la guard se calcula
+// además con la misma lógica compilada que ella usa (requirementFor + canAll sobre ROUTE_INVENTORY) y el estado real de cada cuenta; se
+// marca [PREVISTO] y se contrasta con solicitudes reales de muestra. El barrido HTTP completo está en access-guard-http.integration.cjs.
 //
 // Barreras (las mismas que admin-scripts.integration.cjs; todas antes de crear nada):
 //  1. ACCESS_READINESS_TEST_DB=true explícito.  2. DB_HOST de bucle local y DB_PORT explícito.
@@ -55,7 +56,7 @@ function preflight(listing) {
   return { cuentas: rows.length, gerentes, sinRol, bloqueos };
 }
 
-test('E3.5 fase 1: cuentas administrativas preparadas para AccessGuard en un MySQL desechable (sin activarla)', async t => {
+test('E3.5 fase 1: cuentas administrativas preparadas para AccessGuard en un MySQL desechable (con la guard activa en AppModule, E3.6)', async t => {
   if (process.env.ACCESS_READINESS_TEST_DB !== 'true') return t.skip('Requiere ACCESS_READINESS_TEST_DB=true y un MySQL desechable identificado.');
   assert.ok(existsSync(join(dist, 'main.js')), 'falta backend/dist: ejecuta npm run build');
   // Lógica compilada que usaría la guard (sin Prisma ni configuración).
@@ -64,7 +65,8 @@ test('E3.5 fase 1: cuentas administrativas preparadas para AccessGuard en un MyS
   const { ROUTE_INVENTORY } = require(join(dist, 'permissions/route-inventory.js'));
   const { ACCESS_MODE } = require(join(dist, 'permissions/session-access.js'));
   const { LAST_GERENTE_MESSAGE } = require(join(dist, 'admin/auth/account-rules.js'));
-  assert.equal(ACCESS_MODE, 'heredado', 'AccessGuard debe seguir inactiva en el código probado');
+  const { FORBIDDEN_MESSAGE, NO_ROLE_MESSAGE } = require(join(dist, 'permissions/access.guard.js'));
+  assert.equal(ACCESS_MODE, 'por_roles', 'E3.6: el código probado declara la autorización por roles');
 
   const host = process.env.DB_HOST || '', port = Number(process.env.DB_PORT || 0);
   const expectedUuid = String(process.env.ACCESS_READINESS_TEST_SERVER_UUID ?? '').trim().toLowerCase();
@@ -167,7 +169,7 @@ test('E3.5 fase 1: cuentas administrativas preparadas para AccessGuard en un MyS
       const me = await call('admin/me', { token: r.data.token });
       assert.equal(me.status, 200);
       assert.deepEqual(me.data.user, r.data.user, key + ': /admin/me coincide con el login');
-      assert.deepEqual(me.data.acceso, { modo: 'heredado' });
+      assert.deepEqual(me.data.acceso, { modo: 'por_roles' });
       return me.data.user;
     }
     const setActive = (actorKey, key, activo) => account(key).then(row => call('admin/users/' + row.id, { method: 'PUT', token: tokens[actorKey], body: { activo } }));
@@ -212,8 +214,13 @@ test('E3.5 fase 1: cuentas administrativas preparadas para AccessGuard en un MyS
         const p = await predict(key);
         assert.equal(p.pasa, 2, key + ' [PREVISTO]: solo /admin/me y /admin/password');
         assert.equal(p.sinRol, p.total - p.publica - 2, key + ' [PREVISTO]: 403 «sin rol» en todas las rutas con permiso');
+        // Real (guard activa): la muestra coincide con lo previsto.
+        for (const route of ['admin/cursos', 'admin/users', 'admin/stats', 'admin/messages']) {
+          const r = await call(route, { token: tokens[key] });
+          assert.deepEqual([r.status, r.data?.mensaje], [403, NO_ROLE_MESSAGE], key + ' ' + route + ': 403 «sin rol» real');
+        }
       }
-      t.diagnostic('[PREVISTO] con cero gerentes, activar la guard dejaría las 4 cuentas solo con autoservicio (bloqueo total).');
+      t.diagnostic('Con cero gerentes la guard activa deja las 4 cuentas solo con autoservicio (bloqueo total): previsto y comprobado por muestra.');
     });
 
     await t.test('asignación auditada de roles: cada una sube session_version, revoca el JWT anterior y el login nuevo trae el rol y permisos reales', async () => {
@@ -230,7 +237,12 @@ test('E3.5 fase 1: cuentas administrativas preparadas para AccessGuard en un MyS
         const user = await freshLogin(key);
         assert.equal(user.rol, rol);
         assert.deepEqual(sorted(user.permisos), sorted(permissionsOf(rol)), key + ': permisos = matriz real');
+        // El rol nuevo surte efecto real en la autorización con la sesión nueva.
+        assert.equal((await call('admin/cursos', { token: tokens[key] })).status, 200, key + ': lee cursos con su rol');
       }
+      assert.equal((await call('admin/users', { token: tokens.gerente })).status, 200, 'gerente: administra cuentas');
+      for (const key of ['coord', 'sec']) assert.equal((await call('admin/users', { token: tokens[key] })).status, 403, key + ': sin administración de cuentas');
+      assert.equal((await call('admin/stats', { token: tokens.sec })).status, 403, 'secretaria: sin estadísticas');
       const pf = preflight(await listar());
       assert.equal(pf.gerentes, 1);
       assert.deepEqual(pf.bloqueos.length, 1, 'solo queda la cuenta sin rol');
@@ -264,11 +276,11 @@ test('E3.5 fase 1: cuentas administrativas preparadas para AccessGuard en un MyS
       const before = await snapshot();
       const self = await setActive('gerente', 'gerente', false);
       assert.equal(self.status, 409, 'el gerente no puede desactivarse a sí mismo');
-      // En modo heredado la coordinadora todavía alcanza PUT /admin/users/:id (solo la guard lo limitará al gerente): el 409 es la regla de
-      // integridad M-1 (último gerente), NO una denegación por permisos. La autorización efectiva se prueba en E3.6.
+      // Con AccessGuard activa la coordinadora ya no alcanza PUT /admin/users/:id: 403 por permisos antes de la regla M-1 (en modo
+      // heredado llegaba al servicio y recibía 409 «último gerente»). La regla M-1 sigue cubierta por el script y por las pruebas unitarias.
       const byCoord = await setActive('coord', 'gerente', false);
-      assert.equal(byCoord.status, 409);
-      assert.ok(JSON.stringify(byCoord.data).includes(LAST_GERENTE_MESSAGE));
+      assert.deepEqual([byCoord.status, byCoord.data?.mensaje], [403, FORBIDDEN_MESSAGE]);
+      assert.ok(!JSON.stringify(byCoord.data).includes(LAST_GERENTE_MESSAGE), 'la denegación no llega a evaluar la regla de negocio');
       const demote = await assignRole('gerente', S);
       assert.equal(demote.code, 1, 'el script no degrada al último gerente');
       assert.equal(await snapshot(), before, 'ninguna escritura ni auditoría');
@@ -332,6 +344,7 @@ test('E3.5 fase 1: cuentas administrativas preparadas para AccessGuard en un MyS
       assert.deepEqual(sorted(user.permisos), sorted(permissionsOf(G)));
       const p = await predict('recup');
       assert.equal(p.pasa, p.total - p.publica, '[PREVISTO] el gerente recuperado opera todas las rutas');
+      assert.equal((await call('admin/users', { token: tokens.recup })).status, 200, 'real: el gerente recuperado administra cuentas');
       const pf = preflight(await listar());
       assert.deepEqual([pf.gerentes, pf.bloqueos], [1, []], 'dictamen final sin bloqueos');
     });

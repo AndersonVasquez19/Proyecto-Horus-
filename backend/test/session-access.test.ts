@@ -51,8 +51,9 @@ function accounts() {
 const token = (id: number, extra: object = {}) => jwt.sign({ id, email: 'cuenta' + id + '@example.test', version: VERSION, ...extra });
 const ROLES: [number, string][] = [[1, 'GERENTE_GENERAL'], [2, 'COORDINADORA_INSTITUCIONAL'], [3, 'SECRETARIA']];
 
-// withAccessGuard: SOLO en este módulo de prueba, para comprobar el permiso real de POST /admin/messages. La aplicación no la registra.
-async function start(withAccessGuard = false) {
+// withAccessGuard (por defecto): replica la composición de AppModule desde E3.6 (AccessGuard global). `false` solo sirve para la
+// hipótesis de una reversión incompleta (guard retirada sin volver al modo heredado), que no es una configuración admitida.
+async function start(withAccessGuard = true) {
   const db = accounts(); const calls: string[] = [];
   const messages = { create: async () => { calls.push('create'); return { ok: true }; }, remove: async () => { calls.push('remove'); return { ok: true }; } };
   @Module({
@@ -79,7 +80,7 @@ async function start(withAccessGuard = false) {
 const expectedMe = (id: number, nombre: string, rol: string | null) => ({
   ok: true,
   user: { id, nombre, email: 'cuenta' + id + '@example.test', rol, permisos: rol ? permissionsOf(rol) : [] },
-  acceso: { modo: 'heredado' },
+  acceso: { modo: 'por_roles' },
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -99,7 +100,7 @@ test('sessionAccess: rol reconocido con sus permisos; null, desconocido u otro t
 // ---------------------------------------------------------------------------------------------------------------
 // GET /admin/me
 // ---------------------------------------------------------------------------------------------------------------
-test('GET /admin/me: cada rol recibe su rol vigente, sus permisos exactos y el modo heredado, con una sola lectura de la cuenta', async () => {
+test('GET /admin/me: cada rol recibe su rol vigente, sus permisos exactos y el modo por_roles, sin lecturas extra para el rol', async () => {
   const { app, db, call } = await start();
   try {
     for (const [id, rol] of ROLES) {
@@ -107,7 +108,9 @@ test('GET /admin/me: cada rol recibe su rol vigente, sus permisos exactos y el m
       const me = await call('GET', 'admin/me', token(id));
       assert.equal(me.status, 200, rol);
       assert.deepEqual(me.data, expectedMe(id, db.rows[id - 1].nombre, rol), rol);
-      assert.equal(db.state.reads, 1, 'la misma lectura de JwtStrategy aporta el rol: ' + rol);
+      // Dos lecturas de JwtStrategy: la de AccessGuard (ruta «autenticada») y la del JwtAuthGuard local, que aporta el rol.
+      // La consulta repetida se conserva a propósito en E3.6 (optimización pendiente); el rol no añade una tercera.
+      assert.equal(db.state.reads, 2, 'JwtStrategy en AccessGuard y en el JwtAuthGuard local: ' + rol);
     }
     assert.ok((await call('GET', 'admin/me', token(1))).data.user.permisos.includes('cuentas:asignar_rol'));
     assert.ok(!(await call('GET', 'admin/me', token(3))).data.user.permisos.includes('mensajes:eliminar'));
@@ -201,19 +204,37 @@ test('login: conserva sus campos, añade rol, permisos y modo, y el JWT sigue si
 const code = (file: string) => fs.readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const SRC = path.join(__dirname, '..', 'src');
 
-test('el modo declarado coincide con el registro real de AccessGuard: hoy «heredado» porque la guard no está registrada', () => {
-  const registered = /provide:\s*APP_GUARD\s*,\s*(useClass|useExisting)\s*:\s*AccessGuard\b/.test(code(path.join(SRC, 'app.module.ts')));
-  assert.equal(registered, false, 'E3.4.1 no activa la guard');
-  const mode = ACCESS_MODE as string; // tipo amplio: la comparación debe seguir siendo válida cuando E3.6 cambie el valor
+// Coherencia entre el registro de la guard y el modo anunciado, aplicada a un texto de app.module.ts. Se aplica también a las dos
+// configuraciones incoherentes (falsa garantía y guard activa anunciando «heredado») para demostrar que la prueba las detecta.
+const registersAccessGuard = (source: string) => /provide:\s*APP_GUARD\s*,\s*(useClass|useExisting)\s*:\s*AccessGuard\b/.test(source);
+const coherent = (source: string, mode: string) => (mode === 'por_roles') === registersAccessGuard(source);
+
+test('el modo declarado coincide con el registro real de AccessGuard: «por_roles» porque AppModule la registra (E3.6)', () => {
+  const appModule = code(path.join(SRC, 'app.module.ts'));
+  const registered = registersAccessGuard(appModule);
+  assert.equal(registered, true, 'E3.6 registra la guard en AppModule');
+  const mode = ACCESS_MODE as string; // tipo amplio: la comparación sigue siendo válida si una reversión cambia el valor
   // En ambos sentidos: declarar «por_roles» sin registrar la guard (falsa garantía) o registrarla sin declararlo hace fallar esta prueba.
   assert.equal(mode === 'por_roles', registered);
-  assert.equal(mode, 'heredado');
+  assert.ok(coherent(appModule, mode));
+  assert.equal(mode, 'por_roles');
+  // Las dos configuraciones incoherentes se detectan.
+  const withoutGuard = appModule.replace(/\{\s*provide:\s*APP_GUARD\s*,\s*useClass:\s*AccessGuard\s*\}\s*,?/, '');
+  assert.notEqual(withoutGuard, appModule, 'la regla localiza el registro real');
+  assert.equal(coherent(withoutGuard, 'por_roles'), false, '«por_roles» sin guard registrada: falsa garantía');
+  assert.equal(coherent(appModule, 'heredado'), false, 'guard registrada anunciando «heredado»');
+  assert.equal(coherent(withoutGuard, 'heredado'), true, 'reversión completa: coherente');
+  // Sin interruptores: ni el registro ni el modo dependen de variables de entorno.
+  for (const file of ['app.module.ts', 'permissions/session-access.ts', 'permissions/access.guard.ts']) {
+    assert.equal(/process\.env|ConfigService|configService/.test(code(path.join(SRC, file))), false, file + ' no lee configuración para la guard o el modo');
+  }
+  assert.match(code(path.join(SRC, 'permissions/session-access.ts')), /export const ACCESS_MODE: AccessMode = 'por_roles';/);
   // El modo se declara en un único lugar: ningún otro archivo escribe el valor a mano.
   const literal = (file: string) => /['"](heredado|por_roles)['"]/.test(code(file));
   for (const file of ['admin/auth/auth.controller.ts', 'admin/auth/auth.service.ts']) assert.equal(literal(path.join(SRC, file)), false, file);
 });
 
-test('con AccessGuard SOLO en un módulo de prueba: /admin/me sigue abierto sin rol y POST /admin/messages exige mensajes:crear', async () => {
+test('con AccessGuard global (como AppModule): /admin/me sigue abierto sin rol y POST /admin/messages exige mensajes:crear', async () => {
   const { app, call } = await start(true);
   try {
     assert.equal((await call('GET', 'admin/me', token(4))).status, 200, 'autoservicio sin rol');
@@ -237,7 +258,9 @@ test('con AccessGuard SOLO en un módulo de prueba: /admin/me sigue abierto sin 
   } finally { await app.close(); }
 });
 
-test('sin AccessGuard (configuración real actual) nada cambia: cualquier sesión válida, con o sin rol, sigue usando las rutas', async () => {
+// Hipótesis de reversión incompleta (no admitida): retirar la guard deja a cualquier sesión válida usar las rutas. Por eso la reversión
+// devuelve también ACCESS_MODE a «heredado» y la prueba de coherencia anterior lo exige.
+test('sin AccessGuard (reversión incompleta, no admitida) los decoradores no protegen: cualquier sesión válida usa las rutas', async () => {
   const { app, call } = await start(false);
   try {
     for (const id of [3, 4, 6]) {

@@ -1,4 +1,4 @@
-// Integración REAL del panel (H-BACK-01, E3.4.4, fase 2): React compilado (dist/) ↔ NestJS real (backend/dist) ↔ JWT ↔ Prisma ↔ MySQL 8.4
+// Integración REAL del panel (H-BACK-01, E3.4.4 fase 2; contrato por_roles de E3.6): React compilado (dist/) ↔ NestJS real (backend/dist) ↔ JWT ↔ Prisma ↔ MySQL 8.4
 // desechable. No forma parte de ningún `npm test` ni de la CI: se ejecuta a mano y solo contra un servidor MySQL creado para la ocasión.
 // Guía, comandos y casos cubiertos/pendientes: docs/procedimientos/integracion-panel.md.
 //
@@ -12,8 +12,9 @@
 // migrate, admin:create, admin:assign-role con --destino/--servidor/--operador/--motivo). La API arranca desde un directorio vacío (sin .env),
 // con la precarga isolate-env, un entorno mínimo explícito, un JWT_SECRET aleatorio de un solo uso y sin credenciales de correo ni de IA.
 //
-// AccessGuard sigue INACTIVA (acceso.modo = heredado): el backend no devuelve 403 por rol. Aquí se comprueba lo que hace React (qué muestra y
-// qué solicitudes evita) contra respuestas reales; no se comprueba ninguna autorización del servidor (E3.6).
+// E3.6: el NestJS real ya registra AccessGuard (acceso.modo = por_roles) y responde 403 por rol. Aquí se comprueba lo que hace React (qué
+// muestra y qué solicitudes evita) contra respuestas reales, incluidos un 401 y un 403 reales del servidor. El barrido de autorización por
+// ruta está en backend/test/access-guard-http.integration.cjs. La compatibilidad con un backend en modo heredado sigue en los smokes simulados.
 //
 // Real frente a simulado: todas las respuestas proceden del NestJS real. El servidor de smoke-kit sirve dist/ y reenvía /api/* sin cambios
 // (mismo origen, como Caddy en producción). Solo en los casos marcados [SIMULADO] ese reenvío inyecta un fallo de red, un retraso o un
@@ -45,7 +46,9 @@ const ACCOUNTS = {
   sinrol: { nombre: 'Cuenta Sinrol Ficticia', email: 'sinrol@horus-it.test', rol: null },
 };
 const LEGACY_MENU = ['Resumen', 'Educación', 'Servicios tecnológicos', 'Galería de proyectos', 'Preguntas frecuentes', 'Biblioteca de contenido', 'Convenios', 'Mensajes', 'Cotizaciones', 'Consultas del chatbot', 'Información de empresa'];
-const MENU = { gerente: LEGACY_MENU, coord: LEGACY_MENU.filter(item => item !== 'Biblioteca de contenido'), sec: ['Educación', 'Mensajes', 'Consultas del chatbot', 'Información de empresa'], sinrol: LEGACY_MENU };
+const MENU = { gerente: LEGACY_MENU, coord: LEGACY_MENU.filter(item => item !== 'Biblioteca de contenido'), sec: ['Educación', 'Mensajes', 'Consultas del chatbot', 'Información de empresa'], sinrol: [] };
+// Mensajes de AccessGuard (backend/dist, sin Prisma ni configuración).
+const { FORBIDDEN_MESSAGE, NO_ROLE_MESSAGE } = require(path.join(backend, 'dist/permissions/access.guard.js'));
 // Permiso de lectura de cada GET del panel (backend/src/permissions/route-inventory.ts): vigila que ninguna cuenta pida datos que no puede leer.
 const READ = [['stats', 'estadisticas:leer'], ['messages', 'mensajes:leer'], ['cotizaciones', 'cotizaciones:leer'], ['servicios', 'servicios:leer'], ['cursos', 'cursos:leer'],
   ['preguntas-frecuentes', 'preguntas_frecuentes:leer'], ['galeria', 'galeria:leer'], ['convenios', 'convenios:leer'], ['items', 'items:leer'], ['chatbot', 'chatbot_consultas:leer'],
@@ -220,12 +223,12 @@ async function loginSlot() {
     ck(r.status === 200 && same(Object.keys(r.data).sort(), ['acceso', 'mensaje', 'ok', 'token', 'user']) && same(Object.keys(user).sort(), ['email', 'id', 'nombre', 'permisos', 'rol']), key + ': login 200 con user.{id,nombre,email,rol,permisos} y acceso', { status: r.status, keys: r.data && Object.keys(r.data), user: Object.keys(user) });
     ck(user.rol === account.rol && user.rol === rows.find(row => row.email === account.email).rol, key + ': user.rol = ' + account.rol + ' (el mismo valor que la columna admin_users.rol en MySQL)');
     ck(same(user.permisos, expected), key + ': user.permisos = permissionsOf(' + account.rol + ') de policy.ts (' + expected.length + ' permisos)', { recibidos: user.permisos?.length });
-    ck(r.data?.acceso?.modo === 'heredado' && same(Object.keys(r.data.acceso), ['modo']), key + ': acceso.modo = heredado');
+    ck(r.data?.acceso?.modo === 'por_roles' && same(Object.keys(r.data.acceso), ['modo']), key + ': acceso.modo = por_roles');
     ck(!leaks(r.data), key + ': la respuesta no contiene hash, password ni session_version');
     const payload = jwtPayload(tokens[key]);
     ck(same(Object.keys(payload).sort(), ['aud', 'email', 'exp', 'iat', 'id', 'iss', 'version']) && !('rol' in payload) && !('permisos' in payload), key + ': el JWT solo lleva id, email y version (sin rol ni permisos)', Object.keys(payload));
     const me = await call('admin/me', { token: tokens[key] });
-    ck(me.status === 200 && same(me.data.user, user) && same(me.data.acceso, { modo: 'heredado' }) && !leaks(me.data) && same(Object.keys(me.data).sort(), ['acceso', 'ok', 'user']), key + ': /admin/me devuelve exactamente la misma identidad y acceso que el login');
+    ck(me.status === 200 && same(me.data.user, user) && same(me.data.acceso, { modo: 'por_roles' }) && !leaks(me.data) && same(Object.keys(me.data).sort(), ['acceso', 'ok', 'user']), key + ': /admin/me devuelve exactamente la misma identidad y acceso que el login');
   }
   const wrong = await (async () => { await loginSlot(); countLogin(); return call('admin/login', { method: 'POST', body: { email: ACCOUNTS.gerente.email, password: PASSWORD + 'x' } }); })();
   ck(wrong.status === 401 && !wrong.data?.token && wrong.data?.mensaje === 'Credenciales incorrectas.', 'contraseña incorrecta: 401 genérico y sin token');
@@ -236,8 +239,13 @@ async function loginSlot() {
   const logoutRoutes = [];
   for (const route of ['admin/logout', 'admin/auth/logout', 'admin/session']) for (const method of ['POST', 'DELETE']) logoutRoutes.push((await call(route, { token: tokens.gerente, method })).status);
   ck(logoutRoutes.every(status => status === 404), 'no existe ruta de cierre de sesión en el backend (logout/auth/logout/session: 404); el cierre es solo del cliente', logoutRoutes);
-  const stats = await call('admin/stats', { token: tokens.sec });
-  ck(stats.status === 200, 'AccessGuard inactiva: la secretaria obtiene 200 en /admin/stats (esperado en modo heredado; el servidor aún NO protege por rol)', stats.status);
+  // AccessGuard activa: el servidor decide con el rol de MySQL (no con lo que muestre React).
+  const stats = { gerente: await call('admin/stats', { token: tokens.gerente }), coord: await call('admin/stats', { token: tokens.coord }), sec: await call('admin/stats', { token: tokens.sec }), sinrol: await call('admin/stats', { token: tokens.sinrol }) };
+  ck(stats.gerente.status === 200 && stats.coord.status === 200, 'AccessGuard activa: gerente y coordinadora leen /admin/stats (200)', [stats.gerente.status, stats.coord.status]);
+  ck(stats.sec.status === 403 && stats.sec.data?.mensaje === FORBIDDEN_MESSAGE, 'AccessGuard activa: la secretaria recibe 403 real en /admin/stats', stats.sec.status);
+  ck(stats.sinrol.status === 403 && stats.sinrol.data?.mensaje === NO_ROLE_MESSAGE, 'AccessGuard activa: la cuenta sin rol recibe 403 «sin rol» real en /admin/stats', stats.sinrol.status);
+  const users = [await call('admin/users', { token: tokens.gerente }), await call('admin/users', { token: tokens.coord })];
+  ck(users[0].status === 200 && users[1].status === 403, 'AccessGuard activa: solo la gerencia lista cuentas (gerente 200, coordinadora 403)', users.map(r => r.status));
 
   // Datos ficticios mínimos, creados por la API real con la sesión de la gerente.
   const curso = await call('admin/cursos', { token: tokens.gerente, method: 'POST', body: { titulo: 'Capacitación ficticia IT', slug: 'capacitacion-ficticia-it', descripcion: 'Registro ficticio de la prueba integrada.', tipo: 'capacitacion', estado: 'publicado' } });
@@ -260,9 +268,11 @@ async function loginSlot() {
   const readonlyNotice = p => p.evaluate('!!document.querySelector("main [data-panel-readonly]")');
   const calls = async (key, prefix) => (await requests()).filter(r => r.who === key && r.route.startsWith('/api/admin/' + prefix));
   const writes = async key => (await requests()).filter(r => r.who === key && r.method !== 'GET' && r.route !== '/api/admin/login');
-  const forbiddenCalls = async key => { const perms = permissionsOf(ACCOUNTS[key].rol); const legacy = !ACCOUNTS[key].rol;
+  // Modo por_roles: una cuenta sin rol no puede leer nada (permisos vacíos), así que cualquier GET distinto de /admin/me cuenta.
+  const forbiddenCalls = async key => { const perms = permissionsOf(ACCOUNTS[key].rol);
     return (await requests()).filter(r => r.who === key && r.method === 'GET' && r.route !== '/api/admin/me')
-      .filter(r => { const sub = r.route.slice('/api/admin/'.length).split(/[/?]/)[0]; const need = READ.find(([prefix]) => prefix === sub)?.[1]; return !legacy && (!need || !perms.includes(need)); }); };
+      .filter(r => { const sub = r.route.slice('/api/admin/'.length).split(/[/?]/)[0]; const need = READ.find(([prefix]) => prefix === sub)?.[1]; return !need || !perms.includes(need); }); };
+  const deniedResponses = async key => (await requests()).filter(r => r.who === key && r.status === 403);
   const uiLogin = async (p, key, password = PASSWORD) => {
     await loginSlot();
     await p.go('/admin/login', LOGIN_PAGE);
@@ -296,19 +306,28 @@ async function loginSlot() {
     ck((await p.text('#login-error')).length > 0 && (await stored(p)) === null && (await p.evaluate('location.pathname')) === '/admin/login', 'contraseña incorrecta: mensaje en el formulario, sin token guardado y sin abrir el panel', await p.text('#login-error')); }
 
   // ===== B, C, I. Menú e inicio de cada rol =====
-  console.log('\n== B/C/I. MENÚ E INICIO POR ROL Y CUENTA SIN ROL (real, modo heredado)');
+  console.log('\n== B/C/I. MENÚ E INICIO POR ROL Y CUENTA SIN ROL (real, modo por_roles)');
   for (const key of ['gerente', 'coord', 'sec', 'sinrol']) {
     await clean();
     const p = await restore(key);
-    const home = key === 'sec' ? '/admin/messages' : '/admin/dashboard';
-    ck((await p.evaluate('location.pathname')) === home && (await heading(p)).includes(key === 'sec' ? 'Centro de consultas' : 'Hola'), key + ': inicio en ' + home, { path: await p.path(), h1: await heading(p) });
-    ck(same(await menu(p), MENU[key]), key + ': menú esperado (' + MENU[key].length + ' secciones)', await menu(p));
+    if (key === 'sinrol') {
+      const text = await p.text('main');
+      ck((await p.evaluate('location.pathname')) === '/admin/dashboard' && (await notice(p)) === 'sin-rol' && text.includes('no tiene un rol asignado'), 'sin rol: aviso de cuenta sin rol en lugar de un inicio de trabajo', { path: await p.path(), notice: await notice(p) });
+      ck(same(await menu(p), []), 'sin rol: no monta ninguna sección administrativa (menú vacío)', await menu(p));
+      const other = (await requests()).filter(r => r.who === 'sinrol' && r.route !== '/api/admin/me');
+      ck(other.length === 0, 'sin rol: ninguna solicitud administrativa aparte de /admin/me', other);
+    } else {
+      const home = key === 'sec' ? '/admin/messages' : '/admin/dashboard';
+      ck((await p.evaluate('location.pathname')) === home && (await heading(p)).includes(key === 'sec' ? 'Centro de consultas' : 'Hola'), key + ': inicio en ' + home, { path: await p.path(), h1: await heading(p) });
+      ck(same(await menu(p), MENU[key]), key + ': menú esperado (' + MENU[key].length + ' secciones)', await menu(p));
+      ck((await notice(p)) === null, key + ': sin aviso de acceso en el inicio');
+    }
     ck(!(await p.text('aside')).includes('Cuentas y acceso'), key + ': «Cuentas y acceso» no aparece');
-    ck((await notice(p)) === null, key + ': sin aviso de acceso en el inicio' + (key === 'sinrol' ? ' (modo heredado: navegación completa)' : ''));
     const bad = await forbiddenCalls(key);
     ck(bad.length === 0, key + ': ninguna consulta a datos que no puede leer', bad);
+    const denied = await deniedResponses(key);
+    ck(denied.length === 0, key + ': ninguna respuesta 403 real (las secciones ocultas no disparan solicitudes no autorizadas)', denied);
     if (key === 'sec') ck((await calls('sec', 'stats')).length === 0, 'secretaria: el inicio en Mensajes no consulta /admin/stats');
-    if (key === 'sinrol') ck((await calls('sinrol', 'stats')).some(r => r.status === 200), 'sin rol: el Resumen carga /admin/stats con 200 real (heredado; AccessGuard inactiva)');
   }
 
   // ===== D/E. Modo consulta y operaciones permitidas =====
@@ -387,7 +406,31 @@ async function loginSlot() {
     await p.click('aside nav .hp-nav-item', 'Mensajes'); await sleep(300); await p.click('aside nav .hp-nav-item', 'Educación'); await sleep(1500);
     const me = (await requests()).filter(r => r.route === '/api/admin/me');
     ck((await stored(p)) === tokens.coord && (await p.evaluate('!!document.querySelector(".hp-sidebar")')) && me.length >= 1 && me.every(r => r.status === 200), '[SIMULADO] 403 en una sección: no cierra la sesión y revalida con /admin/me real (200)', (await requests()).map(r => r.method + ' ' + r.route + ' ' + (r.fault || r.status))); }
-  obs('El backend real no emite 403 por rol mientras AccessGuard esté inactiva: el 403 real queda pendiente de E3.6.');
+  // 403 REAL. SIMULACIÓN CONTROLADA, EXCLUSIVA DE LA BASE MySQL TEMPORAL de esta ejecución (resources.name, contenedor efímero): un UPDATE
+  // directo cambia el rol de la coordinadora a SECRETARIA SIN incrementar session_version. Es la única forma de obtener un 403 real de
+  // AccessGuard con un JWT que sigue siendo válido: el panel abierto conserva la lista de permisos anterior, así que «Convenios» sigue en
+  // el menú y su GET recibe el 403. NO es un procedimiento administrativo ni debe confundirse con admin:assign-role, que sí incrementa
+  // session_version y revoca las sesiones anteriores (lo comprueba la sección G). Al terminar, otro UPDATE directo restaura el rol.
+  await clean();
+  { const p = await restore('coord', '/admin/dashboard');
+    const sessionBefore = (await db()).find(r => r.email === ACCOUNTS.coord.email).session_version;
+    await q('UPDATE `' + resources.name + '`.admin_users SET rol = ? WHERE email = ?', [S, ACCOUNTS.coord.email]);
+    ACCOUNTS.coord.rol = S;
+    await sleep(5200); log = []; // fuera del intervalo mínimo de revalidación tras un 403 (5 s)
+    await p.click('aside nav .hp-nav-item', 'Convenios');
+    await p.wait('document.body.innerText.includes("no tiene permiso") || document.querySelector("[data-panel-access=denegado]")', 'aviso tras el 403 real', 10000).catch(() => {});
+    const shown = { text: (await p.text('main')).includes('no tiene permiso'), notice: await notice(p) };
+    await p.wait('document.querySelectorAll("aside nav .hp-nav-item").length === ' + MENU.sec.length, 'menú revalidado', 10000).catch(() => {});
+    const seen = await requests();
+    const real403 = seen.filter(r => r.route.startsWith('/api/admin/convenios') && r.status === 403 && !r.fault);
+    const me = seen.filter(r => r.route === '/api/admin/me');
+    ck(real403.length >= 1, '403 REAL de AccessGuard al abrir Convenios con permisos desactualizados (sin fallo inyectado)', seen.map(r => r.method + ' ' + r.route + ' ' + (r.fault || r.status)));
+    ck((await stored(p)) === tokens.coord && (await p.evaluate('!!document.querySelector(".hp-sidebar")')) && !(await p.evaluate('!!(' + LOGIN_PAGE + ')')), '403 real: la sesión se conserva (mismo token, panel abierto, sin volver al login)');
+    ck(shown.text || shown.notice === 'denegado', '403 real: el panel muestra el aviso de falta de permiso', shown);
+    ck(me.length >= 1 && me.every(r => r.status === 200) && same(await menu(p), MENU.sec), '403 real: revalida con /admin/me real (200) y el menú pasa al del rol vigente en MySQL', { me: me.map(r => r.status), menu: await menu(p) });
+    ck((await db()).find(r => r.email === ACCOUNTS.coord.email).session_version === sessionBefore, '403 real: no revoca la sesión (session_version sin cambios)');
+    await q('UPDATE `' + resources.name + '`.admin_users SET rol = ? WHERE email = ?', [C, ACCOUNTS.coord.email]);
+    ACCOUNTS.coord.rol = C; }
 
   // ===== Sesiones entre pestañas =====
   console.log('\n== SESIONES ENTRE PESTAÑAS');
@@ -445,14 +488,16 @@ async function loginSlot() {
   // ===== Revocación por session_version (cambio de contraseña) =====
   console.log('\n== REVOCACIÓN POR session_version: CAMBIO DE CONTRASEÑA (real)');
   await clean();
-  { const p = await restore('sinrol');
+  { const p = await restore('sinrol'); const opened = Date.now();
     const changed = await call('admin/password', { token: tokens.sinrol, method: 'POST', body: { current_password: PASSWORD, password: NEW_PASSWORD } });
-    ck(changed.status === 200, 'POST /admin/password (cuenta sin rol, contraseña ficticia) responde 200');
+    ck(changed.status === 200, 'POST /admin/password (autoservicio de una cuenta sin rol, contraseña ficticia) responde 200 con AccessGuard activa');
     ck((await call('admin/me', { token: tokens.sinrol })).status === 401, 'el JWT anterior ya no vale (session_version incrementado)');
-    await p.click('aside nav .hp-nav-item', 'Mensajes'); await p.wait(LOGIN_PAGE, 'login', 10000).catch(() => {});
-    ck((await p.evaluate('!!(' + LOGIN_PAGE + ')')) && (await stored(p)) === null, 'el panel abierto con ese JWT vuelve al login en su siguiente solicitud');
+    // La cuenta sin rol no tiene secciones que pulsar: su siguiente solicitud es la revalidación al recuperar el foco (como mucho una cada 30 s).
+    await sleep(Math.max(0, opened + 31000 - Date.now())); await p.evaluate('window.dispatchEvent(new Event("focus")); 1');
+    await p.wait(LOGIN_PAGE, 'login', 10000).catch(() => {});
+    ck((await p.evaluate('!!(' + LOGIN_PAGE + ')')) && (await stored(p)) === null && (await requests()).some(r => r.route === '/api/admin/me' && r.status === 401), 'el panel abierto con ese JWT recibe 401 real al revalidar y vuelve al login');
     const relog = await login('sinrol', NEW_PASSWORD);
-    ck(relog.status === 200 && relog.data.user.rol === null && same(relog.data.user.permisos, []) && relog.data.acceso.modo === 'heredado', 'login con la contraseña nueva: rol null, permisos [] y modo heredado'); }
+    ck(relog.status === 200 && relog.data.user.rol === null && same(relog.data.user.permisos, []) && relog.data.acceso.modo === 'por_roles', 'login con la contraseña nueva: rol null, permisos [] y modo por_roles'); }
 
   // ===== Cierre =====
   console.log('\n== ESTADO FINAL');
@@ -469,7 +514,7 @@ async function loginSlot() {
       await sleep(1000);
     }
   }
-  k.finish('Integración real del panel (E3.4.4 fase 2)');
+  k.finish('Integración real del panel (E3.4.4 fase 2, contrato por_roles de E3.6)');
 })().catch(async error => {
   console.error('\nERROR: ' + (error?.stack || error));
   try { await teardown(); } catch (cleanupError) { console.error('Limpieza: ' + cleanupError.message); }

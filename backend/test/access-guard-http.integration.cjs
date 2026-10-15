@@ -1,7 +1,8 @@
-// H-BACK-01, E3.6 fase preparatoria: autorización HTTP REAL con AccessGuard registrada como guard global, SOLO en el proceso de prueba
-// (test/fixtures/access-guard-app.cjs: AppModule sin cambios + AccessGuard como APP_GUARD), contra un MySQL REAL y DESECHABLE y el NestJS
-// compilado (backend/dist). Manual: no forma parte de `npm test`, de test:integration ni de la CI. La aplicación normal sigue sin la guard
-// (ACCESS_MODE = heredado) y esta prueba lo comprueba.
+// H-BACK-01, E3.6: autorización HTTP REAL del AppModule normal, que registra PublicRateLimitGuard → AccessGuard como guards globales
+// (ACCESS_MODE = por_roles), contra un MySQL REAL y DESECHABLE y el NestJS compilado (backend/dist). El arranque de prueba
+// (test/fixtures/access-guard-app.cjs) importa AppModule SIN registrar ninguna guard propia; solo añade un controlador de sondeo, y esta
+// prueba comprueba que toda guard global procede de AppModule. No forma parte de `npm test` ni de test:integration; la CI la ejecuta
+// en su paso propio con el MySQL efímero del runner.
 //
 //   ACCESS_GUARD_HTTP_TEST_DB=true ACCESS_GUARD_HTTP_TEST_SERVER_UUID=<@@server_uuid leído por docker exec> DB_HOST=127.0.0.1 DB_PORT=<puerto>
 //   DB_USER=root DB_PASS=<clave de un solo uso>  node --test -r ./test/isolate-env.cjs test/access-guard-http.integration.cjs
@@ -85,7 +86,7 @@ function signJwt(payload, secret, alg = 'HS256') {
   return alg === 'none' ? data + '.' : data + '.' + createHmac('sha256', secret).update(data).digest('base64url');
 }
 
-test('E3.6 preparatoria: AccessGuard activa SOLO en un módulo de prueba, HTTP real contra MySQL desechable', async t => {
+test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL desechable', async t => {
   if (process.env.ACCESS_GUARD_HTTP_TEST_DB !== 'true') return t.skip('Requiere ACCESS_GUARD_HTTP_TEST_DB=true y un MySQL desechable identificado.');
   assert.ok(existsSync(join(dist, 'main.js')), 'falta backend/dist: ejecuta npm run build');
   const { permissionsOf, canAll } = require(join(dist, 'permissions/policy.js'));
@@ -93,7 +94,7 @@ test('E3.6 preparatoria: AccessGuard activa SOLO en un módulo de prueba, HTTP r
   const { ROUTE_INVENTORY } = require(join(dist, 'permissions/route-inventory.js'));
   const { ACCESS_MODE } = require(join(dist, 'permissions/session-access.js'));
   const { FORBIDDEN_MESSAGE, NO_ROLE_MESSAGE } = require(join(dist, 'permissions/access.guard.js'));
-  assert.equal(ACCESS_MODE, 'heredado', 'la aplicación normal debe seguir en modo heredado');
+  assert.equal(ACCESS_MODE, 'por_roles', 'E3.6: la aplicación normal declara la autorización por roles');
 
   const host = process.env.DB_HOST || '', port = Number(process.env.DB_PORT || 0);
   const expectedUuid = String(process.env.ACCESS_GUARD_HTTP_TEST_SERVER_UUID ?? '').trim().toLowerCase();
@@ -234,9 +235,15 @@ test('E3.6 preparatoria: AccessGuard activa SOLO en un módulo de prueba, HTTP r
     const mensaje = { nombre: 'Persona Ficticia', email: 'persona@horus-e36.test', asunto: 'Consulta ficticia', mensaje: 'Mensaje ficticio de la prueba E3.6.' };
     const fixtures = {};
 
-    await t.test('ensamblado: AppModule + AccessGuard global resuelve sus dependencias, conserva PublicRateLimitGuard y no deja rutas admin sin clasificar', () => {
+    await t.test('ensamblado: el AppModule real registra PublicRateLimitGuard → AccessGuard, resuelve sus dependencias y no deja rutas admin sin clasificar', () => {
       assert.deepEqual(ready.resolved, { JwtAuthGuard: true, AccountAccessService: true, JwtStrategy: true, PublicRateLimitGuard: true, AccessGuard: true });
-      assert.deepEqual([...ready.globalGuards].sort(), ['AccessGuard', 'PublicRateLimitGuard'], 'exactamente las dos guards globales');
+      assert.deepEqual(ready.globalGuards, ['PublicRateLimitGuard', 'AccessGuard'], 'exactamente dos guards globales, en este orden');
+      // Toda guard global procede de AppModule; el módulo de prueba no registra ninguna (ni una segunda AccessGuard).
+      assert.deepEqual(ready.guardProviders, [{ module: 'AppModule', guard: 'PublicRateLimitGuard' }, { module: 'AppModule', guard: 'AccessGuard' }]);
+      // (El arranque importa AccessGuard y sus dependencias solo para comprobar que el AppModule las resuelve.)
+      const fixtureCode = readFileSync(fixture, 'utf8').replace(/^\s*\/\/.*$/gm, '');
+      assert.match(fixtureCode, /Module\(\{\s*imports: \[AppModule\],\s*controllers: \[ProbeController\],\s*\}\)/, 'el módulo de prueba solo importa AppModule y añade el sondeo');
+      assert.ok(!/providers\s*:|UseGuards|useGlobalGuards/.test(fixtureCode), 'el arranque de prueba no registra guards ni proveedores');
       const registered = ready.routes.map(route => route.method + ' ' + route.path.replace(/^\/api\//, ''));
       const inventory = ROUTE_INVENTORY.map(entry => entry.method + ' ' + entry.path);
       const probes = ['GET admin/e36-sondeo', 'GET admin/e36-sondeo/mal-declarada'];
@@ -249,7 +256,7 @@ test('E3.6 preparatoria: AccessGuard activa SOLO en un módulo de prueba, HTTP r
         assert.ok(main.includes(line), 'main.ts conserva: ' + line);
       }
       const appModule = readFileSync(join(dist, 'app.module.js'), 'utf8');
-      assert.ok(!/AccessGuard/.test(appModule), 'el AppModule compilado no registra AccessGuard');
+      assert.match(appModule, /provide: core_1\.APP_GUARD, useClass: access_guard_1\.AccessGuard/, 'el AppModule compilado registra AccessGuard');
       t.diagnostic('Rutas registradas: ' + registered.length + ' (' + inventory.length + ' del inventario + ' + probes.length + ' de sondeo). Guards globales: ' + ready.globalGuards.join(' → ') + '.');
     });
 
@@ -263,8 +270,15 @@ test('E3.6 preparatoria: AccessGuard activa SOLO en un módulo de prueba, HTTP r
         assert.deepEqual(me.data.user, r.data.user);
         assert.equal(me.data.user.rol, ACCOUNTS[key].rol);
         assert.deepEqual([...me.data.user.permisos].sort(), permissionsOf(ACCOUNTS[key].rol));
-        // ACCESS_MODE no se cambia en esta etapa: con la guard activa el backend sigue declarando «heredado» (ver informe, punto 7).
-        assert.deepEqual(me.data.acceso, { modo: 'heredado' });
+        // E3.6: login y /admin/me anuncian el modo real; los permisos salen del rol de la base (no del JWT, que no los lleva).
+        assert.deepEqual(r.data.acceso, { modo: 'por_roles' });
+        assert.deepEqual(me.data.acceso, { modo: 'por_roles' });
+        const payload = JSON.parse(Buffer.from(tokens[key].split('.')[1], 'base64url').toString('utf8'));
+        assert.deepEqual(Object.keys(payload).sort(), ['aud', 'email', 'exp', 'iat', 'id', 'iss', 'version'], key + ': el JWT no lleva rol ni permisos');
+        for (const body of [r.data, me.data]) {
+          assert.ok(!/password|session_version|activo|\$2[aby]\$/i.test(JSON.stringify(body)), key + ': sin hashes ni estado interno');
+        }
+        assert.deepEqual(Object.keys(me.data.user).sort(), ['email', 'id', 'nombre', 'permisos', 'rol']);
       }
     });
 
@@ -456,8 +470,17 @@ test('E3.6 preparatoria: AccessGuard activa SOLO en un módulo de prueba, HTTP r
       assert.ok(!('token' in (wrong.data ?? {})));
     });
 
-    await t.test('8. conservación de cursos: 403 (autorización) antes que 409 (negocio) y 404 (inexistente)', async () => {
+    await t.test('8. conservación de cursos: 403 (autorización) antes que 409 (negocio) y 404 (inexistente); registros e imágenes intactos', async () => {
       const count = async () => Number((await q('SELECT COUNT(*) AS n FROM cursos'))[0].n);
+      // El curso de prueba recibe una imagen subida de verdad para comprobar que ningún intento la elimina.
+      const form = new FormData(); form.append('file', new Blob([PNG], { type: 'image/png' }), 'curso-e36.png');
+      const upload = await call('admin/uploads', { method: 'POST', token: tokens.gerente, form });
+      assert.equal(upload.status, 201);
+      const imagen = '/api' + upload.data.path;
+      assert.equal((await call('admin/cursos/' + fixtures.curso, { method: 'PUT', token: tokens.gerente, body: { imagen_url: imagen } })).status, 200);
+      const file = join(uploads, imagen.split('/').pop());
+      assert.ok(existsSync(file), 'la imagen está en el directorio temporal de subidas');
+      const snapshot = await businessSnapshot();
       const before = await count();
       const conflict = await call('admin/cursos/' + fixtures.curso, { method: 'DELETE', token: tokens.gerente });
       assert.equal(conflict.status, 409, 'gerente: borrado físico prohibido por negocio');
@@ -466,7 +489,11 @@ test('E3.6 preparatoria: AccessGuard activa SOLO en un módulo de prueba, HTTP r
       denied(await call('admin/cursos/999999', { method: 'DELETE', token: tokens.sec }), 'secretaria: inexistente (no revela existencia)');
       denied(await call('admin/cursos/' + fixtures.curso, { method: 'DELETE', token: tokens.coord }), 'coordinadora: sin cursos:eliminar');
       assert.equal(await count(), before, 'ningún curso perdido');
-      assert.equal((await call('admin/cursos/' + fixtures.curso, { token: tokens.gerente })).status, 200);
+      assert.deepEqual(await businessSnapshot(), snapshot, 'registros, relaciones y archivos sin cambios (409, 404 y 403)');
+      assert.deepEqual(readFileSync(file), PNG, 'la imagen del curso sigue intacta');
+      const detail = await call('admin/cursos/' + fixtures.curso, { token: tokens.gerente });
+      assert.equal(detail.status, 200);
+      assert.equal(detail.data.item.imagen_url, imagen);
     });
 
     await t.test('6. sin efectos ante denegaciones con cuerpos VÁLIDOS: negocio, relaciones, auditoría, archivos y correo intactos', async () => {
@@ -497,7 +524,8 @@ test('E3.6 preparatoria: AccessGuard activa SOLO en un módulo de prueba, HTTP r
       // POST admin/register es la única ruta de la lista con límite de frecuencia. Si PublicRateLimitGuard se ejecuta antes que AccessGuard, el
       // intento denegado consume cuota (escritura técnica: 2 incrementos, individual y global); si AccessGuard va primero, no escribe nada.
       const rateFirst = ready.globalGuards.indexOf('PublicRateLimitGuard') < ready.globalGuards.indexOf('AccessGuard');
-      assert.equal(technical, rateFirst ? 2 : 0, 'escritura técnica coherente con el orden de las guards');
+      assert.equal(rateFirst, true, 'E3.6 fija el orden PublicRateLimitGuard → AccessGuard');
+      assert.equal(technical, 2, 'el intento denegado consumió cuota (escritura técnica coherente con el orden)');
       assert.ok(!/Notificación aceptada|nodemailer|smtp/i.test(apiLog), 'ningún envío de correo');
       t.diagnostic(after.tables + ' tablas de negocio comparadas por CHECKSUM y recuento. Escritura técnica observada: rate_limit_buckets +' + technical + ' (orden de guards: ' + ready.globalGuards.join(' → ') + ').');
     });
@@ -509,14 +537,63 @@ test('E3.6 preparatoria: AccessGuard activa SOLO en un módulo de prueba, HTTP r
     });
 
     await t.test('compatibilidad con PublicRateLimitGuard: con la guard activa el límite de POST admin/register (5/min) sigue aplicándose', async () => {
-      // Las cinco solicitudes deben caer en la misma ventana de un minuto: si quedan menos de 10 s, se espera a la siguiente.
-      if (Date.now() % 60_000 > 50_000) await sleep(60_000 - (Date.now() % 60_000) + 1000);
+      // Las seis solicitudes deben caer en una ventana de un minuto en la que nadie haya usado aún la cuota de esta ruta: la prueba 6
+      // también envía un POST admin/register (denegado, pero con la guard de frecuencia primero consume cuota). Se espera a la siguiente.
+      await sleep(60_000 - (Date.now() % 60_000) + 1000);
       const created = await call('admin/register', { method: 'POST', token: tokens.gerente, body: { nombre: 'Registrada Ficticia', email: 'registrada@horus-e36.test', password: PASSWORD } });
       assert.equal(created.status, 201, 'el gerente crea una cuenta');
       assert.equal((await q('SELECT rol FROM admin_users WHERE email = ?', ['registrada@horus-e36.test']))[0].rol, null, 'la cuenta nace sin rol');
       const statuses = [];
       for (let i = 0; i < 5; i++) statuses.push((await call('admin/register', { method: 'POST', token: tokens.gerente, body: {} })).status);
       assert.deepEqual(statuses, [400, 400, 400, 400, 429], 'cuatro llegan a la validación; la sexta del minuto es 429');
+    });
+
+    await t.test('orden PublicRateLimitGuard → AccessGuard: cuotas, 429, 401/403 antes de agotar la cuota y rutas sin límite intactas', async () => {
+      assert.deepEqual(ready.globalGuards, ['PublicRateLimitGuard', 'AccessGuard']);
+      // Todas las secuencias caen en una ventana de un minuto nueva (no se eluden los límites: se espera a la siguiente).
+      await sleep(60_000 - (Date.now() % 60_000) + 1000);
+      const window = Math.floor(Date.now() / 60_000);
+      const post = (route, token, body) => call(route, { method: 'POST', token, body });
+
+      // a) POST admin/register (5/min): cada intento sin sesión o sin permiso consume cuota; mientras queda cuota responde 401/403;
+      //    agotada, 429 incluso para el gerente con un cuerpo válido, y no se crea la cuenta.
+      const valid = { nombre: 'Cuota Ficticia', email: 'cuota@horus-e36.test', password: PASSWORD };
+      let quotas = await buckets();
+      const reg = [await post('admin/register', undefined, valid), await post('admin/register', 'basura', valid), await post('admin/register', tokens.sinrol, valid),
+        await post('admin/register', tokens.coord, valid), await post('admin/register', tokens.sec, valid), await post('admin/register', tokens.gerente, valid)];
+      assert.deepEqual(reg.map(r => r.status), [401, 401, 403, 403, 403, 429]);
+      assert.deepEqual([reg[2].data?.mensaje, reg[3].data?.mensaje], [NO_ROLE_MESSAGE, FORBIDDEN_MESSAGE]);
+      assert.equal(bucketGrowth(quotas, await buckets()), 12, 'seis intentos × (cuota individual + global de la ruta)');
+      assert.equal(Number((await q('SELECT COUNT(*) AS n FROM admin_users WHERE email = ?', [valid.email]))[0].n), 0, 'el 429 no crea la cuenta');
+
+      // b) POST admin/password (5/min, autoservicio): 401 sin sesión válida y 400 con la contraseña actual incorrecta consumen cuota;
+      //    el sexto intento, aun con datos correctos, es 429 y no cambia la contraseña ni revoca sesiones.
+      const secBefore = await account('sec');
+      const wrong = { current_password: PASSWORD + 'x', password: NEW_PASSWORD };
+      const pwd = [await post('admin/password', undefined, wrong), await post('admin/password', 'basura', wrong), await post('admin/password', tokens.sec, wrong),
+        await post('admin/password', tokens.sec, wrong), await post('admin/password', tokens.sec, wrong), await post('admin/password', tokens.sec, { current_password: PASSWORD, password: NEW_PASSWORD })];
+      assert.deepEqual(pwd.map(r => r.status), [401, 401, 400, 400, 400, 429]);
+      assert.equal((await account('sec')).session_version, secBefore.session_version, 'el 429 no cambia la contraseña');
+      assert.equal((await call('admin/me', { token: tokens.sec })).status, 200, 'la sesión de la secretaria sigue válida');
+
+      // c) POST admin/login (10/min, pública): diez intentos fallidos dan 401; el undécimo, con credenciales correctas, 429 sin token.
+      const fails = [];
+      for (let i = 0; i < 10; i++) fails.push((await call('admin/login', { method: 'POST', body: { email: ACCOUNTS.gerente.email, password: PASSWORD + 'x' } })).status);
+      assert.deepEqual(fails, Array(10).fill(401));
+      const blocked = await call('admin/login', { method: 'POST', body: { email: ACCOUNTS.gerente.email, password: PASSWORD } });
+      assert.equal(blocked.status, 429);
+      assert.ok(!('token' in (blocked.data ?? {})));
+      logins.window = window; logins.count = 11; // el ayudante login() respeta la cuota ya consumida
+      assert.equal(Math.floor(Date.now() / 60_000), window, 'las tres secuencias cayeron en la misma ventana');
+
+      // d) Rutas fuera del límite: sin 429 por repetición y sin escritura técnica; conservan su 200/403 habitual.
+      quotas = await buckets();
+      for (let i = 0; i < 12; i++) assert.equal((await call('admin/cursos', { token: tokens.sec })).status, 200, 'GET admin/cursos #' + i);
+      for (let i = 0; i < 7; i++) denied(await call('admin/settings', { method: 'PUT', token: tokens.coord, body: { telefono_principal: '+51 000 000 000' } }), 'PUT admin/settings #' + i);
+      for (let i = 0; i < 7; i++) denied(await call('admin/messages', { method: 'POST', token: tokens.sinrol, body: mensaje }), 'POST admin/messages #' + i, NO_ROLE_MESSAGE);
+      for (let i = 0; i < 7; i++) assert.equal((await call('cursos')).status, 200, 'GET cursos (pública) #' + i);
+      assert.equal(bucketGrowth(quotas, await buckets()), 0, 'las rutas sin límite no consumen cuota');
+      t.diagnostic('Orden verificado: ' + ready.globalGuards.join(' → ') + '. register ' + reg.map(r => r.status).join('/') + '; password ' + pwd.map(r => r.status).join('/') + '; login 10×401 → 429.');
     });
 
     await t.test('ciclo de vida: al cortar el canal IPC el ensamblado deja de escuchar y sale solo, sin terminación forzada', async () => {

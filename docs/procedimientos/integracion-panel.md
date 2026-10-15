@@ -1,8 +1,8 @@
 # Integración real del panel (React ↔ NestJS ↔ MySQL 8.4 desechable)
 
-Estado: **H-BACK-01, E3.4.4 fase 2 (local, sin publicar)**. Script: [`frontend/scripts/integration-panel.cjs`](../../frontend/scripts/integration-panel.cjs).
+Estado: **H-BACK-01, E3.4.4 fase 2, adaptada a E3.6 (local, sin publicar)**. Script: [`frontend/scripts/integration-panel.cjs`](../../frontend/scripts/integration-panel.cjs).
 
-**AccessGuard sigue inactiva** (`acceso.modo = heredado`): el backend no responde 403 por rol y cualquier sesión válida puede llamar a cualquier ruta administrativa. Esta prueba comprueba lo que hace **React** con respuestas reales (qué muestra y qué solicitudes evita). **No** demuestra ninguna autorización del servidor; esa se probará al activar AccessGuard (E3.6). Una ausencia de 403 aquí no es un fallo.
+**E3.6: el NestJS real ya aplica AccessGuard** (`acceso.modo = por_roles`, código candidato sin desplegar; ver [activacion-accessguard.md](activacion-accessguard.md)). Esta prueba comprueba lo que hace **React** con respuestas reales (qué muestra y qué solicitudes evita), incluidos un 401 y un 403 reales del servidor. El barrido de autorización ruta por ruta está en `backend/test/access-guard-http.integration.cjs`. La compatibilidad con un backend antiguo en modo `heredado` se sigue cubriendo con los smokes de API simulada (`smoke:session-access`, `smoke:panel-access`, `smoke:panel-actions`).
 
 No forma parte de `npm test`, de los `test:*` ni de la CI (necesita Edge y Docker en la máquina). Se ejecuta a mano, en serie y solo contra un MySQL creado para la ocasión.
 
@@ -62,7 +62,7 @@ Si una comprobación falla o el script lanza un error, la ruta de error detiene 
 
 Comprobaciones posteriores: `docker ps -a --filter label=horus.purpose=e344-integracion` vacío y ningún Edge con perfil `horus-panel-it-*` (`Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -match 'horus-panel-it' }`).
 
-Salida: una línea `OK`/`FALLA` por comprobación (106 en total), `OBS` para observaciones que no son fallos y código 0 solo si todo pasa. Dura unos 2–3 minutos. Ningún token, contraseña ni `JWT_SECRET` aparece en la salida.
+Salida: una línea `OK`/`FALLA` por comprobación (117 en total desde E3.6), `OBS` para observaciones que no son fallos y código 0 solo si todo pasa. Dura unos 3–4 minutos (incluye una espera de 31 s para la revalidación por foco). Ningún token, contraseña ni `JWT_SECRET` aparece en la salida.
 
 ## Qué cubre
 
@@ -70,41 +70,43 @@ Salida: una línea `OK`/`FALLA` por comprobación (106 en total), `OBS` para obs
 
 | Área | Casos | Tipo |
 | --- | --- | --- |
-| Contrato `POST /api/admin/login` y `GET /api/admin/me` | Claves exactas `user.{id,nombre,email,rol,permisos}` y `acceso.{modo}`; `rol` igual a la columna `admin_users.rol`; `permisos` igual a `permissionsOf(rol)`; `acceso.modo = heredado`; sin hash, `password` ni `session_version`; JWT solo con `id`, `email`, `version` (más `iat`, `exp`, `iss`, `aud`); `/me` idéntico al login; cuenta sin rol con `rol: null` y `permisos: []` | Real |
+| Contrato `POST /api/admin/login` y `GET /api/admin/me` | Claves exactas `user.{id,nombre,email,rol,permisos}` y `acceso.{modo}`; `rol` igual a la columna `admin_users.rol`; `permisos` igual a `permissionsOf(rol)`; `acceso.modo = por_roles`; sin hash, `password` ni `session_version`; JWT solo con `id`, `email`, `version` (más `iat`, `exp`, `iss`, `aud`); `/me` idéntico al login; cuenta sin rol con `rol: null` y `permisos: []` | Real |
 | Rechazos | Contraseña incorrecta (401 genérico, sin token); `/me` sin token, con token mal formado o con JWT alterado (rol añadido): 401 | Real |
+| Autorización del servidor (E3.6) | `/admin/stats`: gerente y coordinadora 200, secretaria 403, cuenta sin rol 403 «sin rol»; `/admin/users`: gerente 200, coordinadora 403 | Real |
 | Cierre de sesión | No existe ruta de logout en el backend (404); el panel borra el token sin llamar al servidor | Real |
 | A. Login y restauración | Login por el formulario sin consultar `/me` después; solo el token en `localStorage`; recarga con una sola consulta a `/me`; contraseña incorrecta sin token | Real |
-| B/C/I. Menú por rol | Inicio y menú de gerente, coordinadora, secretaria (inicio en Mensajes sin `/admin/stats`) y cuenta sin rol (navegación heredada completa); «Cuentas y acceso» ausente; ninguna consulta a datos sin permiso de lectura | Real |
+| B/C/I. Menú por rol | Inicio y menú de gerente, coordinadora, secretaria (inicio en Mensajes sin `/admin/stats`) y cuenta sin rol (aviso «sin rol», menú vacío y ninguna solicitud aparte de `/me`); «Cuentas y acceso» ausente; ninguna consulta a datos sin permiso de lectura y ninguna respuesta 403 real durante la navegación | Real |
 | D/E. Operaciones | Secretaria: Capacitaciones e Información de empresa en modo consulta, Enter sin PUT, Mensajes sin Eliminar ni Preparar cotización; «Iniciar atención» llega a la API y se confirma (200). Coordinadora y gerente: botones esperados | Real |
 | F. Enlaces directos | Secretaria a Cotizaciones, Resumen, Convenios y Biblioteca; coordinadora a Biblioteca: aviso, sin redirección y sin solicitudes. `?section=cuentas` no monta la sección | Real |
 | G. Cambio de rol | `admin:assign-role` (auditado) cambia secretaria → coordinadora e incrementa `session_version`; el JWT anterior da 401; el panel abierto vuelve al login («Tu sesión terminó»); el nuevo login muestra el menú de coordinadora y `/me` informa el rol nuevo | Real |
 | H. Cierre y JWT inválido | Cerrar sesión borra el token y no lo presenta como caducada; token mal formado o alterado: 401, se borra y se muestra el login | Real |
-| Revocación por `session_version` | `POST /admin/password` invalida el JWT anterior y el panel abierto vuelve al login; el nuevo login de la cuenta sin rol mantiene `rol: null` | Real |
+| Revocación por `session_version` | `POST /admin/password` (autoservicio de la cuenta sin rol) invalida el JWT anterior; el panel abierto recibe 401 real al revalidar por foco y vuelve al login; el nuevo login mantiene `rol: null` y `por_roles` | Real |
 | J. Errores temporales | Fallo de red o 503 en `/me` al restaurar: aviso con Reintentar, sin borrar la sesión; Reintentar consulta la API real y abre el panel. Fallo de red en una sección: la sesión se conserva | [SIMULADO] |
 | 401 frente a 403 | 403 en una sección: no cierra la sesión y revalida con `/me` real | [SIMULADO] |
+| 403 real | El rol de la coordinadora se cambia a SECRETARIA **directamente en la base temporal, sin subir `session_version`** (operación de prueba controlada; el procedimiento autorizado revocaría la sesión). Al abrir Convenios, AccessGuard responde 403: la sesión se conserva, se muestra el aviso de falta de permiso, `/me` real (200) actualiza el menú al rol vigente y `session_version` no cambia | Real (el desfase de rol se provoca en la base temporal) |
 | Pestañas | Otra pestaña escribe un token real de otra cuenta: la primera lo valida con `/me` y cambia de cuenta (modelo compartido actual, sin cambios) | Real (la otra pestaña escribe el almacenamiento en lugar de usar su formulario) |
 | Respuesta tardía | `/me` retrasado 3 s y la otra pestaña cierra sesión mientras tanto: la respuesta tardía no reabre el panel | [SIMULADO] el retraso |
 
 ## Pendiente (no cubierto aquí)
 
-- **Autorización real del servidor** (403 por rol, rutas protegidas por permiso, cuentas sin rol en `por_roles`): exige AccessGuard activa. E3.6.
+- **Barrido de autorización ruta por ruta**: no se repite aquí; está en `backend/test/access-guard-http.integration.cjs` (E3.6, también en la CI).
 - **Revocación al cerrar sesión**: el backend no tiene logout; el JWT sigue siendo válido hasta su caducidad (8 h) o hasta que cambie `session_version`. La prueba lo comprueba y lo deja como observación.
-- **Cambio de permisos «en caliente»**: con el procedimiento autorizado (`admin:assign-role`) todo cambio de rol revoca la sesión, así que no se puede producir una revalidación de `/me` con permisos distintos y la sesión viva. La revalidación al recibir el foco o un 403 se cubre con API simulada (`smoke:session-access`).
+- **Cambio de permisos «en caliente» por el procedimiento autorizado**: `admin:assign-role` siempre revoca la sesión, así que ese camino no deja la sesión viva con permisos distintos. Solo se ejerce provocando el desfase directamente en la base temporal (caso «403 real»); la revalidación por foco o tras un 403 se cubre además con API simulada (`smoke:session-access`).
 - **Login correcto seguido de un fallo de `/me` y restauración del token anterior**: el backend real devuelve el contrato completo y el panel no consulta `/me` tras el login, de modo que ese camino no se alcanza sin alterar la respuesta real. Lo cubren `test:session-access` y `smoke:session-access` (simulados).
 - **Login simultáneo en dos pestañas con el formulario** y carreras de varias pestañas a la vez: solo se probó el cambio de cuenta y el cierre desde otra pestaña.
 - **Desactivación de cuentas** (`PUT /admin/users/:id`): pertenece a «Cuentas y acceso», que sigue sin habilitar.
 - Linux y la CI: el script no se ha ejecutado fuera de Windows, y ni él ni los smokes de navegador forman parte de la CI.
 
-## Riesgos pendientes para E3.5 y E3.6
+## Riesgos pendientes
 
-Registrados aquí; esta fase no cambia nada de producción.
+Registrados aquí; esta prueba no cambia nada de producción.
 
 - Cerrar sesión no revoca el JWT en el servidor (válido hasta 8 h o hasta que cambie `session_version`).
-- AccessGuard sigue inactiva: falta probar el 403 real por rol y el modo `por_roles` (incluidas las cuentas sin rol).
+- E3.6 (guard activa y `por_roles`) está probada solo en local con cuentas ficticias; no está desplegada y las cuentas reales no se han preparado.
 - No se ha probado el login simultáneo con el formulario en dos pestañas.
 - Integración ejecutada solo en Windows; los smokes de navegador siguen fuera de la CI.
 - Errores `EPERM` intermitentes al borrar perfiles de Edge (ver «Problemas conocidos»).
-- La conservación de cursos y capacitaciones se trabaja en un worktree aislado (`fix/conservacion-cursos-capacitaciones`) y todavía no está integrada: esta prueba no la cubre.
+- La conservación de cursos y capacitaciones (integrada en `anderson`, `4defa3b`) no se prueba desde el navegador aquí; la cubren `prisma.integration.cjs` y `access-guard-http.integration.cjs`.
 
 ## Problemas conocidos
 

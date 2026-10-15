@@ -5,7 +5,7 @@ interface AdminAuthContextValue {
  user: AdminUser | null; token: string | null; isAuthenticated: boolean; checking: boolean;
  // Rol, permisos y modo de acceso que el BACKEND informó para la cuenta validada (login o /admin/me); solo en memoria.
  // null mientras la sesión no está validada (cargando, sin sesión o con error): nunca se muestran funciones antes de conocerlos.
- // Es información para adaptar la interfaz, no una autorización: el backend es quien decide (hoy `mode` es «heredado» y no aplica permisos).
+ // Es información para adaptar la interfaz, no una autorización: el backend es quien decide (desde E3.6 informa «por_roles» y aplica los permisos con AccessGuard).
  access: SessionAccess | null;
  sessionError: string; retrySession: () => void;
  // Por qué terminó la última sesión: 'expired' = el servidor la invalidó; 'logout' = cierre voluntario (aquí o en otra pestaña).

@@ -8,8 +8,8 @@ import { requirementFor } from './access';
 import { canAll } from './policy';
 import { AdminRole, isAdminRole } from './roles';
 
-// E3.3 — PREPARADO, NO ACTIVO. Ningún módulo registra AccessGuard (ni con @UseGuards ni como APP_GUARD): hoy todas las rutas
-// administrativas siguen protegidas solo por JwtAuthGuard. Activarla es una etapa posterior que exige autorización expresa.
+// E3.6 — ACTIVA. AppModule la registra como APP_GUARD, después de PublicRateLimitGuard, junto con ACCESS_MODE = 'por_roles'.
+// Ningún otro módulo la registra (ni con @UseGuards ni como APP_GUARD). Los JwtAuthGuard locales de los controladores se conservan.
 
 export const UNAUTHORIZED_MESSAGE = 'Usuario no encontrado o inactivo.';
 export const NO_ROLE_MESSAGE = 'Tu cuenta no tiene un rol asignado. Solicita a la gerencia que te asigne uno.';
