@@ -17,7 +17,8 @@ export default function AdminLogin() {
   const state = location.state as { from?: unknown; expired?: unknown } | null;
   const returnTo = safeAdminReturn(state?.from) ?? "/admin/dashboard"; // solo rutas internas del panel validadas
   const expired = state?.expired === true;
-  const { login, isAuthenticated } = useAdminAuth();
+  const { login, isAuthenticated, checking } = useAdminAuth();
+  const awaitingPanel = useRef(false); // login correcto cuyo panel aún no se abrió (puede faltar validar la sesión con /admin/me)
   const [form, setForm] = useState({ email: '', password: '' });
   const [mensaje, setMensaje] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,6 +36,14 @@ export default function AdminLogin() {
     // As a transition, the login stays on screen until the panel is ready instead of flashing a loading page.
     if (isAuthenticated) startTransition(() => navigate(returnTo, { replace: true }));
   }, [isAuthenticated, navigate, returnTo]);
+
+  // Tras un login correcto el formulario sigue bloqueado hasta abrir el panel. Si la validación con /admin/me falla (servidor caído,
+  // respuesta incompatible, sesión rechazada), el formulario no puede quedar bloqueado para siempre: se libera con un aviso genérico.
+  useEffect(() => {
+    if (!awaitingPanel.current || checking || isAuthenticated) return;
+    awaitingPanel.current = false; locked.current = false;
+    setLoading(false); setMensaje('No pudimos abrir tu sesión. Inténtalo nuevamente en unos minutos.');
+  }, [checking, isAuthenticated]);
 
   // Download the panel while the user fills in the form so signing in opens it right away.
   useEffect(() => { void import('./AdminDashboard'); }, []);
@@ -63,7 +72,8 @@ export default function AdminLogin() {
       if (controller.signal.aborted || attempt.current !== controller || !alive.current) return; // intento antiguo o pantalla abandonada
       // A correct login is not a message: the form stays locked until the panel opens.
       signedIn = true;
-      login(response.token, response.user);
+      awaitingPanel.current = true;
+      login(response.token, response); // el contexto decide si el contrato de roles viene completo o si hay que validar con /admin/me
     } catch (error) {
       if (attempt.current !== controller || !alive.current || (controller.signal.aborted && !timedOut)) return;
       setMensaje(authError('login', error, timedOut).message);

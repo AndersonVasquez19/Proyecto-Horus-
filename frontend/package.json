@@ -19,6 +19,7 @@
     "test:mail-outcome": "node --experimental-strip-types --test tests/mail-outcome.test.mjs",
     "test:message-export": "node --experimental-strip-types --test tests/message-export.test.mjs",
     "test:notify": "node --experimental-strip-types --test tests/notify.test.mjs",
+    "test:session-access": "node --experimental-strip-types --test tests/session-access.test.mjs",
     "smoke:messages-table": "npm run build && node scripts/smoke-messages-table.cjs",
     "smoke:message-detail": "npm run build && node scripts/smoke-message-detail.cjs",
     "smoke:attention-conflicts": "npm run build && node scripts/smoke-attention-conflicts.cjs",
@@ -29,7 +30,8 @@
     "smoke:message-responsive": "npm run build && node scripts/smoke-message-responsive.cjs",
     "smoke:quote-origin": "npm run build && node scripts/smoke-quote-origin.cjs",
     "smoke:panel-toasts": "npm run build && node scripts/smoke-panel-toasts.cjs",
-    "smoke:chatbot": "npm run build && node scripts/smoke-chatbot.cjs"
+    "smoke:chatbot": "npm run build && node scripts/smoke-chatbot.cjs",
+    "smoke:session-access": "npm run build && node scripts/smoke-session-access.cjs"
   },
   "dependencies": {
     "react": "^19.2.5",
