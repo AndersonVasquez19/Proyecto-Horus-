@@ -48,6 +48,8 @@ export function authError(action: AuthAction, error: unknown, timedOut = false):
   if (status === 400 && /actual/i.test(detail)) return done('La contraseña actual no es correcta.')
   if (status === 409) return done('Tu cuenta cambió. Inicia sesión nuevamente.')
   if (kind === 'badRequest') return done('Revisa los datos ingresados: la nueva contraseña debe tener entre 8 y 72 caracteres.')
+  // 403 es falta de permiso, no una sesión vencida (la sesión sigue abierta); 401 sí la invalida.
+  if (status === 403) return done('Tu cuenta no tiene permiso para realizar esta acción.')
   if (kind === 'forbidden') return done('Tu sesión venció. Inicia sesión nuevamente.')
   return done(BASE.server)
 }

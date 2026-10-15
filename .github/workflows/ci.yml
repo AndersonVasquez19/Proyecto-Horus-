@@ -73,6 +73,7 @@ jobs:
           npm run test:message-export
           npm run test:notify
           npm run test:session-access
+          npm run test:panel-access
       - run: npm run build
 
   # MySQL efímero del propio runner: se crea y se destruye con el job, con una contraseña de un solo uso que no es un secreto.

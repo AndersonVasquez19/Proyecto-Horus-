@@ -6,7 +6,8 @@ const { start, sleep, KEY } = require('./smoke-kit.cjs');
 
 // ---------- API simulada ----------
 // Listas de permisos ficticias: solo sirven para comprobar que el panel copia lo que informa el backend (no hay matriz en React).
-const PERMS = { gerente: ['cuentas:leer', 'cursos:leer', 'mensajes:crear', 'mensajes:eliminar'], coord: ['cursos:leer', 'mensajes:crear'], sec: ['mensajes:crear', 'mensajes:leer'] };
+// Desde E3.4.3 el menú se filtra con ellas (lo cubre smoke-panel-access.cjs); aquí solo importa que existan Resumen o Mensajes.
+const PERMS = { gerente: ['cuentas:leer', 'cursos:leer', 'estadisticas:leer', 'mensajes:crear', 'mensajes:eliminar', 'mensajes:leer'], coord: ['cursos:leer', 'estadisticas:leer', 'mensajes:crear', 'mensajes:leer'], sec: ['mensajes:crear', 'mensajes:leer'] };
 const account = (id, nombre, email, rol, permisos) => ({ id, nombre, email, rol, permisos });
 const SEC = account(3, 'Sofía Secretaria', 'sec@example.test', 'SECRETARIA', PERMS.sec);
 const FORGED = 'e30.' + Buffer.from(JSON.stringify({ id: 1, rol: 'GERENTE_GENERAL', permisos: ['cuentas:crear'] })).toString('base64url') + '.forjado';
@@ -94,7 +95,8 @@ const READ_CONTEXT = `(() => {
   const navLabels = p => p.evaluate('[...document.querySelectorAll("aside nav .hp-nav-item")].map(b => b.textContent.trim())');
   const SUBMIT = "document.querySelector('.admin-auth__form').requestSubmit(); 1";
   const submit = async (p, who) => { await p.type('#email', 0, who + '@example.test'); await p.type('#password', 0, 'clave-correcta'); await p.evaluate(SUBMIT); };
-  const PANEL = "location.pathname === '/admin/dashboard' && document.querySelector('.hp-sidebar')";
+  // El inicio depende de los permisos (E3.4.3): Resumen en /admin/dashboard o la bandeja en /admin/messages.
+  const PANEL = "/^\\/admin\\/(dashboard|messages)$/.test(location.pathname) && document.querySelector('.hp-sidebar')";
   const signIn = async (p, who) => { await p.go('/admin/login'); await submit(p, who); await p.wait(PANEL, 'panel tras iniciar sesión (' + who + ')'); };
   const restore = async (token, route = '/admin/dashboard', extra = '') => { const p = await open(); await p.go('/__empty'); await p.evaluate(extra + 'localStorage.setItem(' + JSON.stringify(KEY) + ', ' + JSON.stringify(token) + '); 1'); await p.go(route); return p; };
   const stored = p => p.evaluate('localStorage.getItem(' + JSON.stringify(KEY) + ')');
@@ -115,9 +117,10 @@ const READ_CONTEXT = `(() => {
     ck(same(storage.local, [KEY]) && storage.session.length === 0 && !ROLE_WORDS.test(storage.blob), who + ': rol y permisos no se guardan en el almacenamiento del navegador (solo el token)', storage);
     menus[who] = await navLabels(p);
   }
-  const first = menus.gerente;
-  ck(first.includes('Mensajes') && first.includes('Cotizaciones') && Object.values(menus).every(m => same(m, first)),
-    'modo heredado: los cuatro tipos de cuenta (incluida la que no tiene rol) ven el mismo panel completo, sin filtrar', menus);
+  // El filtrado por rol se comprueba en smoke-panel-access.cjs; aquí, que la cuenta sin rol conserva el panel heredado completo.
+  const first = menus.norol;
+  ck(first.includes('Resumen') && first.includes('Mensajes') && first.includes('Cotizaciones') && first.includes('Biblioteca de contenido'),
+    'modo heredado: la cuenta sin rol ve el panel completo de siempre, sin filtrar', menus);
 
   // ===== 2. Backend antiguo =====
   console.log('\n== BACKEND ANTIGUO (sin rol, permisos ni acceso)');
@@ -185,12 +188,12 @@ const READ_CONTEXT = `(() => {
   // ===== 6. 401 frente a 403 =====
   console.log('\n== 401 CIERRA LA SESIÓN, 403 NO');
   await clean(); await ctl('messages', '403');
-  { const p = await restore('tk-sec'); await p.wait(PANEL, 'panel'); await p.click('aside nav .hp-nav-item', 'Mensajes'); await p.wait("location.pathname === '/admin/messages'", 'bandeja'); await sleep(1500);
+  { const p = await restore('tk-sec', '/admin/messages'); await p.wait(PANEL, 'panel'); await p.wait("location.pathname === '/admin/messages'", 'bandeja'); await sleep(1500);
     const c = await ctx(p); const hit = (await requests()).some(r => r.route === '/api/admin/messages' && r.token === 'tk-sec');
     ck(hit && (await p.path()).startsWith('/admin/messages') && c.auth && c.access.rol === 'SECRETARIA' && (await stored(p)) === 'tk-sec', 'un 403 de una petición no cierra la sesión: sigue autenticada, con su acceso y su token', { hit, path: await p.path(), auth: c.auth });
     ck(!/ER_SECRET|statusCode/.test(await p.text()), 'y no muestra texto técnico'); }
   await clean(); await ctl('messages', '401');
-  { const p = await restore('tk-sec'); await p.wait(PANEL, 'panel'); await p.click('aside nav .hp-nav-item', 'Mensajes');
+  { const p = await restore('tk-sec', '/admin/messages');
     await p.wait("location.pathname === '/admin/login'", 'login tras el 401'); const c = await ctx(p);
     ck(!c.auth && c.access === null && (await stored(p)) === null && c.endReason === 'expired', 'un 401 sí cierra la sesión: sin acceso, sin token guardado y con el aviso de sesión terminada', c);
     ck((await p.text()).includes('Tu sesión terminó'), 'el login informa que la sesión terminó'); }
