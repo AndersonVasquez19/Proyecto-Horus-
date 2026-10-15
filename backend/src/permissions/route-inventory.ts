@@ -47,7 +47,7 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('GET', 'admin/cursos', 'cursos:leer'), perm('GET', 'admin/cursos/:id', 'cursos:leer'),
   perm('POST', 'admin/cursos', 'cursos:crear'),
   byField('PUT', 'admin/cursos/:id', 'estado', 'cursos:editar', { archivado: 'cursos:archivar' }, STATE_NOTE),
-  perm('DELETE', 'admin/cursos/:id', 'cursos:eliminar', 'Borrado físico hoy. Debe impedirse cuando existan convocatorias o matrículas (control en servicio y claves foráneas).'),
+  perm('DELETE', 'admin/cursos/:id', 'cursos:eliminar', 'El servicio responde 409 si existe (404 si no existe), sin modificarlo. El permiso se conserva pero no habilita borrado físico; archivar desde Editar mediante PUT.'),
   perm('GET', 'admin/servicios', 'servicios:leer'), perm('GET', 'admin/servicios/:id', 'servicios:leer'),
   perm('POST', 'admin/servicios', 'servicios:crear'),
   perm('PUT', 'admin/servicios/:id', 'servicios:editar', 'Servicios no tiene permiso de archivar: pasar un servicio a «archivado» exige servicios:editar.'),

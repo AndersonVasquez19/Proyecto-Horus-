@@ -54,6 +54,85 @@ test('Prisma works against MySQL and legacy-compatible SQL in an isolated databa
       } finally { await app.close(); }
     });
 
+    await t.test('courses and capacitaciones survive HTTP and direct DELETE, archive through PUT and republish with the same identity', async () => {
+      const { AppModule } = require('../dist/app.module');
+      const { createValidationPipe } = require('../dist/common/validation');
+      const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'horus-course-conservation-'));
+      const imageName = randomUUID() + '.png';
+      const image = path.join(directory, imageName);
+      fs.writeFileSync(image, 'synthetic course image');
+      const previousUploadDir = process.env.UPLOAD_DIR;
+      process.env.UPLOAD_DIR = directory;
+      const ids = [];
+      let app, auth, faqId, serviceId;
+      try {
+        app = await NestFactory.create(AppModule, { logger: false, abortOnError: false });
+        app.setGlobalPrefix('api'); app.useGlobalPipes(createValidationPipe());
+        await app.listen(0, '127.0.0.1');
+        const origin = await app.getUrl();
+        auth = await app.get(AuthService).register({ nombre: 'Conservación test', email: 'conservacion@example.test', password: 'Temporary-test-123!' }, null);
+        const request = async (route, method = 'GET', body) => {
+          const response = await fetch(origin + '/api/' + route, { method, headers: {
+            Authorization: 'Bearer ' + auth.token,
+            ...(body ? { 'Content-Type': 'application/json' } : {}),
+          }, ...(body ? { body: JSON.stringify(body) } : {}) });
+          return { status: response.status, data: await response.json() };
+        };
+        for (const tipo of ['curso', 'capacitacion']) {
+          const payload = { titulo: 'Conservar ' + tipo, slug: 'conservar-' + tipo, descripcion: 'Contenido histórico', tipo, modalidad: 'virtual', duracion: '2 horas', imagen_url: '/api/uploads/' + imageName, temario: 'Temario conservado', estado: 'borrador' };
+          const created = await request('admin/cursos', 'POST', payload);
+          assert.equal(created.status, 201);
+          const id = created.data.item.id;
+          ids.push(id);
+          const route = 'admin/cursos/' + id;
+          for (const estado of ['borrador', 'publicado', 'archivado']) {
+            assert.equal((await request(route, 'PUT', { estado })).status, 200);
+            const before = await client.curso.findUnique({ where: { id } });
+            assert.equal((await request(route, 'DELETE')).status, 409);
+            assert.deepEqual(await client.curso.findUnique({ where: { id } }), before, 'HTTP DELETE leaves every column intact');
+            await assert.rejects(() => catalog.remove('cursos', id), e => e.getStatus() === 409);
+            assert.deepEqual(await client.curso.findUnique({ where: { id } }), before, 'Direct service call leaves every column intact');
+            assert.equal(fs.readFileSync(image, 'utf8'), 'synthetic course image');
+            const detail = await request(route);
+            assert.equal(detail.status, 200);
+            assert.equal(detail.data.item.id, id); assert.equal(detail.data.item.slug, payload.slug);
+            assert.equal(detail.data.item.estado, estado);
+            assert.equal((await request('cursos/' + id)).status, estado === 'publicado' ? 200 : 404);
+            const list = await request('cursos?estado=archivado&search=' + encodeURIComponent(payload.titulo));
+            assert.equal(list.data.items.some(x => x.id === id), estado === 'publicado');
+            assert.equal((await request('admin/cursos?estado=' + estado + '&tipo=' + tipo)).data.items.some(x => x.id === id), true);
+            assert.equal((await request('admin/cursos', 'POST', payload)).status, 409, 'The slug remains reserved in every state');
+          }
+          assert.equal((await request(route, 'PUT', { estado: 'publicado' })).status, 200);
+          const republished = (await request('cursos/' + id)).data.item;
+          assert.equal(republished.id, id); assert.equal(republished.slug, payload.slug);
+          assert.equal(republished.temario, payload.temario); assert.equal(republished.imagen_url, payload.imagen_url);
+        }
+        assert.equal((await request('admin/cursos/2147483647', 'DELETE')).status, 404);
+        const service = await request('admin/servicios', 'POST', { titulo: 'Servicio desechable', slug: 'servicio-conservacion-test', descripcion: 'Servicio de prueba', categoria: 'soporte', estado: 'publicado' });
+        assert.equal(service.status, 201); serviceId = service.data.item.id;
+        assert.equal((await request('admin/servicios/' + serviceId, 'DELETE')).status, 200);
+        assert.equal(await client.servicio.findUnique({ where: { id: serviceId } }), null);
+        const faq = await request('admin/preguntas-frecuentes', 'POST', { pregunta: '¿Pregunta conservada?', respuesta: 'Respuesta de prueba', categoria: 'general', estado: 'publicado' });
+        assert.equal(faq.status, 201); faqId = faq.data.item.id;
+        const faqBefore = await client.preguntaFrecuente.findUnique({ where: { id: faqId } });
+        assert.equal((await request('admin/preguntas-frecuentes/' + faqId, 'DELETE')).status, 200);
+        const faqAfter = await client.preguntaFrecuente.findUnique({ where: { id: faqId } });
+        assert.equal(faqAfter.estado, 'archivado');
+        assert.equal(faqAfter.id, faqBefore.id); assert.equal(faqAfter.respuesta, faqBefore.respuesta);
+      } finally {
+        await app?.close();
+        // Only synthetic fixtures in this suite's disposable database are removed.
+        await client.curso.deleteMany({ where: { id: { in: ids } } });
+        if (serviceId) await client.servicio.deleteMany({ where: { id: serviceId } });
+        if (faqId) await client.preguntaFrecuente.delete({ where: { id: faqId } });
+        if (auth) await client.adminUser.delete({ where: { id: auth.user.id } });
+        if (previousUploadDir === undefined) delete process.env.UPLOAD_DIR; else process.env.UPLOAD_DIR = previousUploadDir;
+        fs.rmSync(directory, { recursive: true, force: true });
+      }
+    });
+
     await t.test('convenios API enforces JWT, visibility, paginated totals, photo ownership, order rollback and cascade', async () => {
       const { AppModule } = require('../dist/app.module');
       const { createValidationPipe } = require('../dist/common/validation');
@@ -436,15 +515,6 @@ test('Prisma works against MySQL and legacy-compatible SQL in an isolated databa
         assert.equal((await catalog.list('servicios',{categoria,page:1,limit:100},true)).items.find(x=>x.id===draft.item.id)?.titulo,'Prueba editada '+categoria);
         await catalog.remove('servicios',draft.item.id);
         assert.equal(await client.servicio.findUnique({where:{id:draft.item.id}}),null);
-      }
-      // Courses and capacitaciones are removed for good too, archived ones included, and their slug is released.
-      for(const tipo of ['curso','capacitacion']){
-        const course=await catalog.create('cursos',{titulo:'Prueba '+tipo,slug:'prueba-'+tipo,descripcion:'Se elimina de verdad',tipo,modalidad:'virtual',duracion:'2 horas',estado:'borrador'});
-        await catalog.archive('cursos',course.item.id);
-        assert.equal((await catalog.remove('cursos',course.item.id)).ok,true);
-        assert.equal(await client.curso.findUnique({where:{id:course.item.id}}),null);
-        const again=await catalog.create('cursos',{titulo:'Prueba '+tipo,slug:'prueba-'+tipo,descripcion:'El slug quedó libre',tipo,modalidad:'virtual',duracion:'2 horas',estado:'borrador'});
-        await catalog.remove('cursos',again.item.id);
       }
       await assert.rejects(()=>catalog.remove('preguntas-frecuentes',1));
       assert.equal((await restore.restore('capacitaciones')).created,4);

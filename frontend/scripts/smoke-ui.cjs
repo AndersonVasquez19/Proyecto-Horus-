@@ -34,7 +34,7 @@ const server=http.createServer(async(req,res)=>{
  if(p==='/api/admin/cursos'&&req.method==='POST'){let body='';for await(const chunk of req)body+=chunk;const sent=JSON.parse(body);courseBodies.push({method:'POST',body:sent});const item={...sent,id:Math.max(...courseEntries.map(x=>x.id))+1};courseEntries.push(item);return json({ok:true,item})}
  if(/^\/api\/admin\/cursos\/\d+$/.test(p)&&req.method==='PUT'){const entry=courseEntries.find(x=>x.id===Number(p.split('/').pop()));if(!entry)return json({ok:false,mensaje:'Contenido no encontrado.'},404);let body='';for await(const chunk of req)body+=chunk;const sent=JSON.parse(body);courseBodies.push({method:'PUT',id:entry.id,body:sent});const {limpiar,...rest}=sent;Object.assign(entry,rest);for(const key of limpiar||[])entry[key]=null;return json({ok:true,item:entry})}
  if(/^\/api\/admin\/cursos\/\d+$/.test(p)&&req.method==='GET'){const entry=courseEntries.find(x=>x.id===Number(p.split('/').pop()));return entry?json({ok:true,item:entry}):json({ok:false,mensaje:'Contenido no encontrado.'},404)}
- if(/^\/api\/admin\/cursos\/\d+$/.test(p)&&req.method==='DELETE'){const id=Number(p.split('/').pop()),index=courseEntries.findIndex(x=>x.id===id);if(index<0)return json({ok:false,mensaje:'Contenido no encontrado.'},404);courseEntries.splice(index,1);courseDeletes.push(id);return json({ok:true,mensaje:'Contenido eliminado definitivamente.'})}
+ if(/^\/api\/admin\/cursos\/\d+$/.test(p)&&req.method==='DELETE'){const id=Number(p.split('/').pop());courseDeletes.push(id);if(!courseEntries.some(x=>x.id===id))return json({ok:false,mensaje:'Contenido no encontrado.'},404);return json({ok:false,mensaje:'Los cursos y capacitaciones se conservan. Archiva desde Editar.'},409)}
  if(/^\/api\/admin\/servicios\/\d+$/.test(p)&&req.method==='DELETE'){const id=Number(p.split('/').pop()),index=serviceEntries.findIndex(x=>x.id===id);if(index<0)return json({ok:false,mensaje:'Contenido no encontrado.'},404);serviceEntries.splice(index,1);serviceDeletes.push(id);return json({ok:true,mensaje:'Servicio eliminado definitivamente.'})}
  if(/^\/api\/admin\/servicios\/\d+$/.test(p)&&req.method!=='DELETE'){const entry=serviceEntries.find(x=>x.id===Number(p.split('/').pop()));if(!entry)return json({ok:false,mensaje:'Contenido no encontrado.'},404);if(req.method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const sent=JSON.parse(body);serviceBodies.push({method:'PUT',id:entry.id,body:sent});const {limpiar,...rest}=sent;Object.assign(entry,rest);for(const key of limpiar||[])entry[key]=null}return json({ok:true,item:entry})}
  if(p==='/api/cursos/1')return json({ok:true,item:fixtureCourse});
@@ -382,7 +382,7 @@ async function main(){
   // Back to the technology services group, as the Education menu check below expects.
   await adminEval('Array.from(document.querySelectorAll(".hp-nav-item")).find(x=>x.textContent.includes("Servicios tecnológicos")).click()');
   await adminWait('location.search.includes("section=servicios")&&document.querySelectorAll(".hp-nav-subitem").length===3&&Array.from(document.querySelectorAll(".hp-nav-subitem"),x=>x.textContent).includes("Soporte y mantenimiento")');
-  fixtureCap.estado='archivado'; // an archived capacitación must be deletable as well
+  fixtureCap.estado='archivado'; // archived records remain available for editing and republication
   // Education menu: Asesoramiento, Capacitaciones and Cursos are separate sections of one group.
   await adminEval('Array.from(document.querySelectorAll(".hp-nav-item")).find(x=>x.textContent.includes("Educación")).click()');
   await adminWait('location.search.includes("section=educacion")&&location.search.includes("seccion=asesoramiento")&&document.querySelectorAll(".hp-nav-subitem").length===3');
@@ -404,21 +404,23 @@ async function main(){
    await adminWait('!!document.getElementById("field-titulo")');
    assert.equal(await adminEval('!!document.getElementById("field-tipo")'),false,name+': editar tampoco permite cambiar el tipo.');
    await adminEval('document.querySelector("dialog header button").click()');await adminWait('!document.querySelector("dialog[open]")');
-   // Deleting removes the record for real (also an archived one) after asking for confirmation.
-   const sample=tipo==='curso'?{id:1,title:'Curso de prueba',noun:'curso'}:{id:2,title:'Capacitación de prueba',noun:'capacitación'};
-   await adminEval('(()=>{const card=Array.from(document.querySelectorAll(".hw-resource")).find(x=>x.querySelector("h3").textContent==='+JSON.stringify(sample.title)+');const button=card.querySelector("button[aria-label^=Eliminar]");if(button.disabled)throw new Error("El botón de eliminar está deshabilitado");button.click()})()');
-   await adminWait('document.body.innerText.includes("Eliminar '+sample.noun+'")&&document.body.innerText.includes("Se eliminará definitivamente")');
-   assert.ok(!courseDeletes.includes(sample.id),'Nada se elimina antes de confirmar.');
-   await adminEval('Array.from(document.querySelectorAll("dialog button")).find(x=>x.textContent.trim()==="Eliminar definitivamente").click()');
-   await adminWait('document.body.innerText.includes("Eliminado definitivamente: «'+sample.title+'».")&&!Array.from(document.querySelectorAll(".hw-resource h3")).some(h=>h.textContent==='+JSON.stringify(sample.title)+')');
-   assert.ok(courseDeletes.includes(sample.id)&&!courseEntries.some(x=>x.id===sample.id),name+': se elimina de verdad.');
+   // There is no DELETE action. Archive and republish the same record through the existing editor.
+   const sample=tipo==='curso'?fixtureCourse:fixtureCap;
+   const slug=sample.slug;
+   assert.equal(await adminEval('!!document.querySelector(".hw-resource button[aria-label^=Eliminar], .hw-resource button[aria-label^=Archivar]")'),false,name+': sin acción DELETE.');
+   for(const estado of ['archivado','publicado']){
+    await openEdit(sample.titulo);await pickValue('field-estado',estado);await submitForm();
+    await adminWait('!document.querySelector("dialog[open]")&&document.body.innerText.includes("Cambios guardados correctamente.")');
+    assert.equal(courseBodies.at(-1).method,'PUT');assert.equal(courseBodies.at(-1).id,sample.id);assert.equal(courseBodies.at(-1).body.estado,estado);
+    assert.equal(courseEntries.find(x=>x.id===sample.id).slug,slug);assert.equal(sample.estado,estado);
+   }
+   assert.deepEqual(courseDeletes,[],name+': no se envía DELETE y se conserva el registro.');
   }
   // The old address no longer mixes both: it opens Cursos only.
   adminCourseRequests.length=0;
   await adminSend('Page.navigate',{url:origin+'/admin/dashboard?section=cursos'});
   await adminWait('document.querySelector("h1")?.textContent==="Cursos"&&document.querySelectorAll(".hp-nav-subitem").length===3');
   // The list must have finished loading (no "Cargando" status, footer rendered) before the request log is read; the h1 and the menu appear earlier.
-  // Cards are not awaited: the loops above delete the only "curso" fixture, so an empty list is a valid final state here.
   await adminWait('location.search==="?section=cursos"&&!document.querySelector(".hp-empty[role=status]")&&!!document.querySelector(".hp-pagination")&&!document.querySelector(".hp-empty[role=alert]")');
   assert.ok(adminCourseRequests.length>0&&adminCourseRequests.every(search=>new URLSearchParams(search).get('tipo')==='curso'),'La dirección antigua solo muestra cursos. Solicitudes registradas: '+JSON.stringify(adminCourseRequests));
   // Sidebar: Ajustes replaces "Cuentas y acceso" and "Crear administrador".

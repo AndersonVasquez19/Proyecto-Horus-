@@ -6,7 +6,7 @@ import ResourceCards from './workspace/ResourceCards';
 import CourseAgenda from './workspace/CourseAgenda';
 import ResourcePreview from './workspace/ResourcePreview';
 import { panelRequest, errorMessage } from '../services/panelApi';
-import { type Field, type PanelScope, type Resource, type Row, adviceKind, canRemove, fieldsFor, fixedFieldKeys, label, removeVerb, rowState, slugify } from '../types/workspace';
+import { type Field, type PanelScope, type Resource, type Row, adviceKind, canRemove, fieldsFor, fixedFieldKeys, label, removeVerb, rowState, slugify, supportsRemove } from '../types/workspace';
 import PanelIcon from './PanelIcon';
 import ImageUpload from './ImageUpload';
 import OriginalContentImport from './OriginalContentImport';
@@ -32,7 +32,7 @@ export default function ResourceManager({ resource: r, autoCreate: askedCreate, 
   // ?crear=1 sin permiso de crear no abre el formulario.
   const access = usePanelAccess();
   const ops = RESOURCE_WRITE[r.endpoint];
-  const canCreate = !!ops && access.can(ops.crear), canEdit = !!ops && access.can(ops.editar), canDelete = !!ops && access.can(ops.eliminar);
+  const canCreate = !!ops && access.can(ops.crear), canEdit = !!ops && access.can(ops.editar), canDelete = supportsRemove(r) && !!ops && access.can(ops.eliminar);
   const canArchive = !ops?.archivar || access.can(ops.archivar);
   const canUpload = access.can(PANEL_ACTIONS.subirImagen);
   const canRestore = access.can(PANEL_ACTIONS.leerContenidoOriginal) && access.can(PANEL_ACTIONS.restaurarContenidoOriginal);
@@ -211,7 +211,7 @@ export default function ResourceManager({ resource: r, autoCreate: askedCreate, 
   };
   const remove = async () => {
     if (!token || !pendingDelete || actionLock.current) return;
-    if (!canDelete) { setFormError(NO_PERMISSION); return; }
+    if (!canDelete || !canRemove(r, pendingDelete)) { setFormError(NO_PERMISSION); return; }
     actionLock.current = true; setBusy(true); setFormError('');
     try {
       await panelRequest(r.endpoint + '/' + pendingDelete.id, token, 'DELETE');
@@ -297,7 +297,7 @@ export default function ResourceManager({ resource: r, autoCreate: askedCreate, 
       </fieldset>
         <div className="hp-dialog-footer">{formError && <p className="hp-error hp-footer-error" role="alert">{formError}</p>}<button type="button" className="hp-btn" disabled={busy} onClick={closeEditor}>Cancelar</button><button className="hp-btn hp-btn-primary" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}<PanelIcon name="check" /></button></div></form>}
     </PanelDialog>}
-    {pendingDelete && <PanelDialog title={r.hardDelete ? 'Eliminar ' + singular : r.catalog ? 'Archivar registro' : 'Eliminar registro'} busy={busy} onClose={() => setPendingDelete(null)}>
+    {canDelete && pendingDelete && canRemove(r, pendingDelete) && <PanelDialog title={r.hardDelete ? 'Eliminar ' + singular : r.catalog ? 'Archivar registro' : 'Eliminar registro'} busy={busy} onClose={() => setPendingDelete(null)}>
       <div className="hp-confirm"><PanelIcon name="trash" size={34} /><h3>{String(pendingDelete[r.title])}</h3><p>{r.catalog && !r.hardDelete ? 'Dejará de aparecer en las consultas públicas. Podrás publicarlo nuevamente desde Editar.' : 'Se eliminará definitivamente de la base de datos y dejará de aparecer en el sitio. Esta acción no se puede deshacer.'}</p></div>
       {formError && <p className="hp-error" role="alert">{formError}</p>}<div className="hp-dialog-footer"><button className="hp-btn" disabled={busy} onClick={() => setPendingDelete(null)}>Cancelar</button><button className="hp-btn hp-btn-danger" disabled={busy} onClick={() => void remove()}>{busy ? 'Procesando…' : r.catalog && !r.hardDelete ? 'Confirmar archivo' : 'Eliminar definitivamente'}</button></div>
     </PanelDialog>}

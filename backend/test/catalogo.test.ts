@@ -101,15 +101,13 @@ test('catalog stats return database counts, including zero', async () => {
   assert.deepEqual(Object.keys(por_tipo), ['curso', 'capacitacion']);
   assert.deepEqual(Object.keys(por_tipo.capacitacion), ['total', 'publicados', 'borradores', 'archivados']);
 });
-test('services and courses are deleted for real while FAQs can only be archived', async () => {
+test('only services are deleted for real while FAQs can only be archived', async () => {
   let deleted: any;
   const item = { id: 9 };
   const api = service({ findFirst: async () => item, delete: async (args: any) => { deleted = args; return item; } });
   const result = await api.remove('servicios', 9);
   assert.deepEqual(deleted, { where: { id: 9 } });
   assert.equal(result.ok, true);
-  assert.equal((await api.remove('cursos', 9)).ok, true);
-  assert.deepEqual(deleted, { where: { id: 9 } });
   await assert.rejects(() => api.remove('preguntas-frecuentes', 9), BadRequestException);
   await assert.rejects(() => service({ findFirst: async () => null }).remove('servicios', 1), NotFoundException);
 });
@@ -122,12 +120,26 @@ test('a service removed by another request while deleting answers 404', async ()
   await assert.rejects(() => api.remove('servicios', 3), NotFoundException);
 });
 
-test('administrative DELETE of a course or capacitación removes it instead of archiving it', async () => {
-  const calls: string[] = [];
-  const controller = new AdminCursoController({ remove: async (resource: string, id: number) => { calls.push('remove:' + resource + ':' + id); return { ok: true }; },
-    archive: async () => { calls.push('archive'); return { ok: true }; } } as any);
-  await controller.remove(7);
-  assert.deepEqual(calls, ['remove:cursos:7']);
+test('course conservation blocks direct service and controller deletion in every state without writes', async () => {
+  for (const tipo of ['curso', 'capacitacion']) for (const estado of ['borrador', 'publicado', 'archivado']) {
+    const item = { id: 7, tipo, estado, slug: 'conservar-' + tipo, titulo: 'Conservar', imagen_url: '/api/uploads/conservar.png', temario: 'Contenido histórico' };
+    const before = structuredClone(item);
+    const api = service({
+      findFirst: async () => item,
+      delete: async () => assert.fail('DELETE must not reach persistence'),
+      update: async () => assert.fail('Blocked DELETE must not archive or change content'),
+    });
+    for (const remove of [() => api.remove('cursos', item.id), () => new AdminCursoController(api).remove(item.id)]) {
+      await assert.rejects(remove, (error: unknown) => {
+        assert.ok(error instanceof ConflictException);
+        assert.equal(error.getStatus(), 409);
+        assert.match(JSON.stringify(error.getResponse()), /Editar/);
+        return true;
+      });
+      assert.deepEqual(item, before);
+    }
+  }
+  await assert.rejects(() => service({ findFirst: async () => null }).remove('cursos', 2147483647), NotFoundException);
 });
 
 test('administrative DELETE of a service removes it instead of archiving it', async () => {
@@ -136,6 +148,17 @@ test('administrative DELETE of a service removes it instead of archiving it', as
     archive: async () => { calls.push('archive'); return { ok: true }; } } as any);
   await controller.remove(5);
   assert.deepEqual(calls, ['remove:servicios:5']);
+});
+
+test('administrative DELETE of a FAQ still archives without physical deletion', async () => {
+  const item = { id: 5, pregunta: 'Pregunta conservada', respuesta: 'Respuesta', estado: 'publicado' };
+  const api = service({
+    findFirst: async () => item,
+    update: async ({ data }: { data: object }) => ({ ...item, ...data }),
+    delete: async () => assert.fail('FAQ must never reach physical deletion'),
+  });
+  const result = await new AdminPreguntaFrecuenteController(api).archive(5);
+  assert.deepEqual(result.item, { ...item, estado: 'archivado' });
 });
 
 test('a slug conflict tells which record already uses it', async () => {

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PANEL_ACTIONS, PANEL_SECTIONS, RESOURCE_READ, RESOURCE_WRITE, panelNavigation } from '../src/panel/context/panelAccess.ts'
 import { parseSession } from '../src/panel/context/sessionAccess.ts'
+import { canRemove, educationSections, resources, supportsRemove } from '../src/panel/types/workspace.ts'
 
 // Navegación del panel según los permisos de la sesión (E3.4.3, fase 1). Todo ficticio.
 // Las listas de permisos de cada rol NO se copian aquí: se leen del código del backend (policy.ts y permissions.ts), de modo que si la
@@ -24,6 +25,26 @@ const session = (rol, modo = 'heredado', permisos = rol ? PERMISOS[rol] : []) =>
 const legacyBackend = () => parseSession({ ok: true, user: identity }).access
 const WORK = PANEL_SECTIONS.filter(rule => rule.anyOf.length && rule.available !== false).map(rule => rule.key)
 const visible = nav => PANEL_SECTIONS.map(rule => rule.key).filter(key => nav.canOpen(key))
+
+test('cursos y capacitaciones nunca ofrecen DELETE, independientemente del rol, modo o estado', () => {
+  for (const mode of ['heredado', 'por_roles']) for (const rol of [null, ...Object.keys(PERMISOS)]) {
+    const nav = panelNavigation(session(rol, mode))
+    for (const scope of educationSections.filter(s => s.resource === 'cursos')) {
+      const resource = resources[scope.resource]
+      assert.equal(supportsRemove(resource) && nav.can(RESOURCE_WRITE.cursos.eliminar), false, String(rol) + ' ' + mode + ' ' + scope.key)
+      for (const estado of resource.states) assert.equal(canRemove(resource, { id: 7, estado }), false)
+      assert.ok(resource.fields.find(f => f.key === 'estado').options.includes('archivado'))
+      assert.ok(resource.fields.find(f => f.key === 'estado').options.includes('publicado'))
+    }
+  }
+  assert.equal(canRemove({ ...resources.cursos, hardDelete: true }, { id: 7 }), false, 'un indicador antiguo no habilita DELETE')
+})
+
+test('servicios conservan borrado definitivo y FAQ conserva archivado', () => {
+  for (const estado of resources.servicios.states) assert.equal(canRemove(resources.servicios, { id: 7, estado }), true)
+  assert.equal(canRemove(resources.faq, { id: 7, estado: 'publicado' }), true)
+  assert.equal(canRemove(resources.faq, { id: 7, estado: 'archivado' }), false)
+})
 
 test('las listas de la prueba vienen del backend y no están vacías', () => {
   assert.ok(ALL.length > 60 && PERMISOS.COORDINADORA_INSTITUCIONAL.length > 20 && PERMISOS.SECRETARIA.length > 5)

@@ -114,6 +114,25 @@ const handler = async (req, res, { route, json, body }) => {
   const CAPACITACIONES = '/admin/dashboard?section=educacion&seccion=capacitaciones';
   const CARDS = 'document.querySelector(".hw-resource, .hp-table tbody tr")';
 
+  console.log('\n== CONSERVACIÓN DE CURSOS Y CAPACITACIONES');
+  for (const mode of ['heredado', 'por_roles']) for (const token of ['tk-gerente', 'tk-coord', 'tk-sec', 'tk-norol']) {
+    await clean(mode);
+    for (const section of ['cursos', 'capacitaciones']) {
+      const denied = token === 'tk-norol' && mode === 'por_roles';
+      const p = await restore(token, '/admin/dashboard?section=educacion&seccion=' + section + '&eliminar=11', denied ? 'document.querySelector("[data-panel-access]")' : CARDS);
+      const who = token + ' ' + mode + ' ' + section;
+      ck(!(await has(p, 'Eliminar')) && !(await has(p, 'Archivar')) && !(await dialogOpen(p)), who + ': sin acción ni confirmación de DELETE, tampoco con parámetro de URL');
+      if (!denied) {
+        await p.click('main .hw-tabs button', 'Tabla'); await p.wait('document.querySelector(".hp-table tbody tr")', 'tabla');
+        ck(!(await has(p, 'Eliminar')) && !(await has(p, 'Archivar')), who + ': tabla sin acción DELETE');
+        await p.click('main .hp-table button', 'Ver Curso ficticio'); await p.wait('document.querySelector("dialog[open]")', 'detalle');
+        ck(!(await has(p, 'Eliminar', 'dialog[open]')) && !(await has(p, 'Archivar', 'dialog[open]')), who + ': detalle sin acción DELETE');
+      }
+      await closePages();
+    }
+    ck((await writes()).length === 0, token + ' ' + mode + ': ninguna escritura ni DELETE', await writes());
+  }
+
   // ===== 1. Secretaria: Cursos e Información de empresa en modo consulta =====
   console.log('\n== SECRETARIA (modo heredado y por_roles)');
   for (const mode of ['heredado', 'por_roles']) {
@@ -190,7 +209,7 @@ const handler = async (req, res, { route, json, body }) => {
   for (const [token, me, who] of [['tk-gerente', 'nuevo', 'gerente'], ['tk-sec', 'antiguo', 'backend antiguo'], ['tk-norol', 'nuevo', 'cuenta sin rol en modo heredado']]) {
     await clean(); await ctl('me', me);
     let p = await restore(token, CAPACITACIONES, CARDS);
-    ck((await has(p, 'Crear capacitación')) && (await has(p, 'Editar')) && (await has(p, 'Eliminar Curso ficticio')) && (await has(p, 'Recuperar contenido original')) && !(await readonlyNotice(p)), who + ': Capacitaciones con todas sus acciones, como antes');
+    ck((await has(p, 'Crear capacitación')) && (await has(p, 'Editar')) && !(await has(p, 'Eliminar')) && !(await has(p, 'Archivar')) && (await has(p, 'Recuperar contenido original')) && !(await readonlyNotice(p)), who + ': Capacitaciones conserva creación y edición, sin acción DELETE');
     await closePages();
     p = await restore(token, '/admin/dashboard?section=ajustes', 'document.querySelector("main form input")');
     ck((await has(p, 'Guardar configuración')) && (await p.evaluate('!document.querySelector("main form input").matches(":disabled")')), who + ': Información de empresa editable');
@@ -286,6 +305,10 @@ const handler = async (req, res, { route, json, body }) => {
     await closePages();
     p = await restore('tk-editor', CAPACITACIONES, CARDS); await editCourse(p, 'Curso ficticio'); await submit(p, 'dialog[open] form');
     ck((await sent('tk-editor', 'PUT', '/api/admin/cursos/11', 'editar curso')).body?.estado === 'publicado', 'solo cursos:editar: guardar un curso publicado no se bloquea (PUT sin archivar)');
+    await closePages();
+    p = await restore('tk-editor', CAPACITACIONES, CARDS); await editCourse(p, 'Curso archivado');
+    await p.type('dialog[open] #field-estado', 0, 'publicado'); await submit(p, 'dialog[open] form');
+    ck((await sent('tk-editor', 'PUT', '/api/admin/cursos/12', 'republicar curso')).body?.estado === 'publicado', 'republicar usa PUT sobre el mismo ID, sin exigir archivar');
     await closePages();
     p = await restore('tk-coord', '/admin/dashboard?section=convenios', 'document.querySelector(".hp-table tbody tr")');
     await p.click('main .hp-table button', 'Ocultar');

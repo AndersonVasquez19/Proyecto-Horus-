@@ -40,7 +40,7 @@ export class AdminCursoController {
   }
   @Delete(':id')
   @RequirePermission('cursos:eliminar')
-  @ApiOperation({ summary: 'Eliminar definitivamente un curso o capacitación' })
+  @ApiOperation({ summary: 'Borrado bloqueado (409): conservar el registro y archivar desde Editar mediante PUT' })
   remove(@Param('id', ParseIntPipe) id: number) { return this.service.remove('cursos', id); }
 }
 
