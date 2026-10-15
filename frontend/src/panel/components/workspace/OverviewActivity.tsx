@@ -4,6 +4,7 @@ import { useRequestStatus } from '../../hooks/useRequestStatus';
 import { errorMessage, panelRequest } from '../../services/panelApi';
 import type { ActivityStats } from '../../types/workspace';
 import PanelIcon from '../PanelIcon';
+import { usePanelAccess } from '../../context/usePanelAccess';
 
 const RANGES = [7, 30, 90] as const;
 const QUOTE_STATES: [string, string][] = [['borrador', 'Borrador'], ['enviada', 'Enviada'], ['aceptada', 'Aceptada'], ['rechazada', 'Rechazada'], ['anulada', 'Anulada']];
@@ -18,6 +19,7 @@ const shortDate = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateStri
 const niceMax = (value: number) => { if (value <= 4) return 4; const step = 10 ** Math.floor(Math.log10(value)); return Math.ceil(value / step) * step; };
 
 export default function OverviewActivity({ go }: { go: (section: string) => void }) {
+  const canQuotes = usePanelAccess().canOpen('cotizaciones'); // sin permiso no se ofrece el enlace (E3.4.3, fase 2)
   const { token } = useAdminAuth();
   const [days, setDays] = useState<(typeof RANGES)[number]>(30);
   const [reload, setReload] = useState(0);
@@ -81,7 +83,7 @@ export default function OverviewActivity({ go }: { go: (section: string) => void
           {quotes && quotes.total > 0 ? <ul>{QUOTE_STATES.map(([key, text]) => { const value = quotes.porEstado[key] ?? 0; return <li key={key}><span>{text}</span>
             <span className="hp-bar-track" aria-hidden="true"><span className={'hp-bar-fill hp-quote-' + key} style={{ width: (value / quoteMax * 100) + '%' }} /></span><strong>{value}</strong></li>; })}</ul>
             : <p className="hp-muted-inline">Aún no hay cotizaciones registradas.</p>}
-          <button className="hp-text-btn" onClick={() => go('cotizaciones')}>Ir a cotizaciones <PanelIcon name="arrow" size={15} /></button></div>
+          {canQuotes && <button className="hp-text-btn" onClick={() => go('cotizaciones')}>Ir a cotizaciones <PanelIcon name="arrow" size={15} /></button>}</div>
       </>}
   </section>;
 }

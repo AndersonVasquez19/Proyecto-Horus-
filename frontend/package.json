@@ -33,7 +33,8 @@
     "smoke:panel-toasts": "npm run build && node scripts/smoke-panel-toasts.cjs",
     "smoke:chatbot": "npm run build && node scripts/smoke-chatbot.cjs",
     "smoke:session-access": "npm run build && node scripts/smoke-session-access.cjs",
-    "smoke:panel-access": "npm run build && node scripts/smoke-panel-access.cjs"
+    "smoke:panel-access": "npm run build && node scripts/smoke-panel-access.cjs",
+    "smoke:panel-actions": "npm run build && node scripts/smoke-panel-actions.cjs"
   },
   "dependencies": {
     "react": "^19.2.5",

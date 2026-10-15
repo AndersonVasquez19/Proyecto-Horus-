@@ -30,6 +30,36 @@ export const RESOURCE_READ: Readonly<Record<string, string>> = Object.freeze({
   contenido: 'items:leer',
 });
 
+// Operaciones de escritura (E3.4.3, fase 2). Igual que la lectura, cada permiso es el que exige la ruta correspondiente en
+// route-inventory.ts (test:panel-access los contrasta). Deciden qué botones, formularios y direcciones (?crear=1) se ofrecen, y cada
+// operación lo vuelve a comprobar antes de enviar su solicitud (también con Enter). Sigue siendo solo interfaz: no protege nada.
+export interface ResourceWrite {
+  crear: string;
+  editar: string;
+  eliminar: string; // permiso del DELETE (en preguntas frecuentes el DELETE solo archiva)
+  archivar?: string; // guardar con estado «archivado» lo exige además de editar; sin él, archivar es una edición más
+}
+// Clave: `endpoint` del recurso de ResourceManager (types/workspace.ts).
+export const RESOURCE_WRITE: Readonly<Record<string, ResourceWrite>> = Object.freeze({
+  cursos: { crear: 'cursos:crear', editar: 'cursos:editar', eliminar: 'cursos:eliminar', archivar: 'cursos:archivar' },
+  servicios: { crear: 'servicios:crear', editar: 'servicios:editar', eliminar: 'servicios:eliminar' },
+  'preguntas-frecuentes': { crear: 'preguntas_frecuentes:crear', editar: 'preguntas_frecuentes:editar', eliminar: 'preguntas_frecuentes:archivar', archivar: 'preguntas_frecuentes:archivar' },
+  galeria: { crear: 'galeria:crear', editar: 'galeria:editar', eliminar: 'galeria:eliminar' },
+  items: { crear: 'items:crear', editar: 'items:editar', eliminar: 'items:eliminar' },
+});
+
+// Resto de operaciones del panel, con la ruta que las exige.
+export const PANEL_ACTIONS = Object.freeze({
+  subirImagen: 'archivos:crear', // POST /admin/uploads
+  leerContenidoOriginal: 'contenido_original:leer', // GET /admin/contenido-original (lo carga el diálogo de recuperación)
+  restaurarContenidoOriginal: 'contenido_original:restaurar', // POST /admin/contenido-original/:section
+  crearConvenio: 'convenios:crear', editarConvenio: 'convenios:editar', eliminarConvenio: 'convenios:eliminar', // también fotos (editar)
+  crearCotizacion: 'cotizaciones:crear', editarCotizacion: 'cotizaciones:editar', enviarCotizacion: 'cotizaciones:enviar', anularCotizacion: 'cotizaciones:anular',
+  crearMensaje: 'mensajes:crear', eliminarMensaje: 'mensajes:eliminar',
+  leerSeguimiento: 'seguimiento_mensajes:leer', editarSeguimiento: 'seguimiento_mensajes:editar', enviarSeguimiento: 'seguimiento_mensajes:enviar',
+  editarConfiguracion: 'configuracion:editar', // PUT /admin/settings
+} as const);
+
 export const PANEL_SECTIONS: readonly PanelSectionRule[] = Object.freeze([
   { key: 'resumen', group: 'principal', anyOf: ['estadisticas:leer'], target: '/admin/dashboard?section=resumen', note: 'GET /admin/stats y /admin/stats/actividad' },
   { key: 'cursos', group: 'contenido', anyOf: ['cursos:leer', 'servicios:leer'], target: '/admin/dashboard?section=educacion', note: 'Educación: Asesoramiento usa servicios; Capacitaciones y Cursos, cursos. Cada subsección se comprueba con RESOURCE_READ' },
@@ -58,6 +88,9 @@ export interface PanelNavigation {
   home: string | null;
   canOpen(section: string): boolean;
   canOpenResource(resource: string): boolean;
+  // ¿Se ofrece la operación que exige este permiso? Navegación heredada: sí (como antes de los roles). Con rol: solo si figura en la
+  // lista de la sesión. Sin rol en por_roles o sin sesión validada: no.
+  can(permission: string): boolean;
 }
 
 export function panelNavigation(access: SessionAccess | null | undefined): PanelNavigation {
@@ -87,5 +120,7 @@ export function panelNavigation(access: SessionAccess | null | undefined): Panel
     : canOpen('resumen') ? 'resumen'
       : canOpen('mensajes') ? 'mensajes'
         : PANEL_SECTIONS.find(rule => rule.anyOf.length > 0 && canOpen(rule.key))?.key ?? null;
-  return { kind, home, canOpen, canOpenResource };
+  const can = (permission: string) => typeof permission === 'string' && permission.length > 0
+    && (kind === 'legacy' || (kind === 'roles' && granted.has(permission)));
+  return { kind, home, canOpen, canOpenResource, can };
 }

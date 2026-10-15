@@ -10,6 +10,11 @@ const TEXT: Record<Kind, { kicker: string; title: string; body: string }> = {
   'sin-secciones': { kicker: 'SIN SECCIONES', title: 'Tu cuenta no tiene secciones disponibles', body: 'Ninguna sección del panel está habilitada para tu cuenta. Puedes cambiar tu contraseña en Ajustes o cerrar sesión; si necesitas acceso, consúltalo con la gerencia.' },
 };
 
+// Sección que la cuenta puede consultar pero no modificar (o una dirección que pide una operación sin permiso, como ?crear=1).
+export function PanelReadOnlyNotice({ children }: { children: string }) {
+  return <p className="hp-notice" role="status" data-panel-readonly><PanelIcon name="lock" size={16} /> {children}</p>;
+}
+
 export default function PanelAccessNotice({ kind, homeTarget, hasHome }: { kind: Kind; homeTarget: string; hasHome: boolean }) {
   const text = TEXT[kind];
   return <>

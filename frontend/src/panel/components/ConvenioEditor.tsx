@@ -8,8 +8,10 @@ import ImageUpload from './ImageUpload';
 import ConvenioPhotosEditor from './ConvenioPhotosEditor';
 import PublicImage from '../../components/PublicImage';
 
-export default function ConvenioEditor({ initial, onClose, onSaved }: {
-  initial: ConvenioDetalle | null; onClose: () => void; onSaved: () => void;
+// `allow` (E3.4.3, fase 2): crear un convenio exige crear; guardar uno existente y gestionar sus fotos, editar; subir imágenes,
+// archivos:crear. Sin el permiso de guardar, el editor se abre en modo consulta.
+export default function ConvenioEditor({ initial, onClose, onSaved, allow }: {
+  initial: ConvenioDetalle | null; onClose: () => void; onSaved: () => void; allow: { create: boolean; edit: boolean; upload: boolean };
 }) {
   const { token } = useAdminAuth();
   const formId = useId();
@@ -22,6 +24,7 @@ export default function ConvenioEditor({ initial, onClose, onSaved }: {
   const [busy, setBusy] = useState(false), [uploading, setUploading] = useState(false), [photosBusy, setPhotosBusy] = useState(false);
   const [error, setError] = useState(''), [notice, setNotice] = useState('');
   const controller = useRef<AbortController | null>(null);
+  const readOnly = !(item ? allow.edit : allow.create);
   const locked = busy || uploading || photosBusy;
   // Los datos del convenio difieren de lo abierto o de lo último guardado: cerrar el editor pide confirmación.
   const [baseline, setBaseline] = useState(() => JSON.stringify(fields));
@@ -31,6 +34,7 @@ export default function ConvenioEditor({ initial, onClose, onSaved }: {
   const text = (name: keyof Omit<typeof fields, 'visible'>, value: string) => setFields(v => ({ ...v, [name]: value }));
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault(); if (locked || controller.current) return;
+    if (readOnly) { setError('Tu cuenta no tiene permiso para realizar esta acción.'); return; }
     const c = new AbortController(); controller.current = c;
     const timeout = window.setTimeout(() => c.abort(), 15000);
     setBusy(true); setError(''); setNotice('');
@@ -42,30 +46,30 @@ export default function ConvenioEditor({ initial, onClose, onSaved }: {
     } catch (e) { if (controller.current === c) setError(c.signal.aborted ? 'La operación tardó demasiado. Revisa el listado antes de reintentar.' : errorMessage(e)); }
     finally { window.clearTimeout(timeout); if (controller.current === c) { controller.current = null; setBusy(false); } }
   };
-  return <PanelDialog title={item ? 'Editar convenio' : 'Nuevo convenio'} busy={locked} onClose={requestClose}
+  return <PanelDialog title={readOnly ? 'Detalle del convenio' : item ? 'Editar convenio' : 'Nuevo convenio'} busy={locked} onClose={requestClose}
     className="hp-convenio-dialog" lockScroll footer={<>
       <div className="hp-convenio-feedback">
         {error && <p className="hp-error" role="alert">{error}</p>}
         {notice && <p className="hp-notice" role="status">{notice}</p>}
       </div>
       <div className="hp-convenio-actions">
-        <button type="submit" form={formId} className="hp-btn hp-btn-primary" disabled={locked} aria-busy={busy}>{busy ? 'Guardando…' : 'Guardar convenio'}</button>
+        {!readOnly && <button type="submit" form={formId} className="hp-btn hp-btn-primary" disabled={locked} aria-busy={busy}>{busy ? 'Guardando…' : 'Guardar convenio'}</button>}
         <button type="button" className="hp-btn" disabled={locked} onClick={requestClose}>Cerrar</button>
       </div>
     </>}>
     <form id={formId} className="hp-form hp-convenio-form" onSubmit={submit}>
       <div className="hp-convenio-editor-scroll">
-        <fieldset disabled={locked}>
+        <fieldset disabled={locked || readOnly}>
           <label>Nombre<input name="nombre" required maxLength={160} value={fields.nombre} onChange={e => text('nombre', e.target.value)} /></label>
           <label>Sigla<input name="sigla" maxLength={50} value={fields.sigla} onChange={e => text('sigla', e.target.value)} /></label>
           <section className="hp-convenio-logo-section hp-full" aria-labelledby={formId + '-logo'}>
             <h3 id={formId + '-logo'}>Logo</h3>
             <div className="hp-convenio-logo-field">
               <span className="hp-convenio-logo-preview"><PublicImage src={fields.logo_url} title={'Logo de ' + (fields.nombre || 'este convenio')} /></span>
-              <div className="hp-convenio-logo-controls">
-                <ImageUpload buttonLabel={fields.logo_url ? 'Cambiar logo' : 'Subir logo'} onUploaded={url => text('logo_url', url)} onBusyChange={setUploading} />
+              {!readOnly && <div className="hp-convenio-logo-controls">
+                {allow.upload && <ImageUpload buttonLabel={fields.logo_url ? 'Cambiar logo' : 'Subir logo'} onUploaded={url => text('logo_url', url)} onBusyChange={setUploading} />}
                 <button type="button" className="hp-btn" disabled={!fields.logo_url} onClick={() => text('logo_url', '')}>Quitar logo</button>
-              </div>
+              </div>}
             </div>
             <details className="hp-convenio-logo-link"><summary>Usar un enlace existente</summary>
               <label>URL del logo<input name="logo_url" type="text" inputMode="url" maxLength={2048} value={fields.logo_url} onChange={e => text('logo_url', e.target.value)} /></label>
@@ -89,7 +93,7 @@ export default function ConvenioEditor({ initial, onClose, onSaved }: {
             <small id={formId + '-visible-help'}>{fields.visible ? 'Se mostrará en el sitio público al guardar.' : 'Permanecerá oculto. Puedes completar sus datos antes de publicarlo.'}</small>
           </label>
         </fieldset>
-        {item ? <ConvenioPhotosEditor key={item.id} convenioId={item.id} nombre={fields.nombre} initialFotos={item.fotos} disabled={busy || uploading}
+        {item ? <ConvenioPhotosEditor key={item.id} convenioId={item.id} nombre={fields.nombre} initialFotos={item.fotos} disabled={busy || uploading} readOnly={!allow.edit} canUpload={allow.upload}
           onBusyChange={setPhotosBusy} /> :
           <section className="hp-convenio-photos" aria-labelledby={formId + '-photos'}>
             <h3 id={formId + '-photos'}>Fotografías</h3>

@@ -16,12 +16,22 @@ import MessageDeleteDialog from './MessageDeleteDialog';
 import PanelIcon from '../PanelIcon';
 import { useMobileViewport } from '../../hooks/useMobileViewport';
 import { notify } from '../../services/notify';
+import { usePanelAccess } from '../../context/usePanelAccess';
+import { PANEL_ACTIONS } from '../../context/panelAccess';
+import { PanelReadOnlyNotice } from '../PanelAccessNotice';
 
 const EXPORT_PAGE_TIMEOUT_MS = 15_000;
 
 export default function MessageInbox() {
   const { token } = useAdminAuth();
   const [params, setParams] = useSearchParams(); const location = useLocation();
+  // Operaciones según los permisos de la sesión (E3.4.3, fase 2): registro manual (también ?crear=1), cambios de estado y seguimiento,
+  // envíos, eliminación y el enlace para preparar una cotización (exige poder abrir Cotizaciones y crear).
+  const access = usePanelAccess();
+  const canCreate = access.can(PANEL_ACTIONS.crearMensaje), canDelete = access.can(PANEL_ACTIONS.eliminarMensaje);
+  const canReadFollowUp = access.can(PANEL_ACTIONS.leerSeguimiento), canEditFollowUp = canReadFollowUp && access.can(PANEL_ACTIONS.editarSeguimiento);
+  const canSendFollowUp = access.can(PANEL_ACTIONS.enviarSeguimiento);
+  const canQuote = access.canOpen('cotizaciones') && access.can(PANEL_ACTIONS.crearCotizacion);
   const [revision, setRevision] = useState(0);
   const [search, setSearch] = useState('');
   const [channel, setChannel] = useState('');
@@ -62,7 +72,8 @@ export default function MessageInbox() {
   // Registro manual. Se abre con el botón o con la URL heredada ?crear=1; el diálogo es modal, así que el detalle y el borrador de seguimiento
   // quedan montados debajo, intactos. Al cerrarlo solo se retira `crear` de la URL (sin añadir una entrada de historial).
   const [creatingLocal, setCreatingLocal] = useState(false);
-  const creating = creatingLocal || params.get('crear') === '1';
+  const creating = canCreate && (creatingLocal || params.get('crear') === '1');
+  const createDenied = !canCreate && params.get('crear') === '1';
   const closeCreate = () => {
     setCreatingLocal(false);
     if (params.has('crear')) { const next = new URLSearchParams(params); next.delete('crear'); setParams(next, { replace: true }); }
@@ -118,6 +129,7 @@ export default function MessageInbox() {
   const changeState = (state: string) => confirmLeave(() => void applyState(state));
   const applyState = async (state: string) => {
     if (!selected || !token || lock.current) return;
+    if (!canEditFollowUp) { setActionError('Tu cuenta no tiene permiso para realizar esta acción.'); return; }
     lock.current = true; setBusy(true); setActionError('');
     try {
       const path='seguimiento/messages/'+selected.id;
@@ -146,9 +158,10 @@ export default function MessageInbox() {
   const phone = selected ? String(selected.telefono || '').replace(/[^+\d]/g, '') : '';
   return <>
     <div className="hp-heading"><div><p className="hp-kicker">ATENCIÓN AL CLIENTE</p><h1>Centro de consultas</h1><p>Lee, clasifica y continúa la atención de cada persona.</p></div><div className="hp-actions">
-      <button className="hp-btn" onClick={() => setCreatingLocal(true)} disabled={busy}><PanelIcon name="plus" />Registro manual</button>
+      {canCreate && <button className="hp-btn" onClick={() => setCreatingLocal(true)} disabled={busy}><PanelIcon name="plus" />Registro manual</button>}
       <button className="hp-btn" onClick={() => confirmLeave(() => setRevision(value => value + 1))} disabled={loading || busy}><PanelIcon name="refresh" />Actualizar</button></div></div>
     <div className="hw-insights hw-insights-4">{metrics.map(([state, title]) => <button key={state} onClick={() => updateParams('estado', state)} aria-pressed={status === state} disabled={savePending}><span className={'hp-badge hp-state-' + state}>{title}</span><strong>{loading ? '…' : error ? '—' : counts[state]||0}</strong><span>Ver consultas <PanelIcon name="arrow" size={14} /></span></button>)}</div>
+    {createDenied && <PanelReadOnlyNotice>Tu cuenta no puede registrar consultas manualmente. Se muestra la bandeja.</PanelReadOnlyNotice>}
     {!mobile && <p className="hp-sr" role="status">{selected ? 'Consulta #' + selected.id + ' abierta: ' + String(selected.asunto) : ''}</p>}
     {(error || actionError) && <p className="hp-error" role="alert">{error || actionError}</p>}
     {savePending && <p className="hw-caption" role="status">Guardando el seguimiento: no se puede cambiar de consulta, de estado del filtro ni de vista hasta recibir la respuesta.</p>}
@@ -180,19 +193,19 @@ export default function MessageInbox() {
           <dl className="hw-contact-data"><div><dt>Correo</dt><dd>{String(selected.email)}</dd></div><div><dt>Teléfono</dt><dd>{String(selected.telefono || 'No indicado')}</dd></div></dl>
           <div className="hw-message-text">{String(selected.mensaje)}</div>
           <div className="hp-actions">{email && <a className="hp-btn" href={'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent('Re: ' + selected.asunto)}><PanelIcon name="mail" />Abrir correo</a>}{phone.length >= 6 && <a className="hp-btn" href={'tel:' + phone}>Llamar</a>}</div>
-          <Link className="hp-btn" to={'/admin/dashboard?section=cotizaciones&contacto='+selected.id} state={{ from: location.pathname + location.search }} aria-disabled={savePending || undefined} onClick={event => { if (savePending) event.preventDefault(); }}>Preparar cotización</Link><p className="hw-caption">El correo se abre en tu aplicación. El estado de la consulta se actualiza por separado.</p>
-          <AttentionEditor key={selected.id} syncKey={editorEpoch} resource="messages" id={selected.id} onPendingChange={setSavePending} onUncertainChange={setSaveUncertain} onSaved={(item)=>{detail.patch({ estado: item.estado });notify.success('Seguimiento guardado.');setRevision(v=>v+1)}} /><div className="hw-next-action"><strong>Siguiente paso</strong><p>Actualiza el estado según la atención realizada.</p><div className="hp-actions">
+          {canQuote && <Link className="hp-btn" to={'/admin/dashboard?section=cotizaciones&contacto='+selected.id} state={{ from: location.pathname + location.search }} aria-disabled={savePending || undefined} onClick={event => { if (savePending) event.preventDefault(); }}>Preparar cotización</Link>}<p className="hw-caption">El correo se abre en tu aplicación. El estado de la consulta se actualiza por separado.</p>
+          {canReadFollowUp && <AttentionEditor key={selected.id} syncKey={editorEpoch} resource="messages" id={selected.id} canEdit={canEditFollowUp} canSend={canSendFollowUp} onPendingChange={setSavePending} onUncertainChange={setSaveUncertain} onSaved={(item)=>{detail.patch({ estado: item.estado });notify.success('Seguimiento guardado.');setRevision(v=>v+1)}} />}{canEditFollowUp && <div className="hw-next-action"><strong>Siguiente paso</strong><p>Actualiza el estado según la atención realizada.</p><div className="hp-actions">
             {metrics.filter(([state]) => state !== selected.estado).map(([state]) => <button className={'hp-btn' + (state === 'atendido' ? ' hp-btn-primary' : '')} key={state} disabled={busy || savePending || saveUncertain} onClick={() => void changeState(state)}>{busy ? 'Guardando…' : selected.estado === 'archivado' ? 'Reabrir: ' + label(state) : state === 'archivado' ? 'Archivar consulta' : state === 'nuevo' ? 'Volver a pendiente' : state === 'en_proceso' ? 'Iniciar atención' : 'Marcar atendido'}</button>)}
-          </div></div>
-          <div className="hw-record-actions"><strong>Acciones del registro</strong><p>Archivar mantiene la consulta y su historial. Eliminar es definitivo y el sistema puede impedirlo.</p>
-            <button className="hp-btn hp-btn-quiet" disabled={busy || savePending || saveUncertain} onClick={() => setDeleting(true)}><PanelIcon name="trash" size={15} />Eliminar consulta…</button></div>
+          </div></div>}
+          {canDelete && <div className="hw-record-actions"><strong>Acciones del registro</strong><p>Archivar mantiene la consulta y su historial. Eliminar es definitivo y el sistema puede impedirlo.</p>
+            <button className="hp-btn hp-btn-quiet" disabled={busy || savePending || saveUncertain} onClick={() => setDeleting(true)}><PanelIcon name="trash" size={15} />Eliminar consulta…</button></div>}
         </> : detail.status === 'loading' ? <div className="hp-empty" role="status"><p>Cargando consulta…</p></div>
           : detail.status === 'missing' ? <div className="hp-empty" role="alert"><PanelIcon name="mail" size={38} /><h3>Esta consulta ya no está disponible</h3><p>Puede haberse eliminado. Elige otra consulta de la lista.</p><button className="hp-btn" onClick={() => updateParams('id', '')}>Cerrar detalle</button></div>
           : detail.status === 'error' ? <div className="hp-empty" role="alert"><PanelIcon name="mail" size={38} /><h3>No pudimos cargar esta consulta</h3><p>Comprueba tu conexión e inténtalo de nuevo. La consulta no se ha eliminado.</p><div className="hp-actions"><button className="hp-btn hp-btn-primary" onClick={detail.retry}>Reintentar</button><button className="hp-btn" onClick={() => updateParams('id', '')}>Cerrar detalle</button></div></div>
           : <div className="hp-empty"><PanelIcon name="mail" size={38} /><h3>Una consulta, toda la información</h3><p>Selecciona una persona para leer su mensaje y continuar la atención.</p></div>}</div>
       </div>
     <footer className="hp-pagination"><button className="hp-btn" disabled={loading||page===1} onClick={()=>confirmLeave(()=>setPage(v=>v-1))}>Anterior</button><span>Página {page}</span><button className="hp-btn" disabled={loading||!!error||page>=pages} onClick={()=>confirmLeave(()=>setPage(v=>v+1))}>Siguiente</button></footer></section>
-    {deleting && selected && <MessageDeleteDialog message={selected} onClose={() => setDeleting(false)} onDeleted={deleted} onArchive={() => { setDeleting(false); changeState('archivado'); }} />}
+    {deleting && selected && canDelete && <MessageDeleteDialog message={selected} onClose={() => setDeleting(false)} onDeleted={deleted} onArchive={canEditFollowUp ? () => { setDeleting(false); changeState('archivado'); } : undefined} />}
     {creating && <MessageCreateDialog onClose={closeCreate} onCreated={created} onUncertain={() => setRevision(value => value + 1)} />}
   </>;
 }
