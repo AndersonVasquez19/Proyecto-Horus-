@@ -6,7 +6,9 @@ import { RequestMethod } from '@nestjs/common';
 import { ADMIN_ROLES, isAdminRole } from '../src/permissions/roles';
 import { ALL_PERMISSIONS, FUTURE_RESOURCES, RESOURCE_OPERATIONS, isPermission, seguimientoPermission } from '../src/permissions/permissions';
 import { can, canAll, canAny, permissionsOf } from '../src/permissions/policy';
-import { ROUTE_INVENTORY } from '../src/permissions/route-inventory';
+import { ROUTE_INVENTORY, RouteAccess } from '../src/permissions/route-inventory';
+import { isRouteAccess } from '../src/permissions/access';
+import { ACCESS_METADATA } from '../src/permissions/access.decorators';
 import { AccountsController } from '../src/admin/auth/accounts.controller';
 import { AuthController } from '../src/admin/auth/auth.controller';
 import { AdminChatbotController } from '../src/admin/chatbot/admin-chatbot.controller';
@@ -203,8 +205,8 @@ const CONTROLLERS: Function[] = [
 
 function normalize(...parts: string[]) { return parts.join('/').split('/').filter(Boolean).join('/'); }
 
-function actualRoutes(): string[] {
-  const routes: string[] = [];
+function routeHandlers(): { key: string; controller: Function; handler: Function }[] {
+  const routes: { key: string; controller: Function; handler: Function }[] = [];
   for (const controller of CONTROLLERS) {
     const prefix: string = Reflect.getMetadata(PATH_METADATA, controller);
     for (const name of Object.getOwnPropertyNames(controller.prototype)) {
@@ -212,10 +214,20 @@ function actualRoutes(): string[] {
       if (name === 'constructor' || typeof handler !== 'function') continue;
       const method = Reflect.getMetadata(METHOD_METADATA, handler);
       if (method === undefined) continue;
-      routes.push(RequestMethod[method] + ' ' + normalize(prefix, Reflect.getMetadata(PATH_METADATA, handler)));
+      routes.push({ key: RequestMethod[method] + ' ' + normalize(prefix, Reflect.getMetadata(PATH_METADATA, handler)), controller, handler });
     }
   }
-  return routes.sort();
+  return routes;
+}
+
+function actualRoutes(): string[] { return routeHandlers().map(route => route.key).sort(); }
+
+// Todos los permisos que una ruta puede llegar a exigir (los condicionados incluidos).
+function declaredPermissions(access: RouteAccess): string[] {
+  if (access.kind === 'permiso') return [access.permission];
+  if (access.kind === 'segun_campo') return [access.base, ...Object.values(access.when)];
+  if (access.kind === 'seguimiento') return [seguimientoPermission('messages', access.operation), seguimientoPermission('reclamaciones', access.operation)];
+  return [];
 }
 
 test('el inventario coincide exactamente con las rutas de los controladores (una ruta nueva sin clasificar hace fallar esta prueba)', () => {
@@ -224,14 +236,35 @@ test('el inventario coincide exactamente con las rutas de los controladores (una
   assert.deepEqual(actualRoutes(), inventory);
 });
 
+test('cada ruta declara con su decorador exactamente la clasificación del inventario (sin decorador, la guard la denegaría)', () => {
+  const inventory = new Map(ROUTE_INVENTORY.map(route => [route.method + ' ' + route.path, route.access]));
+  for (const { key, controller, handler } of routeHandlers()) {
+    assert.equal(Reflect.getMetadata(ACCESS_METADATA, controller), undefined, key + ': la clasificación va en cada ruta, no en el controlador');
+    const declared = Reflect.getMetadata(ACCESS_METADATA, handler);
+    assert.ok(isRouteAccess(declared), key + ' no declara su acceso');
+    assert.deepEqual(declared, inventory.get(key), key);
+  }
+});
+
 test('toda ruta /admin queda clasificada y solo las de autoservicio y autenticación quedan sin permiso', () => {
-  const noPermission = ROUTE_INVENTORY.filter(route => route.path.startsWith('admin/') && route.access.kind !== 'permiso' && route.access.kind !== 'mixta' && route.access.kind !== 'seguimiento').map(route => route.method + ' ' + route.path).sort();
+  const noPermission = ROUTE_INVENTORY.filter(route => route.path.startsWith('admin/') && route.access.kind !== 'permiso' && route.access.kind !== 'segun_campo' && route.access.kind !== 'seguimiento').map(route => route.method + ' ' + route.path).sort();
   assert.deepEqual(noPermission, ['GET admin/me', 'POST admin/forgot-password', 'POST admin/login', 'POST admin/password', 'POST admin/reset-password']);
   for (const route of ROUTE_INVENTORY) {
-    if (route.access.kind === 'permiso') assert.ok(isPermission(route.access.permission), route.path);
-    if (route.access.kind === 'mixta') { assert.ok(route.access.permissions.length >= 1 && route.access.permissions.every(isPermission), route.path); assert.ok(route.access.note.length > 10); }
+    assert.ok(isRouteAccess(route.access), route.path);
+    if (route.access.kind === 'segun_campo') assert.ok((route.note ?? '').length > 10, route.path + ' debe explicar la condición');
     if (!route.path.startsWith('admin/')) assert.equal(route.access.kind, 'publica', route.path);
   }
+  assert.deepEqual(ROUTE_INVENTORY.filter(route => route.access.kind === 'segun_campo').map(route => route.method + ' ' + route.path).sort(),
+    ['POST admin/cotizaciones/:id/estado', 'PUT admin/cursos/:id', 'PUT admin/preguntas-frecuentes/:id']);
+});
+
+test('las rutas públicas y de autoservicio de /admin son exactamente las aprobadas, según los decoradores reales (independiente del inventario)', () => {
+  // Pares método + path obtenidos de los controladores y de su metadato de acceso; no se consulta ROUTE_INVENTORY.
+  const byKind = (kind: string) => routeHandlers()
+    .filter(route => route.key.split(' ')[1].startsWith('admin/') && Reflect.getMetadata(ACCESS_METADATA, route.handler)?.kind === kind)
+    .map(route => route.key).sort();
+  assert.deepEqual(byKind('publica'), ['POST admin/forgot-password', 'POST admin/login', 'POST admin/reset-password']);
+  assert.deepEqual(byKind('autenticada'), ['GET admin/me', 'POST admin/password']);
 });
 
 test('las rutas de cuentas y registro exigen permisos de cuentas, y ningún permiso de recurso futuro se exige todavía', () => {
@@ -242,15 +275,13 @@ test('las rutas de cuentas y registro exigen permisos de cuentas, y ningún perm
   assert.deepEqual(byKey.get('PUT admin/settings').access, { kind: 'permiso', permission: 'configuracion:editar' });
   const future = new Set<string>(FUTURE_RESOURCES);
   for (const route of ROUTE_INVENTORY) {
-    const ids = route.access.kind === 'permiso' ? [route.access.permission] : route.access.kind === 'mixta' ? [...route.access.permissions] : [];
-    for (const id of ids) assert.ok(!future.has(id.split(':')[0]), route.path + ' exige un recurso que aún no existe');
+    for (const id of declaredPermissions(route.access)) assert.ok(!future.has(id.split(':')[0]), route.path + ' exige un recurso que aún no existe');
   }
 });
 
 test('ninguna ruta actual de /admin exigiría a la secretaria cuentas, configuración editable, notas ni certificados', () => {
   for (const route of ROUTE_INVENTORY) {
-    const ids = route.access.kind === 'permiso' ? [route.access.permission] : route.access.kind === 'mixta' ? [...route.access.permissions] : [];
-    for (const id of ids) {
+    for (const id of declaredPermissions(route.access)) {
       if (/^(cuentas|calificaciones|certificados):/.test(id) || id === 'configuracion:editar') assert.equal(can(S, id), false, route.path);
     }
   }

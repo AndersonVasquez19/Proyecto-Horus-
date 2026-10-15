@@ -1,30 +1,20 @@
 import type { Permission } from './permissions';
+import type { FollowUpOperation, RouteAccess } from './access';
 
-// Inventario documental de las rutas HTTP actuales y del permiso que exigirán cuando se active el control de acceso.
-// Etapa 1: NO lo consume ningún guard. Existe para (1) fijar la clasificación en un solo lugar y (2) que una prueba falle
-// si alguien añade una ruta sin clasificarla. Las rutas van sin el prefijo global «api».
-//
-//  publica        Sin sesión (formularios públicos, contenido público, login y recuperación de contraseña).
-//  autenticada    Cualquier sesión válida, incluso una cuenta sin rol: autoservicio (/admin/me, cambio de la propia contraseña).
-//  permiso        Un único permiso.
-//  mixta          La misma ruta mezcla operaciones con permisos distintos: necesita separación o comprobación específica.
-//  seguimiento    El permiso depende del parámetro :recurso (ver seguimientoPermission).
-export type RouteAccess =
-  | { kind: 'publica' }
-  | { kind: 'autenticada' }
-  | { kind: 'permiso'; permission: Permission }
-  | { kind: 'mixta'; permissions: readonly Permission[]; note: string }
-  | { kind: 'seguimiento'; operation: 'leer' | 'editar' | 'enviar' };
+// Inventario escrito a mano de las rutas HTTP actuales y de la clasificación que exigirá AccessGuard cuando se active (ver access.ts).
+// No lo consume la guard: la guard lee los decoradores de los controladores. Una prueba compara ambos y falla si alguien añade una
+// ruta sin clasificar o si un decorador no coincide con este inventario. Las rutas van sin el prefijo global «api».
+export type { RouteAccess } from './access';
 
 export interface RouteEntry { method: 'GET' | 'POST' | 'PUT' | 'DELETE'; path: string; access: RouteAccess; note?: string }
 
 const pub = (method: RouteEntry['method'], path: string, note?: string): RouteEntry => ({ method, path, access: { kind: 'publica' }, note });
 const auth = (method: RouteEntry['method'], path: string, note?: string): RouteEntry => ({ method, path, access: { kind: 'autenticada' }, note });
 const perm = (method: RouteEntry['method'], path: string, permission: Permission, note?: string): RouteEntry => ({ method, path, access: { kind: 'permiso', permission }, note });
-const mixed = (method: RouteEntry['method'], path: string, permissions: readonly Permission[], note: string): RouteEntry => ({ method, path, access: { kind: 'mixta', permissions, note } });
-const follow = (method: RouteEntry['method'], path: string, operation: 'leer' | 'editar' | 'enviar'): RouteEntry => ({ method, path, access: { kind: 'seguimiento', operation } });
+const byField = (method: RouteEntry['method'], path: string, field: string, base: Permission, when: Record<string, Permission>, note: string): RouteEntry => ({ method, path, access: { kind: 'segun_campo', field, base, when }, note });
+const follow = (method: RouteEntry['method'], path: string, operation: FollowUpOperation): RouteEntry => ({ method, path, access: { kind: 'seguimiento', operation } });
 
-const STATE_NOTE = 'El mismo PUT puede cambiar el estado a «archivado»: archivar y editar son permisos distintos. Separar o comprobar el estado en el servicio antes de activar.';
+const STATE_NOTE = 'El mismo PUT puede pasar el registro a «archivado»: entonces exige además el permiso de archivar. Reactivar un registro archivado solo exige editar (la guard no consulta el estado guardado).';
 
 export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   // --- Públicas ---
@@ -56,15 +46,15 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   // --- Catálogo ---
   perm('GET', 'admin/cursos', 'cursos:leer'), perm('GET', 'admin/cursos/:id', 'cursos:leer'),
   perm('POST', 'admin/cursos', 'cursos:crear'),
-  mixed('PUT', 'admin/cursos/:id', ['cursos:editar', 'cursos:archivar'], STATE_NOTE),
+  byField('PUT', 'admin/cursos/:id', 'estado', 'cursos:editar', { archivado: 'cursos:archivar' }, STATE_NOTE),
   perm('DELETE', 'admin/cursos/:id', 'cursos:eliminar', 'Borrado físico hoy. Debe impedirse cuando existan convocatorias o matrículas (control en servicio y claves foráneas).'),
   perm('GET', 'admin/servicios', 'servicios:leer'), perm('GET', 'admin/servicios/:id', 'servicios:leer'),
   perm('POST', 'admin/servicios', 'servicios:crear'),
-  mixed('PUT', 'admin/servicios/:id', ['servicios:editar'], STATE_NOTE + ' (servicios no tiene permiso de archivar: hoy archivar un servicio exige servicios:editar).'),
+  perm('PUT', 'admin/servicios/:id', 'servicios:editar', 'Servicios no tiene permiso de archivar: pasar un servicio a «archivado» exige servicios:editar.'),
   perm('DELETE', 'admin/servicios/:id', 'servicios:eliminar'),
   perm('GET', 'admin/preguntas-frecuentes', 'preguntas_frecuentes:leer'), perm('GET', 'admin/preguntas-frecuentes/:id', 'preguntas_frecuentes:leer'),
   perm('POST', 'admin/preguntas-frecuentes', 'preguntas_frecuentes:crear'),
-  mixed('PUT', 'admin/preguntas-frecuentes/:id', ['preguntas_frecuentes:editar', 'preguntas_frecuentes:archivar'], STATE_NOTE),
+  byField('PUT', 'admin/preguntas-frecuentes/:id', 'estado', 'preguntas_frecuentes:editar', { archivado: 'preguntas_frecuentes:archivar' }, STATE_NOTE),
   perm('DELETE', 'admin/preguntas-frecuentes/:id', 'preguntas_frecuentes:archivar', 'El DELETE solo archiva.'),
   perm('GET', 'admin/galeria', 'galeria:leer'), perm('POST', 'admin/galeria', 'galeria:crear'),
   perm('PUT', 'admin/galeria/:id', 'galeria:editar'), perm('DELETE', 'admin/galeria/:id', 'galeria:eliminar'),
@@ -85,7 +75,7 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('GET', 'admin/cotizaciones', 'cotizaciones:leer'), perm('GET', 'admin/cotizaciones/:id', 'cotizaciones:leer'),
   perm('POST', 'admin/cotizaciones', 'cotizaciones:crear'), perm('PUT', 'admin/cotizaciones/:id', 'cotizaciones:editar'),
   perm('POST', 'admin/cotizaciones/:id/correo', 'cotizaciones:enviar'),
-  mixed('POST', 'admin/cotizaciones/:id/estado', ['cotizaciones:editar', 'cotizaciones:anular'], 'El destino «anulada» es una anulación; «aceptada»/«rechazada»/«enviada» son edición. Comprobar el estado destino en el servicio.'),
+  byField('POST', 'admin/cotizaciones/:id/estado', 'estado', 'cotizaciones:editar', { anulada: 'cotizaciones:anular' }, 'Cambiar el estado es edición; el destino «anulada» exige además cotizaciones:anular.'),
   perm('GET', 'admin/reclamaciones', 'reclamaciones:leer'), perm('GET', 'admin/reclamaciones/:id', 'reclamaciones:leer'),
   perm('DELETE', 'admin/reclamaciones/:id', 'reclamaciones:eliminar', 'Pendiente de criterio legal: podría exigirse conservarlas.'),
   perm('GET', 'admin/newsletter', 'boletin:leer', 'Devuelve la lista completa de correos; no existe endpoint de exportación (la exportación es del navegador).'),

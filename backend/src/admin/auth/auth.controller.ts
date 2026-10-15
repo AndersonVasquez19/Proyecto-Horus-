@@ -5,6 +5,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedRoute, PublicRoute, RequirePermission } from '../../permissions/access.decorators';
 
 @ApiTags('Admin - Autenticación')
 @Controller('admin')
@@ -14,6 +15,7 @@ export class AuthController {
   // Alta de administradores: solo la hace una cuenta activa con sesión válida (JwtAuthGuard). No hay registro público.
   // La respuesta no incluye token: la persona creada inicia sesión por /admin/login con su propia contraseña.
   @Post('register')
+  @RequirePermission('cuentas:crear')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.CREATED)
@@ -26,6 +28,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @PublicRoute()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Iniciar sesión como administrador' })
   @ApiResponse({ status: 200, description: 'Inicio de sesión exitoso con token JWT' })
@@ -34,6 +37,7 @@ export class AuthController {
   }
 
   @Get('me')
+  @AuthenticatedRoute()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener datos del administrador autenticado' })

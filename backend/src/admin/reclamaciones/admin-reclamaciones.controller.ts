@@ -11,6 +11,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { AdminReclamacionesService } from './admin-reclamaciones.service';
 import { QueryReclamacionesDto } from './dto/query-reclamaciones.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RequirePermission } from '../../permissions/access.decorators';
 
 @ApiTags('Admin - Reclamaciones')
 @ApiBearerAuth()
@@ -20,6 +21,7 @@ export class AdminReclamacionesController {
   constructor(private readonly service: AdminReclamacionesService) {}
 
   @Get()
+  @RequirePermission('reclamaciones:leer')
   @ApiOperation({ summary: 'Listar reclamaciones y quejas registradas' })
   @ApiResponse({ status: 200, description: 'Listado obtenido exitosamente' })
   async findAll(@Query() query: QueryReclamacionesDto) {
@@ -27,6 +29,7 @@ export class AdminReclamacionesController {
   }
 
   @Get(':id')
+  @RequirePermission('reclamaciones:leer')
   @ApiOperation({ summary: 'Ver detalle de una reclamación por ID' })
   @ApiResponse({ status: 200, description: 'Detalle de la reclamación' })
   @ApiResponse({ status: 404, description: 'Reclamación no encontrada' })
@@ -35,6 +38,7 @@ export class AdminReclamacionesController {
   }
 
   @Delete(':id')
+  @RequirePermission('reclamaciones:eliminar')
   @ApiOperation({ summary: 'Eliminar una reclamación' })
   @ApiResponse({ status: 200, description: 'Reclamación eliminada exitosamente' })
   @ApiResponse({ status: 404, description: 'Reclamación no encontrada' })
