@@ -52,7 +52,8 @@ function accounts() {
       state.reads++;
       const row = rows.find(candidate => candidate.id === where.id);
       if (!row) return null;
-      const seen = select && state.afterAuth ? state.afterAuth({ ...row }) : { ...row };
+      // `afterAuth` solo altera la lectura de la guard (sin `nombre`), no la de JwtStrategy.
+      const seen = select && !select.nombre && state.afterAuth ? state.afterAuth({ ...row }) : { ...row };
       return select ? Object.fromEntries(Object.keys(select).map(key => [key, (seen as any)[key]])) : seen;
     },
   };
@@ -180,7 +181,8 @@ test('autoservicio: una cuenta sin rol consulta su cuenta y cambia su contraseñ
     const me = await call('GET', 'admin/me', session);
     assert.equal(me.status, 200);
     assert.equal(me.data.user.id, 4);
-    assert.equal(me.data.user.rol, undefined, '/admin/me conserva su respuesta actual');
+    assert.equal(me.data.user.rol, null, '/admin/me informa que la cuenta no tiene rol (E3.4.1)');
+    assert.deepEqual(me.data.user.permisos, []);
     assert.equal((await call('POST', 'admin/password', session, { actual: 'x', nueva: 'y' })).status, 200);
     for (const [method, route] of [['GET', 'admin/cursos'], ['GET', 'admin/cotizaciones'], ['GET', 'admin/users'], ['POST', 'admin/register'], ['GET', 'admin/seguimiento/messages/1']]) {
       const result = await call(method, route, session, method === 'POST' ? {} : undefined);

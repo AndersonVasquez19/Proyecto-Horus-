@@ -22,7 +22,7 @@ const COORDINADORA_INSTITUCIONAL: readonly Permission[] = [
   'galeria:leer', 'galeria:crear', 'galeria:editar', 'galeria:eliminar',
   'convenios:leer', 'convenios:crear', 'convenios:editar', 'convenios:eliminar',
   'archivos:crear',
-  'mensajes:leer', 'mensajes:editar',
+  'mensajes:leer', 'mensajes:crear', 'mensajes:editar', // crear = registrar una consulta manual (atención al público, E3.4.1)
   'seguimiento_mensajes:leer', 'seguimiento_mensajes:editar', 'seguimiento_mensajes:enviar',
   'seguimiento_reclamaciones:leer', 'seguimiento_reclamaciones:editar', 'seguimiento_reclamaciones:enviar',
   'cotizaciones:leer', 'cotizaciones:crear', 'cotizaciones:editar', 'cotizaciones:enviar', 'cotizaciones:anular',
@@ -45,7 +45,7 @@ const COORDINADORA_INSTITUCIONAL: readonly Permission[] = [
 const SECRETARIA: readonly Permission[] = [
   'configuracion:leer',
   'cursos:leer',
-  'mensajes:leer', 'mensajes:editar',
+  'mensajes:leer', 'mensajes:crear', 'mensajes:editar', // crear = registrar una consulta manual (atención al público, E3.4.1)
   'seguimiento_mensajes:leer', 'seguimiento_mensajes:editar', 'seguimiento_mensajes:enviar',
   'chatbot_consultas:leer',
   // Académico (módulos futuros)

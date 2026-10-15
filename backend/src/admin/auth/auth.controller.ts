@@ -6,6 +6,7 @@ import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedRoute, PublicRoute, RequirePermission } from '../../permissions/access.decorators';
+import { ACCESS_MODE, sessionAccess } from '../../permissions/session-access';
 
 @ApiTags('Admin - Autenticación')
 @Controller('admin')
@@ -41,8 +42,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener datos del administrador autenticado' })
-  @ApiResponse({ status: 200, description: 'Datos del usuario actual' })
-  async me(@CurrentUser() user: any) {
-    return { ok: true, user };
+  @ApiResponse({ status: 200, description: 'Datos del usuario actual, su rol vigente (o null), sus permisos y el modo de acceso' })
+  @ApiResponse({ status: 401, description: 'Sin sesión válida' })
+  async me(@CurrentUser() user: { id: number; nombre: string; email: string; rol: unknown }) {
+    // `user` lo construye JwtStrategy con la fila leída de la base en esta misma solicitud: no hace falta otra consulta.
+    // Respuesta con campos explícitos: nunca contraseña, session_version ni datos de recuperación.
+    return { ok: true, user: { id: user.id, nombre: user.nombre, email: user.email, ...sessionAccess(user.rol) }, acceso: { modo: ACCESS_MODE } };
   }
 }

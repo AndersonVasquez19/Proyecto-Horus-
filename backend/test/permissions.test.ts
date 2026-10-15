@@ -132,7 +132,7 @@ test('las operaciones delicadas son exclusivas del gerente general', () => {
 test('la coordinadora: gestión académica y operativa permitida', () => {
   const allowed = [
     'cursos:leer', 'cursos:crear', 'cursos:editar', 'cursos:archivar', 'servicios:editar', 'galeria:eliminar', 'convenios:editar', 'archivos:crear',
-    'mensajes:leer', 'mensajes:editar', 'seguimiento_mensajes:enviar', 'seguimiento_reclamaciones:editar', 'cotizaciones:crear', 'cotizaciones:anular',
+    'mensajes:leer', 'mensajes:crear', 'mensajes:editar', 'seguimiento_mensajes:enviar', 'seguimiento_reclamaciones:editar', 'cotizaciones:crear', 'cotizaciones:anular',
     'reclamaciones:leer', 'estadisticas:leer', 'configuracion:leer',
     'estudiantes:leer', 'estudiantes:crear', 'estudiantes:editar', 'estudiantes:archivar',
     'convocatorias:crear', 'convocatorias:editar', 'convocatorias:cerrar',
@@ -145,7 +145,7 @@ test('la coordinadora: gestión académica y operativa permitida', () => {
 
 test('la secretaria: estudiantes, matrículas y atención permitidos', () => {
   const allowed = [
-    'cursos:leer', 'convocatorias:leer', 'configuracion:leer', 'mensajes:leer', 'mensajes:editar',
+    'cursos:leer', 'convocatorias:leer', 'configuracion:leer', 'mensajes:leer', 'mensajes:crear', 'mensajes:editar',
     'seguimiento_mensajes:leer', 'seguimiento_mensajes:editar', 'seguimiento_mensajes:enviar', 'chatbot_consultas:leer',
     'estudiantes:leer', 'estudiantes:crear', 'matriculas:leer', 'matriculas:crear', 'matriculas:editar',
   ];
@@ -181,6 +181,22 @@ test('las decisiones pendientes no se conceden a coordinadora ni secretaria', ()
     assert.equal(can(S, id), false, id);
   }
   for (const id of ['estudiantes:editar', 'matriculas:anular', 'asistencia:registrar', 'asistencia:leer', 'estadisticas:leer', 'cotizaciones:leer', 'servicios:leer', 'convenios:leer']) assert.equal(can(S, id), false, id);
+});
+
+test('E3.4.1: los tres roles registran consultas manuales (mensajes:crear), pero solo el gerente las elimina', () => {
+  for (const role of [G, C, S]) assert.equal(can(role, 'mensajes:crear'), true, role);
+  assert.equal(can(G, 'mensajes:eliminar'), true);
+  for (const role of [C, S]) assert.equal(can(role, 'mensajes:eliminar'), false, role);
+  // El ajuste no amplía nada más: los permisos de mensajes de cada rol son exactamente estos.
+  const messages = (role: string) => permissionsOf(role).filter(id => id.startsWith('mensajes:'));
+  assert.deepEqual(messages(C), ['mensajes:crear', 'mensajes:editar', 'mensajes:leer']);
+  assert.deepEqual(messages(S), ['mensajes:crear', 'mensajes:editar', 'mensajes:leer']);
+  assert.equal(permissionsOf(C).length, 63, 'coordinadora: 62 permisos anteriores + mensajes:crear');
+  assert.equal(permissionsOf(S).length, 15, 'secretaria: 14 permisos anteriores + mensajes:crear');
+  // La ruta que registra consultas exige exactamente ese permiso (decorador real e inventario).
+  const create = ROUTE_INVENTORY.find(route => route.method === 'POST' && route.path === 'admin/messages');
+  assert.deepEqual(create?.access, { kind: 'permiso', permission: 'mensajes:crear' });
+  assert.deepEqual(Reflect.getMetadata(ACCESS_METADATA, MessagesController.prototype.create), { kind: 'permiso', permission: 'mensajes:crear' });
 });
 
 test('seguimiento: el permiso depende del recurso y un recurso desconocido se deniega', () => {

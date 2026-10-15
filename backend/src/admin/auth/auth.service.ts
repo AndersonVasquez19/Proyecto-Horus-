@@ -7,6 +7,7 @@ import { AdminUser } from '@prisma/client';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { BCRYPT_COST, DUMMY_PASSWORD_HASH } from './password-security';
+import { ACCESS_MODE, sessionAccess } from '../../permissions/session-access';
 
 @Injectable()
 export class AuthService {
@@ -64,13 +65,16 @@ export class AuthService {
       throw new UnauthorizedException({ ok: false, mensaje: 'Credenciales incorrectas.' });
     }
 
+    // El JWT no cambia (id, email, version): el rol y los permisos nunca viajan dentro del token.
     const token = this.generateToken(user);
 
+    // Mismo contrato que GET /admin/me: el panel no vuelve a consultar /me tras iniciar sesión. El rol sale de la fila recién leída.
     return {
       ok: true,
       mensaje: 'Login correcto.',
       token,
-      user: { id: user.id, nombre: user.nombre, email: user.email },
+      user: { id: user.id, nombre: user.nombre, email: user.email, ...sessionAccess(user.rol) },
+      acceso: { modo: ACCESS_MODE },
     };
   }
 }
