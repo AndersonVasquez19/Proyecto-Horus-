@@ -60,8 +60,9 @@ No los ejecutes contra otra base. En una base ya inicializada, omite `db:init`.
 docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend npm run db:init       # solo si la base no tiene tablas
 docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend npm run db:migrate    # aplica TODAS las migraciones, incluidas 20261009-chatbot-metrics, 20261010-newsletter-default-novedades y 20261011-cotizaciones-idempotencia; sin las dos columnas de esta última, las cotizaciones fallan
 docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend npm run db:check      # solo lectura; debe terminar con «Esquema compatible»
+docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend npm run admin:assign-role -- --listar   # solo lectura; muestra la línea --destino=… --servidor=<server_uuid> que se usa abajo
 $env:ADMIN_INITIAL_PASSWORD = "<clave-local>"
-docker compose --env-file .env.docker -f docker-compose.local.yml exec -it -u node -e ADMIN_INITIAL_PASSWORD backend npm run admin:create   # pide nombre y correo
+docker compose --env-file .env.docker -f docker-compose.local.yml exec -it -u node -e ADMIN_INITIAL_PASSWORD backend npm run admin:create -- --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>   # pide nombre y correo; crea la cuenta sin rol
 Remove-Item Env:ADMIN_INITIAL_PASSWORD
 ```
 

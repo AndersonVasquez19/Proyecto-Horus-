@@ -85,7 +85,7 @@ Para una base existente, omitir `db:init`: revisar primero `npm run db:check`, a
 
 Tras preparar la base, se puede configurar `npm run db:migrate` como Pre-Deploy Command del backend para futuros despliegues, si se desea aplicar automáticamente las migraciones revisadas. No configurar `db:init` como paso recurrente. Los scripts están incluidos en la imagen de producción.
 
-Para el primer administrador, configurar temporalmente `ADMIN_INITIAL_PASSWORD` y ejecutar `npm run admin:create` en una terminal interactiva del backend. El script solicita nombre y correo. Retirar la variable al terminar; no utilizar este comando en un pre-deploy automático.
+Para el primer administrador, obtener primero en solo lectura el destino y la identidad del servidor con `npm run admin:assign-role -- --listar` (línea `--destino=… --servidor=<server_uuid>`; comprobar el `server_uuid` con `SELECT @@server_uuid` desde la consola de MySQL de Railway), configurar temporalmente `ADMIN_INITIAL_PASSWORD` y ejecutar `npm run admin:create -- --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>` en una terminal interactiva del backend. El script solicita nombre y correo, crea la cuenta **sin rol** y registra el alta en `admin_auditoria` (requiere la migración `20261014-admin-auditoria`). El rol se asigna después con `admin:assign-role` (ver `docs/procedimientos/roles-administrativos.md`). Retirar la variable al terminar; no utilizar este comando en un pre-deploy automático.
 
 ## 4. Comprobación final
 

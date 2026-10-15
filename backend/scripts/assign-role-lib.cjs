@@ -16,13 +16,15 @@ const GERENTE = 'GERENTE_GENERAL';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const LOCK = 'horus_admin_roles';
+const { declaredOperator, declaredReason, auditMissing, AUDIT_MIGRATION } = require('./admin-audit-lib.cjs');
 
 const USAGE = [
   'Uso (por defecto SOLO simula; no escribe nada):',
   '  npm run admin:assign-role -- --listar',
   '  npm run admin:assign-role -- --email=<correo> --rol=<ROL>',
-  '  npm run admin:assign-role -- --email=<correo> --rol=<ROL> --apply --confirmar=<correo> --destino=<host>:<puerto>/<base> --servidor=<server_uuid>',
+  '  npm run admin:assign-role -- --email=<correo> --rol=<ROL> --apply --confirmar=<correo> --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>',
   'Opciones: --permitir-otro-gerente (necesaria para dar GERENTE_GENERAL cuando ya existe otro gerente activo).',
+  '--operador y --motivo quedan en la auditoría (admin_auditoria). --operador es una identificación DECLARADA, no una autenticación.',
   'Roles: ' + ROLES.join(', ') + '.',
 ].join('\n');
 
@@ -32,7 +34,7 @@ const fail = message => { throw new AssignRoleError(message); };
 function parseArgs(argv) {
   const options = { listar: false, apply: false, permitirOtroGerente: false };
   const known = { '--listar': 'listar', '--apply': 'apply', '--permitir-otro-gerente': 'permitirOtroGerente' };
-  const valued = { '--email': 'email', '--rol': 'rol', '--confirmar': 'confirmar', '--destino': 'destino', '--servidor': 'servidor' };
+  const valued = { '--email': 'email', '--rol': 'rol', '--confirmar': 'confirmar', '--destino': 'destino', '--servidor': 'servidor', '--operador': 'operador', '--motivo': 'motivo' };
   const seen = new Set();
   for (const arg of argv) {
     const [flag, ...rest] = String(arg).split('=');
@@ -105,6 +107,20 @@ async function identify(db) {
   return { base: row?.base ?? null, hostname: row?.hostname ?? null, port: row?.puerto ?? null, uuid };
 }
 
+// Comprobaciones de identidad compartidas con admin:create. --servidor confirmado, normalizado; null si falta o no tiene el formato.
+const SERVER_FORMAT = '--servidor debe ser el server_uuid completo del servidor (formato xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).';
+const confirmedServer = value => { const uuid = String(value ?? '').trim().toLowerCase(); return UUID.test(uuid) ? uuid : null; };
+const describeServer = server => 'Servidor conectado: base=' + server.base + ' | server_uuid=' + (server.uuid ?? 'no disponible') +
+  ' | hostname informado=' + server.hostname + ' | puerto informado=' + server.port;
+// Devuelve null si la conexión es la confirmada, o el motivo para no seguir. Sin `expectedUuid` solo comprueba la base (lectura).
+function serverProblem(server, dest, expectedUuid) {
+  if (server.base !== dest.database) return 'La base conectada (' + server.base + ') no coincide con la configurada (' + dest.database + '). No se hizo nada.';
+  if (expectedUuid === undefined) return null;
+  if (!server.uuid) return 'No se pudo determinar la identidad del servidor (server_uuid). Por seguridad no se escribe nada.';
+  if (server.uuid !== expectedUuid) return 'La identidad del servidor conectado no coincide con --servidor. No se escribió nada.';
+  return null;
+}
+
 async function loadAccounts(db, forUpdate = false) {
   const [rows] = await db.query('SELECT id, nombre, email, activo, rol FROM admin_users ORDER BY id' + (forUpdate ? ' FOR UPDATE' : ''));
   return rows.map(row => ({ id: Number(row.id), nombre: String(row.nombre), email: String(row.email), activo: Boolean(row.activo), rol: row.rol ?? null }));
@@ -119,7 +135,7 @@ async function run({ argv, resolveConfig, connect, out }) {
     if (options.listar === !!(options.email || options.rol)) fail('Indica --listar, o bien --email y --rol.\n' + USAGE);
     if (options.listar && (options.apply || options.permitirOtroGerente)) fail('--listar es solo de lectura y no admite --apply ni --permitir-otro-gerente.');
     if (!options.listar && (!options.email || !options.rol)) fail('Faltan --email o --rol.\n' + USAGE);
-    if (!options.apply && (options.confirmar || options.destino || options.servidor)) fail('--confirmar, --destino y --servidor solo se usan junto con --apply.');
+    if (!options.apply && (options.confirmar || options.destino || options.servidor || options.operador || options.motivo)) fail('--confirmar, --destino, --servidor, --operador y --motivo solo se usan junto con --apply.');
     // Una sola resolución, antes de cualquier validación: lo que se confirma es lo que se usa para conectar.
     let config;
     try { config = resolveConfig(); } catch { fail('Configuración de conexión incompleta (revisa DB_HOST, DB_PORT, DB_NAME, DB_USER y DB_PASS).'); }
@@ -128,7 +144,11 @@ async function run({ argv, resolveConfig, connect, out }) {
       if (!options.confirmar || normalizeEmail(options.confirmar) !== normalizeEmail(options.email)) fail('Para aplicar, repite el correo exacto con --confirmar=<correo>.');
       if (options.destino !== dest.label) fail('Para aplicar, confirma el destino exacto con --destino=<host>:<puerto>/<base>. Destino configurado: ' + dest.label + '.');
       if (!options.servidor) fail('Para aplicar, confirma la identidad del servidor con --servidor=<server_uuid> (se muestra con --listar o en la simulación).');
-      if (!UUID.test(options.servidor.trim().toLowerCase())) fail('--servidor debe ser el server_uuid completo del servidor (formato xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).');
+      options.servidor = confirmedServer(options.servidor) ?? fail(SERVER_FORMAT);
+      const operador = declaredOperator(options.operador), motivo = declaredReason(options.motivo);
+      if (!operador.ok) fail(operador.message);
+      if (!motivo.ok) fail(motivo.message);
+      options.operador = operador.value; options.motivo = motivo.value;
     }
   } catch (error) {
     if (!(error instanceof AssignRoleError)) throw error;
@@ -141,33 +161,36 @@ async function run({ argv, resolveConfig, connect, out }) {
   try {
     out('Destino configurado: ' + dest.label + (options.apply ? '  (MODO APLICAR)' : '  (solo lectura)'));
     const server = await identify(db);
-    out('Servidor conectado: base=' + server.base + ' | server_uuid=' + (server.uuid ?? 'no disponible') + ' | hostname informado=' + server.hostname + ' | puerto informado=' + server.port);
+    out(describeServer(server));
     out('(El hostname y el puerto informados pueden diferir de los configurados por Docker, proxies o DNS; la identidad se confirma con server_uuid.)');
-    if (server.base !== dest.database) fail('La base conectada (' + server.base + ') no coincide con la configurada (' + dest.database + '). No se hizo nada.');
-    if (options.apply) {
-      if (!server.uuid) fail('No se pudo determinar la identidad del servidor (server_uuid). Por seguridad no se escribe nada.');
-      if (server.uuid !== options.servidor.trim().toLowerCase()) fail('La identidad del servidor conectado no coincide con --servidor. No se escribió nada.');
-    }
+    const problem = serverProblem(server, dest, options.apply ? options.servidor : undefined);
+    if (problem) fail(problem);
 
     const [columns] = await db.query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'admin_users' AND COLUMN_NAME = 'rol'");
     if (!columns.length) fail('La base no tiene la columna admin_users.rol. Respalda y aplica antes la migración 20261014-admin-rol (npm run db:migrate).');
+    // Sin la tabla de auditoría (M-4) no se puede registrar el cambio: la simulación y la aplicación se detienen antes de bloquear nada.
+    const auditProblem = await auditMissing(db);
 
     const confirmation = ' --destino=' + dest.label + ' --servidor=' + (server.uuid ?? '<no disponible>');
     if (options.listar) {
       const accounts = await loadAccounts(db);
       for (const account of accounts) out('id ' + account.id + ' | ' + maskEmail(account.email) + ' | ' + (account.activo ? 'activa' : 'inactiva') + ' | ' + (account.rol ?? 'sin rol'));
       out('Cuentas: ' + accounts.length + '. Gerentes generales activos: ' + activeManagers(accounts).length + '.');
+      if (auditProblem) out('AVISO: ' + auditProblem + ' Hasta entonces no se puede asignar ningún rol.');
       out('Confirmación de destino para --apply (compruébela con la identidad conocida del servidor):' + confirmation);
       return 0;
     }
+
+    if (auditProblem) fail(auditProblem + ' No se hizo nada.');
 
     const input = { email: options.email, rol: options.rol, permitirOtroGerente: options.permitirOtroGerente };
     if (!options.apply) {
       const plan = planAssignment(await loadAccounts(db), input);
       out(describe(plan));
-      out(plan.unchanged ? 'Sin cambios: la cuenta ya tiene ese rol.' : 'SIMULACIÓN: no se escribió nada. Para aplicar añade --apply --confirmar=<correo>' + confirmation);
+      out(plan.unchanged ? 'Sin cambios: la cuenta ya tiene ese rol.' : 'SIMULACIÓN: no se escribió nada. Para aplicar añade --apply --confirmar=<correo>' + confirmation + ' --operador=<identificador> --motivo=<texto>');
       return 0;
     }
+    out('Operador declarado: ' + options.operador + ' | Motivo: ' + options.motivo + '  (quedan en admin_auditoria; el operador no está autenticado)');
 
     const [[lock]] = await db.query("SELECT GET_LOCK('" + LOCK + "', 10) AS acquired");
     if (Number(lock.acquired) !== 1) fail('Otra asignación de roles está en curso.');
@@ -186,8 +209,14 @@ async function run({ argv, resolveConfig, connect, out }) {
       if (Number(result.affectedRows) !== 1) fail('La cuenta cambió mientras se aplicaba. No se escribió nada; vuelve a simular.');
       const finalManagers = activeManagers(await loadAccounts(db)).length;
       if (finalManagers < 1) fail('Comprobación final fallida: no quedaría ningún GERENTE_GENERAL activo. No se escribió nada.');
+      // Auditoría (M-4) en la MISMA transacción: si el registro falla, también se revierten el rol y session_version.
+      const [audit] = await db.query(
+        "INSERT INTO admin_auditoria (origen, actor_id, operador, cuenta_id, operacion, rol_anterior, rol_nuevo, activo_anterior, activo_nuevo, resultado, motivo) VALUES ('terminal', NULL, ?, ?, 'rol_asignado', ?, ?, 1, 1, 'aplicado', ?)",
+        [options.operador, plan.target.id, plan.previous, plan.next, options.motivo],
+      );
+      if (Number(audit.affectedRows) !== 1) fail('No se pudo registrar la auditoría. No se escribió nada.');
       await db.commit();
-      out('Rol asignado: cuenta id ' + plan.target.id + ' -> ' + plan.next + '. Gerentes generales activos: ' + finalManagers + '.');
+      out('Rol asignado: cuenta id ' + plan.target.id + ' -> ' + plan.next + '. Gerentes generales activos: ' + finalManagers + '. Auditoría registrada (id ' + audit.insertId + ').');
       return 0;
     } catch (error) {
       try { await db.rollback(); } catch { /* la conexión se cierra a continuación */ }
@@ -203,4 +232,4 @@ async function run({ argv, resolveConfig, connect, out }) {
   }
 }
 
-module.exports = { ROLES, AssignRoleError, parseArgs, maskEmail, planAssignment, destination, run, USAGE };
+module.exports = { ROLES, AssignRoleError, parseArgs, maskEmail, planAssignment, destination, identify, describeServer, confirmedServer, serverProblem, SERVER_FORMAT, run, USAGE };

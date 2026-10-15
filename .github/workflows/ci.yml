@@ -116,6 +116,16 @@ jobs:
       - run: npm ci
       - name: Integración con MySQL
         run: npm run test:integration
+      # M-3 (H-BACK-01 E3.2): procesos reales de admin:create y admin:assign-role. La prueba solo actúa si el server_uuid de su conexión
+      # coincide con el leído aquí DENTRO del contenedor de este job (docker exec, otra vía), si el servidor es recién creado y no tiene datos.
+      # Crea y elimina únicamente horus_scripts_test_<hex>.
+      - name: Integración de admin:create y admin:assign-role (M-3)
+        run: |
+          ADMIN_SCRIPTS_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ADMIN_SCRIPTS_TEST_SERVER_UUID
+          node --test test/admin-scripts.integration.cjs
+        env:
+          ADMIN_SCRIPTS_TEST_DB: 'true'
       - name: Integración de la colación en db:backup y db:restore
         run: node --test test/backup-collation.integration.cjs
         env:

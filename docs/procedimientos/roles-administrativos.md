@@ -17,8 +17,16 @@ Desde `backend/`. **Por defecto solo simula y solo lee.**
 ```
 npm run admin:assign-role -- --listar
 npm run admin:assign-role -- --email=<correo> --rol=<ROL>
-npm run admin:assign-role -- --email=<correo> --rol=<ROL> --apply --confirmar=<correo> --destino=<host>:<puerto>/<base> --servidor=<server_uuid>
+npm run admin:assign-role -- --email=<correo> --rol=<ROL> --apply --confirmar=<correo> --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>
 ```
+
+### Auditoría desde la terminal (E3.2, pendiente de revisión)
+
+`admin:assign-role --apply` y `admin:create` registran cada cambio efectivo en `admin_auditoria` con `origen='terminal'`, `actor_id` nulo, el **operador declarado** (`--operador`), el **motivo** (`--motivo`), la cuenta afectada, el rol anterior y el nuevo (o el alta) y la fecha del servidor. El cambio y su registro van en la **misma transacción**: si el registro falla, se revierten también el rol y `session_version` (o no se crea la cuenta). Si falta la tabla, o está incompleta, la simulación y la aplicación se detienen antes de bloquear o escribir e indican aplicar `20261014-admin-auditoria`; `--listar` lo avisa.
+
+- **`--operador` no es autenticación.** Identifica a quien *declara* ejecutar el script; cualquiera con acceso a la terminal y a las credenciales de la base puede escribir otro valor. Es una constancia, no un control: la protección real sigue siendo el acceso restringido a la terminal y a la base. Use un identificador corto (iniciales o código de puesto), no correos: el operador admite solo letras, números, espacios, `.`, `-` y `_` (2–100 caracteres).
+- **`--motivo`**: 5–200 caracteres en una línea, sin `@`. No incluya contraseñas ni datos personales.
+- Los intentos rechazados y las operaciones sin cambios **no** se registran (el script imprime el motivo del rechazo).
 
 ### Confirmación del destino (qué garantiza y qué no)
 
@@ -39,7 +47,17 @@ Salvaguardas:
 - **Toda** asignación o cambio de rol, incluida la primera, sube `session_version` de esa cuenta: cierra sus sesiones abiertas y obliga a iniciar sesión de nuevo (decisión aprobada). Las demás cuentas no se tocan.
 - Escribe dentro de una transacción con las filas bloqueadas (`FOR UPDATE`) y con un bloqueo de MySQL contra ejecuciones simultáneas; revalida con esas filas y comprueba el resultado final antes de confirmar. Si algo cambió o falla, revierte.
 - No lee la columna de contraseñas ni muestra usuario, contraseña o cadena de conexión. Los listados enmascaran los correos (`ab***@dominio`). Si falta la columna `rol`, se detiene e indica aplicar la migración.
-- Cada ejecución imprime el destino, la cuenta, el rol anterior y el nuevo. **El script todavía no escribe en la tabla de auditoría** (`admin_auditoria`, ver M-4): conserve la salida de la terminal como constancia.
+- Cada ejecución imprime el destino, la cuenta, el rol anterior y el nuevo, y con `--apply` exige `--operador` y `--motivo` (ver «Auditoría desde la terminal»).
+
+## El script `admin:create`
+
+Crea una cuenta activa **sin rol** (`rol = NULL`), también cuando todavía no hay ningún gerente: nunca concede `GERENTE_GENERAL` ni otro rol. Desde `backend/`, con la contraseña inicial en una variable temporal (nunca en argumentos):
+
+```
+ADMIN_INITIAL_PASSWORD=<temporal> npm run admin:create -- --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>
+```
+
+Pide nombre y correo. Confirma el destino con las **mismas comprobaciones que `admin:assign-role`** (apartado «Confirmación del destino», misma implementación): `--destino` debe coincidir con la configuración resuelta y, si no, se detiene sin conectarse; `--servidor` es obligatorio y debe ser un `server_uuid` completo (si falta o está mal formado, se detiene sin conectarse); tras conectar, `DATABASE()` debe ser esa base y `@@server_uuid` debe coincidir con `--servidor`. Si la base es otra, el servidor es otro o no informa su `server_uuid`, **no se escribe nada** (ni siquiera se calcula el hash). El `server_uuid` y la línea de confirmación los muestra `npm run admin:assign-role -- --listar` (solo lectura). Todas las comprobaciones (destino, servidor, migraciones, correo duplicado) ocurren antes de abrir la transacción. Rechaza correos duplicados (también dos altas simultáneas: gana una). El alta y su registro de auditoría se confirman juntos en una única transacción: si el registro falla, no se crea la cuenta. La cuenta se crea siempre con `rol = NULL`. No imprime la contraseña, su hash ni las credenciales de conexión; el correo se muestra enmascarado.
 
 ## Plan seguro para asignar al primer gerente
 
@@ -51,7 +69,7 @@ Requiere autorización expresa del responsable; no lo ejecuta ningún proceso au
 4. `npm run db:migrate`; después `npm run db:check` debe terminar en «Esquema compatible».
 5. `npm run admin:assign-role -- --listar`. Comprobar que «Destino configurado», la base y el `server_uuid` mostrados son los esperados. **El responsable identifica cuál cuenta es la del gerente**; no se deduce por orden ni por antigüedad.
 6. Simular: `npm run admin:assign-role -- --email=<correo del gerente> --rol=GERENTE_GENERAL` y revisar cuenta, rol, conteo de gerentes y la línea de confirmación.
-7. Aplicar con `--apply --confirmar=<correo> --destino=<host>:<puerto>/<base> --servidor=<server_uuid>`, usando valores comprobados en los pasos 1 y 5.
+7. Aplicar con `--apply --confirmar=<correo> --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>`, usando valores comprobados en los pasos 1 y 5.
 8. Comprobar con `--listar` (debe mostrar 1 gerente activo) y guardar la salida.
 9. Las demás cuentas **quedan sin rol** (`NULL`). Nada las eleva. Cuando el control de acceso esté activo, una cuenta sin rol solo podrá consultar su sesión y cambiar su contraseña. Las cuentas que ya no correspondan (por ejemplo, del antiguo puesto administrativo) se **desactivan, no se borran**, desde «Cuentas y acceso» cuando exista o por el procedimiento que se autorice.
 10. Asignar los demás roles uno a uno con el mismo script (simulación primero).
@@ -63,9 +81,21 @@ Requiere autorización expresa del responsable; no lo ejecuta ningún proceso au
 | El script falla o se interrumpe | La transacción se revierte; vuelva a ejecutar `--listar` para ver el estado real y repita la simulación. El bloqueo de MySQL se libera al cerrar la conexión. |
 | Se asignó el rol a la cuenta equivocada | Asigne `GERENTE_GENERAL` a la cuenta correcta con `--permitir-otro-gerente`, y después cambie la equivocada a otro de los tres roles (todo cambio de rol cierra las sesiones de esa cuenta). **El script no puede dejarla «sin rol»**: si no debe tener ningún acceso, desactívela por la vía autorizada: desde el panel, la desactivación le retira el rol (M-2) y, si se reactiva, vuelve sin rol. No se puede quitar el rol del último gerente activo, a propósito. |
 | El gerente olvida su contraseña | Flujo normal «Olvidé mi contraseña» (`/admin/forgot-password`); no requiere el script. |
-| El gerente pierde también el acceso a su correo, o la cuenta quedó desactivada | Con acceso a la terminal y a la base: crear otra cuenta con `npm run admin:create` y darle `GERENTE_GENERAL` con `--permitir-otro-gerente`; la cuenta desactivada se tratará después. Requiere autorización expresa y respaldo. |
+| El gerente pierde también el acceso a su correo, o la cuenta quedó desactivada | Seguir «Recuperación del acceso administrativo» (abajo): crear otra cuenta sin rol con `admin:create` y darle `GERENTE_GENERAL` con `admin:assign-role`. La cuenta desactivada se tratará después. |
 | La migración causó un problema | La columna es nula y aditiva; no hace falta deshacerla. Si fuera imprescindible volver al estado anterior, restaure el respaldo previo (`backup-restauracion.md`) y vuelva a ejecutar `db:migrate`. No se proporciona un `DROP COLUMN`. |
 | El backend se desplegó antes que la migración | El inicio de sesión fallará: aplique `db:migrate` de inmediato (es aditiva y rápida). Evítelo aplicando la migración antes de desplegar. |
+
+### Recuperación del acceso administrativo
+
+Cuando ninguna cuenta con acceso puede entrar (por ejemplo, el único gerente quedó desactivado o perdió su correo). Requiere autorización expresa del responsable, acceso a la terminal del backend y a la base, y un respaldo previo. Desde `backend/`:
+
+1. **Identificar el servidor en solo lectura:** `npm run admin:assign-role -- --listar`. Muestra «Destino configurado», la línea «Servidor conectado» (base real y `server_uuid`), las cuentas con el correo enmascarado, el número de gerentes activos y la línea de confirmación `--destino=… --servidor=…`.
+2. **Confirmar host, puerto, base y `server_uuid`** con la identidad conocida del destino, obtenida por otra vía (consola del proveedor o anotación del responsable). Si algo no coincide, detenerse.
+3. **Crear una cuenta sin rol:** `ADMIN_INITIAL_PASSWORD=<temporal> npm run admin:create -- --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>`, con los valores comprobados en el paso 2. Retirar la variable al terminar.
+4. **Asignar `GERENTE_GENERAL`:** simular con `npm run admin:assign-role -- --email=<correo> --rol=GERENTE_GENERAL` y aplicar con `--apply --confirmar=<correo> --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>`. Si no queda ningún gerente activo no hace falta `--permitir-otro-gerente`; si aún queda alguno, sí.
+5. Comprobar con `--listar` (al menos un gerente activo) y guardar la salida. El alta y la asignación quedan en `admin_auditoria` con el operador y el motivo declarados.
+
+**Si el esquema está atrasado.** `--listar` funciona sin la tabla `admin_auditoria`: termina normalmente y avisa de que falta `20261014-admin-auditoria`. Sin la columna `admin_users.rol` (migración `20261014-admin-rol`) se detiene con error **después** de imprimir la línea «Servidor conectado» con la base y el `server_uuid`, que sirven igualmente para el paso 2 (comprobado en M-3). Si el script no llega a conectar, use una consulta de solo lectura en la consola de MySQL del destino: `SELECT DATABASE(), @@server_uuid, @@hostname, @@port;` (sin modificar nada). En ambos casos `admin:create` y `admin:assign-role` se niegan a escribir hasta reparar el esquema, en este orden: respaldo (`npm run db:backup -- --dir=<volumen persistente>`), `npm run db:check` (solo lectura; indica qué falta), `npm run db:migrate` (aplica `20261014-admin-rol` y después `20261014-admin-auditoria`), `npm run db:check` («Esquema compatible») y, entonces, los pasos 1–5. Tenga en cuenta que sin `admin_users.rol` el inicio de sesión del backend actual también falla (ver la tabla anterior).
 
 ## Decisiones aprobadas y pendientes
 
@@ -79,5 +109,5 @@ Pendientes: cuándo y cómo se ejecuta la migración en cada entorno (local, Rai
 | --- | --- | --- |
 | M-1 | La regla «siempre un gerente activo» solo la aplicaba el script: desde el panel se podía desactivar al único gerente. **E3.1 (pendiente de revisión):** `AccountsService.status` rechaza desactivar al único `GERENTE_GENERAL` activo (con todas las filas bloqueadas, igual que el script). Mientras no exista ningún gerente solo rige «al menos una cuenta activa». El bloqueo del panel no espera (`NOWAIT`): si otra operación retiene las cuentas, reintenta durante unos 1,5 s y después responde 409 «Otra operación está modificando las cuentas…» sin aplicar nada (antes esperaba hasta 50 s y respondía 500). | Antes de activar los permisos. |
 | M-2 | No hay operación para retirar un rol (volver a `NULL`) y las cuentas desactivadas conservaban el suyo. **E3.1 (pendiente de revisión):** desactivar **y** reactivar desde el panel dejan el rol en `NULL` y revocan las sesiones: reactivar nunca restaura privilegios. Pedir el estado que la cuenta ya tiene no cambia nada. **Sigue pendiente** retirar un rol sin desactivar la cuenta (ruta del panel o `--retirar` del script, no autorizados todavía). | Antes de activar los permisos. |
-| M-3 | No hay regresión automática contra MySQL del script: las pruebas de CI usan una base simulada. La validación con MySQL real fue manual y aislada. (E3.1 añade a `test:integration` la regresión de M-1, M-2 y M-4 del panel, no la del script.) | Antes de administrar roles en producción. |
-| M-4 | **E3.1 (pendiente de revisión):** tabla `admin_auditoria` (migración `20261014-admin-auditoria`). El alta de cuentas y su activación o desactivación desde el panel se registran en la misma transacción: sin registro no hay cambio. Sin correos, nombres, contraseñas, tokens ni IP; sin claves foráneas. **Sigue pendiente:** que `admin:assign-role` y `admin:create` (terminal) escriban en ella, los intentos rechazados y una pantalla de consulta. Hasta entonces, conserve la salida de la terminal. | Antes de administrar roles en producción (o aceptarlo expresamente). |
+| M-3 | **E3.2 (pendiente de revisión y de su primera ejecución en CI):** `test/admin-scripts.integration.cjs` ejecuta los procesos reales de `admin:create` y `admin:assign-role` en el MySQL efímero de CI: listado y simulación sin escrituras (también con el esquema atrasado), confirmaciones incorrectas (destino, `--servidor` ausente, mal formado o de otro servidor), primer gerente, cambios, segundo gerente, retirada del rol de gerente, último gerente, `session_version`, auditoría en la misma transacción, fallo de auditoría con rollback, tabla ausente, concurrencia real (esperas observadas en el servidor) y liberación de bloqueos. Solo actúa si el `server_uuid` coincide con el leído dentro del contenedor del job, si el servidor es recién creado y no contiene datos. | Antes de administrar roles en producción. |
+| M-4 | **E3.1 y E3.2 (pendientes de revisión):** tabla `admin_auditoria` (migración `20261014-admin-auditoria`). Se registran en la misma transacción que el cambio: el alta y la activación o desactivación desde el panel, y desde la terminal el alta (`admin:create`) y cada asignación o cambio de rol (`admin:assign-role`), con operador declarado y motivo. Sin correos, contraseñas, tokens ni IP; sin claves foráneas. **Sigue pendiente:** los intentos rechazados y una pantalla de consulta. | Antes de administrar roles en producción (o aceptarlo expresamente). |

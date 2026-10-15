@@ -16,7 +16,7 @@ MySQL DDL no es transaccional. Si falla una migración parcialmente, revisar los
 
 Crear una base vacía y configurar `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASS`. Ejecutar `npm run db:init`, `npm run db:migrate` y `npm run db:check`. La inicialización rechaza bases con tablas.
 
-`npm run admin:create` es el proceso controlado para crear el primer administrador (el registro público está cerrado). Solicita nombre/correo y utiliza `ADMIN_INITIAL_PASSWORD` temporal.
+`npm run admin:create` es el proceso controlado para crear el primer administrador (el registro público está cerrado). Solicita nombre/correo, utiliza `ADMIN_INITIAL_PASSWORD` temporal y exige `--destino`, `--servidor` (el `server_uuid` que muestra `npm run admin:assign-role -- --listar`), `--operador` y `--motivo`; crea la cuenta sin rol y registra el alta en `admin_auditoria` (ver `docs/procedimientos/roles-administrativos.md`).
 
 ## Contratos
 

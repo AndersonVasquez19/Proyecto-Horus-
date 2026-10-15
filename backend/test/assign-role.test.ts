@@ -30,17 +30,29 @@ const seed = (): Account[] => [
 ];
 
 type Server = { base?: string | null; uuid?: string | null; uuidFails?: boolean; hostname?: string; port?: number };
+type Audit = { origen: string; actor_id: null; operador: string; cuenta_id: number; operacion: string; rol_anterior: string | null; rol_nuevo: string; motivo: string };
+const AUDIT_COLUMNS = ['id', 'createdAt', 'origen', 'actor_id', 'operador', 'cuenta_id', 'operacion', 'rol_anterior', 'rol_nuevo', 'activo_anterior', 'activo_nuevo', 'resultado', 'motivo'];
 // Memoria que imita lo mínimo de mysql2 que usa el script y registra cada sentencia.
-function fakeDb(accounts: Account[], { hasColumn = true, failUpdate = false, raceBeforeUpdate, server = {} }: { hasColumn?: boolean; failUpdate?: boolean; raceBeforeUpdate?: (rows: Account[]) => void; server?: Server } = {}) {
-  const log: string[] = []; let snapshot: Account[] | null = null; let ended = false;
+function fakeDb(accounts: Account[], { hasColumn = true, auditColumns = AUDIT_COLUMNS, failUpdate = false, failAudit = false, raceBeforeUpdate, server = {} }: {
+  hasColumn?: boolean; auditColumns?: string[]; failUpdate?: boolean; failAudit?: boolean; raceBeforeUpdate?: (rows: Account[]) => void; server?: Server;
+} = {}) {
+  const log: string[] = []; const audits: Audit[] = []; let snapshot: { accounts: Account[]; audits: Audit[] } | null = null; let ended = false;
   const identity = { base: 'horus_prueba', uuid: UUID, hostname: 'contenedor-7a1b', port: 3306, ...server };
   const db = {
-    log, accounts, get ended() { return ended; },
+    log, accounts, audits, get ended() { return ended; },
     query: async (sql: string, params: unknown[] = []) => {
       log.push(sql.split(/\s+/).slice(0, 2).join(' '));
       if (/^SELECT DATABASE\(\)/.test(sql)) return [[{ base: identity.base, hostname: identity.hostname, puerto: identity.port }]];
       if (/@@server_uuid/.test(sql)) { if (identity.uuidFails) throw new Error('variable desconocida'); return [[{ uuid: identity.uuid }]]; }
+      if (/information_schema\.COLUMNS .*'admin_auditoria'/.test(sql)) return [auditColumns.map(COLUMN_NAME => ({ COLUMN_NAME }))];
       if (/information_schema\.COLUMNS/.test(sql)) return [hasColumn ? [{ COLUMN_NAME: 'rol' }] : []];
+      if (/^INSERT INTO admin_auditoria/.test(sql)) {
+        if (failAudit) throw new Error('fallo simulado de auditoría');
+        assert.match(sql, /VALUES \('terminal', NULL, \?, \?, 'rol_asignado', \?, \?, 1, 1, 'aplicado', \?\)/);
+        const [operador, cuenta_id, rol_anterior, rol_nuevo, motivo] = params as [string, number, string | null, string, string];
+        audits.push({ origen: 'terminal', actor_id: null, operador, cuenta_id, operacion: 'rol_asignado', rol_anterior, rol_nuevo, motivo });
+        return [{ affectedRows: 1, insertId: audits.length }];
+      }
       if (/GET_LOCK/.test(sql)) return [[{ acquired: 1 }]];
       if (/RELEASE_LOCK/.test(sql)) return [[{ released: 1 }]];
       if (/^SELECT id, nombre/.test(sql)) return [accounts.map(a => ({ ...a, activo: a.activo ? 1 : 0 }))];
@@ -55,9 +67,12 @@ function fakeDb(accounts: Account[], { hasColumn = true, failUpdate = false, rac
       }
       throw new Error('sentencia inesperada: ' + sql);
     },
-    beginTransaction: async () => { log.push('BEGIN'); snapshot = accounts.map(a => ({ ...a })); },
+    beginTransaction: async () => { log.push('BEGIN'); snapshot = { accounts: accounts.map(a => ({ ...a })), audits: [...audits] }; },
     commit: async () => { log.push('COMMIT'); snapshot = null; },
-    rollback: async () => { log.push('ROLLBACK'); if (snapshot) { accounts.splice(0, accounts.length, ...snapshot); snapshot = null; } },
+    rollback: async () => {
+      log.push('ROLLBACK');
+      if (snapshot) { accounts.splice(0, accounts.length, ...snapshot.accounts); audits.splice(0, audits.length, ...snapshot.audits); snapshot = null; }
+    },
     end: async () => { ended = true; },
   };
   return db;
@@ -74,7 +89,8 @@ async function execute(db: ReturnType<typeof fakeDb>, argv: string[], resolved: 
 }
 
 const writes = (db: ReturnType<typeof fakeDb>) => db.log.filter(entry => /^(UPDATE|INSERT|DELETE|BEGIN|COMMIT)/.test(entry) || /GET_LOCK/.test(entry));
-const applyArgs = (email: string, rol: string, extra: string[] = CONFIRM) => ['--email=' + email, '--rol=' + rol, '--apply', '--confirmar=' + email, ...extra];
+const DECLARED = ['--operador=ops-01', '--motivo=Asignación autorizada en prueba'];
+const applyArgs = (email: string, rol: string, extra: string[] = CONFIRM) => ['--email=' + email, '--rol=' + rol, '--apply', '--confirmar=' + email, ...extra, ...DECLARED];
 const noSecrets = (text: string) => { assert.ok(!text.includes(SECRET), 'no aparece la contraseña'); assert.ok(!text.includes('usuario_ficticio'), 'no aparece el usuario de la base'); };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -354,7 +370,97 @@ test('la biblioteca no consulta contraseñas ni contiene sentencias destructivas
   assert.match(source, /require\.main === module/);
   const library = readFileSync(join(__dirname, '..', 'scripts', 'assign-role-lib.cjs'), 'utf8').replace(/\/\/.*$/gm, '');
   assert.ok(!/\bpassword\b/i.test(library));
-  assert.ok(!/\bDELETE\b|\bDROP\b|\bINSERT\b/i.test(library));
+  assert.ok(!/\bDELETE\b|\bDROP\b|\bALTER\b|\bTRUNCATE\b/i.test(library));
+  assert.deepEqual([...library.matchAll(/\bINSERT\s+INTO\s+(\w+)/gi)].map(match => match[1]), ['admin_auditoria'], 'la única inserción es el registro de auditoría');
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Auditoría desde la terminal (H-BACK-01, E3.2): operador declarado, motivo y registro en la misma transacción
+// ---------------------------------------------------------------------------------------------------------------
+test('aplicar exige --operador y --motivo válidos y los rechaza ANTES de conectarse; sin --apply no se admiten', async () => {
+  const base = ['--email=uno@ejemplo.test', '--rol=GERENTE_GENERAL', '--apply', '--confirmar=uno@ejemplo.test', ...CONFIRM];
+  const cases: [string[], RegExp][] = [
+    [[], /--operador=<identificador>/],
+    [['--motivo=Motivo suficiente'], /--operador=<identificador>/],
+    [['--operador=ops-01'], /--motivo=<texto>/],
+    [['--operador=', '--motivo=Motivo suficiente'], /--operador=<identificador>/],
+    [['--operador=x', '--motivo=Motivo suficiente'], /--operador debe tener/],
+    [['--operador=persona@ejemplo.test', '--motivo=Motivo suficiente'], /--operador debe tener/],
+    [['--operador=' + 'a'.repeat(101), '--motivo=Motivo suficiente'], /--operador debe tener/],
+    [['--operador=-ops', '--motivo=Motivo suficiente'], /--operador debe tener/],
+    [['--operador=ops-01', '--motivo=   '], /--motivo=<texto>/],
+    [['--operador=ops-01', '--motivo=abcd'], /--motivo debe tener/],
+    [['--operador=ops-01', '--motivo=avisar a persona@ejemplo.test'], /--motivo debe tener/],
+    [['--operador=ops-01', '--motivo=línea uno\nlínea dos'], /--motivo debe tener/],
+    [['--operador=ops-01', '--motivo=' + 'm'.repeat(201)], /--motivo debe tener/],
+  ];
+  for (const [extra, message] of cases) {
+    const db = fakeDb(seed());
+    const result = await execute(db, [...base, ...extra]);
+    assert.equal(result.code, 2, extra.join(' '));
+    assert.match(result.text, message, extra.join(' '));
+    assert.deepEqual(result.connections, [], 'no se conecta: ' + extra.join(' '));
+  }
+  for (const extra of [['--operador=ops-01'], ['--motivo=Motivo suficiente']]) {
+    const result = await execute(fakeDb(seed()), ['--email=uno@ejemplo.test', '--rol=GERENTE_GENERAL', ...extra]);
+    assert.equal(result.code, 2);
+    assert.match(result.text, /solo se usan junto con --apply/);
+  }
+});
+
+test('un cambio aplicado registra en admin_auditoria origen terminal, cuenta, roles, operador y motivo, dentro de la transacción', async () => {
+  const db = fakeDb(seed());
+  const { code, text } = await execute(db, ['--email=uno@ejemplo.test', '--rol=' + G, '--apply', '--confirmar=uno@ejemplo.test', ...CONFIRM, '--operador=  ops-01 ', '--motivo= Asignación autorizada en prueba ']);
+  assert.equal(code, 0, text);
+  assert.deepEqual(db.audits, [{ origen: 'terminal', actor_id: null, operador: 'ops-01', cuenta_id: 1, operacion: 'rol_asignado', rol_anterior: null, rol_nuevo: G, motivo: 'Asignación autorizada en prueba' }]);
+  const order = db.log.filter(entry => /^(BEGIN|UPDATE|INSERT|COMMIT)/.test(entry));
+  assert.deepEqual(order, ['BEGIN', 'UPDATE admin_users', 'INSERT INTO', 'COMMIT'], 'cambio y auditoría en la misma transacción');
+  assert.match(text, /Operador declarado: ops-01 \| Motivo: Asignación autorizada en prueba/);
+  assert.match(text, /Auditoría registrada \(id 1\)/);
+  // Cambio posterior: se registra el rol anterior real.
+  const second = await execute(db, applyArgs('dos@ejemplo.test', S));
+  assert.equal(second.code, 0);
+  const third = await execute(db, applyArgs('dos@ejemplo.test', C));
+  assert.equal(third.code, 0);
+  assert.deepEqual(db.audits.map(audit => [audit.cuenta_id, audit.rol_anterior, audit.rol_nuevo]), [[1, null, G], [2, null, S], [2, S, C]]);
+  noSecrets(text);
+});
+
+test('si falla el registro de auditoría se revierten también el rol y session_version, y se libera el bloqueo', async () => {
+  const db = fakeDb(seed(), { failAudit: true });
+  await assert.rejects(execute(db, applyArgs('uno@ejemplo.test', G)), /fallo simulado de auditoría/);
+  assert.ok(db.log.includes('ROLLBACK') && !db.log.includes('COMMIT'));
+  assert.ok(db.accounts.every(account => account.rol === null && account.session_version === 1));
+  assert.deepEqual(db.audits, []);
+  assert.ok(db.log.some(entry => entry.startsWith('SELECT RELEASE_LOCK')) && db.ended);
+});
+
+test('sin cambios o con la operación rechazada no se registra auditoría', async () => {
+  const accounts = seed(); accounts[0].rol = G;
+  const unchanged = fakeDb(accounts.map(a => ({ ...a })));
+  assert.equal((await execute(unchanged, applyArgs('uno@ejemplo.test', G))).code, 0);
+  assert.deepEqual(unchanged.audits, []);
+  const rejected = fakeDb(accounts.map(a => ({ ...a })));
+  assert.equal((await execute(rejected, applyArgs('uno@ejemplo.test', S))).code, 1);
+  assert.deepEqual(rejected.audits, []);
+});
+
+test('sin la tabla de auditoría (o incompleta) la simulación y la aplicación se detienen sin bloquear ni escribir; el listado avisa', async () => {
+  for (const auditColumns of [[], AUDIT_COLUMNS.filter(column => column !== 'operador')]) {
+    for (const argv of [['--email=uno@ejemplo.test', '--rol=GERENTE_GENERAL'], applyArgs('uno@ejemplo.test', G)]) {
+      const db = fakeDb(seed(), { auditColumns });
+      const { code, text } = await execute(db, argv);
+      assert.equal(code, 1, argv.join(' '));
+      assert.match(text, /20261014-admin-auditoria/);
+      assert.match(text, auditColumns.length ? /incompleta/ : /no tiene la tabla admin_auditoria/);
+      assert.deepEqual(writes(db), []);
+      assert.ok(db.accounts.every(account => account.rol === null && account.session_version === 1));
+      assert.ok(db.ended);
+    }
+    const listed = await execute(fakeDb(seed(), { auditColumns }), ['--listar']);
+    assert.equal(listed.code, 0);
+    assert.match(listed.text, /AVISO: .*20261014-admin-auditoria/);
+  }
 });
 
 // ---------------------------------------------------------------------------------------------------------------

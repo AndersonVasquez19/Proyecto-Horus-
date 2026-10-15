@@ -20,7 +20,7 @@ if (require.main === module) {
   if (deps) {
     run({ argv: process.argv.slice(2), ...deps, out: message => console.log(message) })
       .then(code => { process.exitCode = code; })
-      .catch(() => { console.error('No se pudo completar la operación. Revisa conexión, permisos y que la migración 20261014-admin-rol esté aplicada. No se mostraron datos de la cuenta.'); process.exitCode = 1; });
+      .catch(() => { console.error('No se pudo completar la operación. Revisa conexión, permisos y que las migraciones 20261014-admin-rol y 20261014-admin-auditoria estén aplicadas. Comprueba el estado real con --listar. No se mostraron datos de la cuenta.'); process.exitCode = 1; });
   }
 }
 
