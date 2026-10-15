@@ -56,6 +56,11 @@ public sealed class SmokeBrowserProcess : IDisposable {
             return new SmokeBrowserProcess(handle);
         } finally { if (!keep) CloseHandle(handle); }
     }
+    public bool HasExited() {
+        long created, exited, kernel, user;
+        if (!GetProcessTimes(handle, out created, out exited, out kernel, out user)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        return exited != 0;
+    }
     public void Stop() {
         if (!TerminateProcess(handle, 1)) throw new Win32Exception(Marshal.GetLastWin32Error());
     }
@@ -118,8 +123,11 @@ try {
         $lastError = 'No se puede confirmar la propiedad de un posible proceso secundario.'
       }
     }
-    if ($owned.Count -eq 0 -and !$uncertain) { exit 0 }
-    foreach ($id in $owned.Keys) {
+    # CIM puede conservar filas terminadas; confirmar su salida con el mismo handle.
+    # Los handles se retienen para seguir identificando a sus descendientes.
+    $running = @($owned.Keys | Where-Object { !$handles[$_].HasExited() })
+    if ($running.Count -eq 0 -and !$uncertain) { exit 0 }
+    foreach ($id in $running) {
       # Un proceso puede estar saliendo ya; otra instantánea confirma su cierre.
       try { $handles[$id].Stop() } catch { $lastError = $_.Exception.Message }
     }

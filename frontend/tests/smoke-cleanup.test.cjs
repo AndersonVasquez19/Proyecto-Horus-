@@ -211,3 +211,29 @@ test('Windows verifica la fecha usando el mismo handle que terminaría el proces
   assert.equal(result.status, 0, result.stderr);
   assert.equal(alive(foreign.pid), true);
 });
+
+test('Windows confirma procesos terminados aunque CIM conserve su instantánea', { skip: process.platform !== 'win32', timeout: 30000 }, async t => {
+  const profile = register.createProfile('horus-cleanup-stale-');
+  const child = spawn(process.execPath, ['-e', 'setTimeout(()=>{},45000)', '--', '--user-data-dir=' + profile], { windowsHide: true, stdio: 'ignore' });
+  const cleanup = register(child, profile);
+  t.after(cleanup);
+  await once(child, 'spawn');
+  // CIM puede seguir mostrando una fila cuyo handle ya confirma que terminó.
+  // Conservar esa fila reproduce la espera fallida sin falsear el estado del proceso real.
+  const command = [
+    "$ErrorActionPreference = 'Stop'",
+    '$script:held = $null',
+    'function Get-CimInstance { param([string]$ClassName) $all = @(CimCmdlets\\Get-CimInstance -ClassName $ClassName); if ($null -eq $script:held) { $script:held = $all | Where-Object { $_.ProcessId -eq [int]$env:SMOKE_TEST_ROOT } }; if ($script:held -and !($all | Where-Object { $_.ProcessId -eq [int]$env:SMOKE_TEST_ROOT })) { $all += $script:held }; $all }',
+    '& $env:SMOKE_TEST_SCRIPT -RootPid $env:SMOKE_TEST_ROOT -Profile $env:SMOKE_TEST_PROFILE -CreatedMilliseconds $env:SMOKE_TEST_CREATED'
+  ].join('; ');
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    windowsHide: true, encoding: 'utf8', timeout: 25000,
+    env: { ...process.env, SMOKE_TEST_SCRIPT: path.join(__dirname, '../scripts/smoke-stop-browser.ps1'),
+      SMOKE_TEST_ROOT: String(child.pid), SMOKE_TEST_PROFILE: profile,
+      SMOKE_TEST_CREATED: String(Math.floor(fs.statSync(profile).birthtimeMs)) }
+  });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.equal(alive(child.pid), false);
+  cleanup();
+  assert.equal(fs.existsSync(profile), false);
+});
