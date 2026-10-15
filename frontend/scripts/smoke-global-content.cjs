@@ -1,5 +1,5 @@
 // Comprueba sesiones de navegador aisladas; los datos HTTP son fixtures, nunca la base real.
-const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), os = require('node:os')
+const http = require('node:http'), fs = require('node:fs'), path = require('node:path')
 const assert = require('node:assert/strict'), { spawn } = require('node:child_process')
 const ts = require('typescript')
 const root = path.resolve(__dirname, '../dist')
@@ -100,10 +100,11 @@ async function main() {
   await new Promise(resolve => reserve.listen(0, '127.0.0.1', resolve))
   const port = reserve.address().port
   await new Promise(resolve => reserve.close(resolve))
-  const tmp = fs.realpathSync(os.tmpdir()), profile = fs.mkdtempSync(path.join(tmp, 'horus-global-ui-')), pages = []
-  let child, browserConnection
+  const profile = require('./smoke-cleanup.cjs').createProfile('horus-global-ui-'), pages = []
+  let child, browserConnection, cleanup
   try {
-    child = spawn(browser, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' })
+    child = spawn(browser, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { detached: process.platform !== 'win32', windowsHide: true, stdio: 'ignore' })
+    cleanup = require('./smoke-cleanup.cjs')(child, profile, server)
     let version
     for (let i = 0; i < 100 && !version; i++) { await sleep(100); try { version = await fetch('http://127.0.0.1:' + port + '/json/version').then(r => r.json()) } catch {} }
     assert.ok(version?.webSocketDebuggerUrl)
@@ -169,10 +170,8 @@ async function main() {
     for (const page of pages) assert.deepEqual(page.errors, [], 'Sin errores JavaScript en el flujo')
     console.log('Visitante: Home, cursos, servicios, galería y FAQ sin sesión, con storage y BroadcastChannel bloqueados: OK.')
   } finally {
-    if (browserConnection) { await Promise.race([browserConnection.send('Browser.close').catch(() => {}), sleep(1000)]); browserConnection.socket.close() }
-    pages.forEach(page => page.socket.close()); child?.kill(); await new Promise(resolve => server.close(resolve)); await sleep(500)
-    if (path.dirname(profile) !== tmp || !path.basename(profile).startsWith('horus-global-ui-')) throw new Error('Perfil fuera del directorio temporal')
-    for (let i = 0; i < 8; i++) { try { fs.rmSync(profile, { recursive: true, force: true }); break } catch { if (i === 7) console.log('Perfil temporal todavía en uso.'); else await sleep(250) } }
+    if (browserConnection) browserConnection.socket.close()
+    pages.forEach(page => page.socket.close()); cleanup?.()
   }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; server.close() })

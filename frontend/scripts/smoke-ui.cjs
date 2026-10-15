@@ -1,5 +1,5 @@
 // UI smoke test with isolated HTTP fixtures, using Edge and its DevTools protocol.
-const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict'),{spawn,spawnSync}=require('node:child_process');
+const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),{spawn}=require('node:child_process');
 const root=path.resolve(__dirname,'../dist'),browser=process.env.SMOKE_BROWSER||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const fixtureCourse={id:1,titulo:'Curso de prueba',slug:'curso-de-prueba',tipo:'curso',modalidad:'virtual',duracion:'20 horas',descripcion:'Descripción de prueba',temario:'Temario de prueba',fecha_inicio:'2099-01-01',estado:'publicado'};
 const fixtureCap={...fixtureCourse,id:2,titulo:'Capacitación de prueba',slug:'capacitacion-de-prueba',tipo:'capacitacion'};
@@ -66,21 +66,19 @@ function interceptExternal(msg,origin,send){
  else{externalBlocked.push({method:request.method,url:request.url.slice(0,100)});send('Fetch.failRequest',{requestId,errorReason:'BlockedByClient'}).catch(()=>{})}
  return true;
 }
-// En Windows child.kill() solo cierra el proceso raíz de Edge: se cierra el árbol completo de ESTA prueba.
-const killTree=child=>{try{if(child?.pid){if(process.platform==='win32')spawnSync('taskkill',['/PID',String(child.pid),'/T','/F'],{windowsHide:true});else child.kill()}}catch{}};
 async function main(){
  if(!fs.existsSync(browser))throw new Error('Configura SMOKE_BROWSER con una instalación de Edge/Chromium.');
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
  const reserve=http.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
- const tmp=fs.realpathSync(os.tmpdir()),profile=fs.mkdtempSync(path.join(tmp,'horus-ui-'));let socket,child,closeBrowser;const pending=new Map();let seq=0;
+ const profile=require('./smoke-cleanup.cjs').createProfile('horus-ui-');let socket,child,cleanup;const pending=new Map();let seq=0;
  try{
- child=spawn(browser,['--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--remote-debugging-port='+port,'--user-data-dir='+profile,'about:blank'],{windowsHide:true,stdio:'ignore'});
+ child=spawn(browser,['--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--remote-debugging-port='+port,'--user-data-dir='+profile,'about:blank'],{detached:process.platform!=='win32',windowsHide:true,stdio:'ignore'});
+ cleanup=require('./smoke-cleanup.cjs')(child,profile,server);
  let target;for(let i=0;i<100&&!target;i++){await sleep(100);try{target=await fetch('http://127.0.0.1:'+port+'/json/new?about:blank',{method:'PUT'}).then(r=>r.json())}catch{}}
  if(!target?.webSocketDebuggerUrl)throw new Error('No se pudo iniciar Edge para la revisión.');
  socket=new WebSocket(target.webSocketDebuggerUrl);await new Promise((r,j)=>{socket.onopen=r;socket.onerror=j});
  socket.onmessage=event=>{const msg=JSON.parse(event.data);if(interceptExternal(msg,origin,send))return;if(msg.id){const p=pending.get(msg.id);pending.delete(msg.id);if(msg.error)p?.reject(new Error(msg.error.message));else p?.resolve(msg.result)}};
  const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});socket.send(JSON.stringify({id,method,params}))});
- closeBrowser=()=>send('Browser.close');
  const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value};
  const wait=async expression=>{for(let i=0;i<100;i++){if(await evaluate(expression))return;await sleep(100)}throw new Error('No se cumplió: '+expression)};
  const navigate=async route=>{await send('Page.navigate',{url:origin+route});await wait('document.readyState==="complete"');await sleep(300)};
@@ -468,5 +466,5 @@ async function main(){
  const leaks=externalBlocked.filter(b=>{try{return b.method!=='GET'||!allowedHosts.includes(new URL(b.url).hostname)}catch{return true}});
  assert.equal(leaks.length,0,'Peticiones externas inesperadas: '+JSON.stringify(leaks.slice(0,3)));
  console.log('UI: '+externalBlocked.length+' peticiones públicas externas (fuentes, iconos, mapa) bloqueadas antes de enviarse; ninguna petición externa inesperada.');
- }finally{try{if(closeBrowser)await Promise.race([closeBrowser(),sleep(1000)])}catch{}try{socket?.close()}catch{}killTree(child);await new Promise(r=>server.close(r));await sleep(500);if(path.dirname(profile)!==tmp||!path.basename(profile).startsWith('horus-ui-'))throw new Error('Perfil fuera del directorio temporal');for(let attempt=0;attempt<8;attempt++){try{fs.rmSync(profile,{recursive:true,force:true});break}catch{if(attempt===7)console.log('El perfil temporal del navegador sigue en uso.');else await sleep(250)}}}}
+ }finally{try{socket?.close()}catch{}cleanup?.()}}
 main().catch(e=>{console.error(e.message);process.exitCode=1;server.close()});

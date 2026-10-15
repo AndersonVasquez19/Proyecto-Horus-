@@ -145,9 +145,8 @@ async function main() {
   await new Promise(resolve => reserve.listen(0, '127.0.0.1', resolve))
   const port = reserve.address().port
   await new Promise(resolve => reserve.close(resolve))
-  const tempRoot = fs.realpathSync(os.tmpdir())
-  const profile = fs.mkdtempSync(path.join(tempRoot, 'horus-home-ui-'))
-  let child, connection
+  const profile = require('./smoke-cleanup.cjs').createProfile('horus-home-ui-')
+  let child, connection, cleanup
   function connect(socketUrl) {
     const socket = new WebSocket(socketUrl), pending = new Map()
     const exceptions = []
@@ -184,7 +183,8 @@ async function main() {
   }
   try {
     child = spawn(browser, ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
-      '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' })
+      '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { detached: process.platform !== 'win32', windowsHide: true, stdio: 'ignore' })
+    cleanup = require('./smoke-cleanup.cjs')(child, profile, server)
     let target
     for (let attempt = 0; attempt < 100 && !target; attempt++) {
       await sleep(100)
@@ -1047,16 +1047,8 @@ async function main() {
     console.log('Home: movimiento reducido, estilos aislados, React Router, guard administrativo y recuperación de ajustes: OK.')
     console.log('Revisión de Home terminada correctamente.')
   } finally {
-    if (connection) { await Promise.race([connection.send('Browser.close').catch(() => {}), sleep(1000)]); connection.socket.close() }
-    child?.kill()
-    await new Promise(resolve => server.close(resolve))
-    await sleep(500)
-    const resolvedProfile = path.resolve(profile)
-    if (path.dirname(resolvedProfile) !== tempRoot || !path.basename(resolvedProfile).startsWith('horus-home-ui-')) throw new Error('Perfil fuera del directorio temporal.')
-    for (let attempt = 0; attempt < 8; attempt++) {
-      try { fs.rmSync(resolvedProfile, { recursive: true, force: true }); break }
-      catch { if (attempt === 7) console.log('El perfil temporal sigue en uso.'); else await sleep(250) }
-    }
+    if (connection) connection.socket.close()
+    cleanup?.()
   }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; server.close() })
