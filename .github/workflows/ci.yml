@@ -128,6 +128,39 @@ jobs:
           node --test test/admin-scripts.integration.cjs
         env:
           ADMIN_SCRIPTS_TEST_DB: 'true'
+      # H-BACK-01 E3.5 y E3.6 (preparatorias; AccessGuard sigue SIN registrarse en el AppModule normal). Mismas barreras que M-3, todas antes de
+      # crear nada: activación explícita, DB_HOST de bucle local, server_uuid de la conexión = el leído aquí con docker exec dentro del contenedor
+      # de este job, servidor con Uptime < 1 h y sin tablas en ninguna base ajena a las del sistema. Van en serie y después de M-3 y de
+      # test:integration porque cada una elimina su propia base: si un paso previo dejara tablas, estas pruebas FALLAN (no se debilitan las
+      # barreras). Requieren backend/dist, que compila `npm run test:integration`. Crean y eliminan solo horus_e35_<hex> y horus_e36_<hex>.
+      # Si GitHub cancela el runner de forma forzosa no hay limpieza interna posible: el contenedor y los temporales desaparecen con el runner.
+      - name: Comprobar la identidad del MySQL efímero (E3.5 y E3.6)
+        working-directory: .
+        run: |
+          set -eu
+          test "$(docker inspect -f '{{.Name}}' mysql-ci)" = "/mysql-ci"
+          test "$(docker inspect -f '{{.Config.Image}}' mysql-ci)" = "mysql:8.4"
+          test "$(docker inspect -f '{{.State.Running}}' mysql-ci)" = "true"
+          # Único puerto publicado: 3306 en 127.0.0.1 (nunca en 0.0.0.0).
+          test "$(docker inspect -f '{{range $p, $b := .NetworkSettings.Ports}}{{range $b}}{{.HostIp}}:{{.HostPort}}>{{$p}};{{end}}{{end}}' mysql-ci)" = "127.0.0.1:3306>3306/tcp;"
+          test -f backend/dist/main.js
+          UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          echo "$UUID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          echo "MySQL efímero identificado (mysql-ci, mysql:8.4, solo 127.0.0.1)."
+      - name: Integración de la preparación de cuentas para AccessGuard (E3.5)
+        run: |
+          ACCESS_READINESS_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ACCESS_READINESS_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/admin-access-readiness.integration.cjs
+        env:
+          ACCESS_READINESS_TEST_DB: 'true'
+      - name: Integración de AccessGuard con HTTP real (E3.6, solo en el módulo de prueba)
+        run: |
+          ACCESS_GUARD_HTTP_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ACCESS_GUARD_HTTP_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/access-guard-http.integration.cjs
+        env:
+          ACCESS_GUARD_HTTP_TEST_DB: 'true'
       - name: Integración de la colación en db:backup y db:restore
         run: node --test test/backup-collation.integration.cjs
         env:
