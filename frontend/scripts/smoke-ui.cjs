@@ -464,9 +464,46 @@ async function main(){
  await send('Network.enable');await send('Network.setCacheDisabled',{cacheDisabled:true});chunkError=true;await navigate('/admin/dashboard?section=cotizaciones');await wait('document.body.innerText.includes("No pudimos abrir esta página")');chunkError=false;await click('Recargar página');await wait('document.body.innerText.includes("Cotizaciones")');
  console.log('UI: carga de pantallas y recuperación de error comprobados.');
  console.log('UI: catálogo, detalle, consulta, FAQ/reintento, galería/foco, convenio, menú móvil, cotización, error de correo, seguimiento y sesión transitoria: OK.');
- const allowedHosts=['fonts.googleapis.com','fonts.gstatic.com','cdnjs.cloudflare.com','www.google.com'];
- const leaks=externalBlocked.filter(b=>{try{return b.method!=='GET'||!allowedHosts.includes(new URL(b.url).hostname)}catch{return true}});
+ // Mapa de ubicación (Inicio y Contactos, escritorio y móvil): tarjeta con la dirección, sin iframe ni peticiones externas hasta pulsar «Mostrar mapa».
+ const mapButton='Mostrar mapa — requiere Internet';
+ const cardState='JSON.stringify({card:!!document.querySelector(".location-map-fallback"),address:(document.querySelector(".location-map-fallback-address")||{}).textContent||"",iframes:document.querySelectorAll("iframe").length,button:!!Array.from(document.querySelectorAll("button")).find(x=>x.textContent.trim()==='+JSON.stringify(mapButton)+')})';
+ const fitsViewport='document.documentElement.scrollWidth<=innerWidth';
+ for(const [route,box] of [['/','.home-location-map'],['/contactos','.ct-map']]){
+  for(const [w,h,mobile] of [[1440,1000,false],[390,844,true]]){
+   await send('Emulation.setDeviceMetricsOverride',{width:w,height:h,deviceScaleFactor:1,mobile});
+   const before=externalBlocked.length;
+   await navigate(route);await wait('!!document.querySelector("'+box+' .location-map-fallback")');await sleep(500);
+   const card=JSON.parse(await evaluate(cardState));
+   assert.equal(card.card,true,route+' '+w+': la tarjeta de ubicación aparece al cargar.');assert.ok(card.address.length>0,route+': la tarjeta muestra la dirección.');assert.equal(card.iframes,0,route+' '+w+': no hay iframe antes de pulsar.');assert.equal(card.button,true);
+   assert.equal(externalBlocked.length,before,route+' '+w+': ninguna petición externa antes de pulsar el botón.');
+   assert.equal(await evaluate(fitsViewport),true,route+' '+w+': sin desbordamiento horizontal con la tarjeta.');
+   assert.equal(await evaluate('(()=>{const b=document.querySelector("'+box+'").getBoundingClientRect(),c=document.querySelector("'+box+' .location-map-fallback").getBoundingClientRect();return c.height>0&&c.left>=b.left-1&&c.right<=b.right+1&&c.bottom<=b.bottom+1})()'),true,route+' '+w+': la tarjeta cabe en su contenedor.');
+   await click(mapButton);await wait('!!document.querySelector("'+box+' iframe")');await sleep(300);
+   assert.equal(externalBlocked.length,before+1,route+' '+w+': pulsar genera exactamente una petición al mapa.');
+   assert.match(externalBlocked[externalBlocked.length-1].url,/^https:\/\/www\.google\.com\/maps\/embed/,'La única petición externa es el mapa de Google.');
+   assert.equal(await evaluate(fitsViewport),true,route+' '+w+': sin desbordamiento horizontal con el mapa.');
+   assert.equal(await evaluate('(()=>{const b=document.querySelector("'+box+'").getBoundingClientRect(),i=document.querySelector("'+box+' iframe").getBoundingClientRect(),r=document.querySelector("'+box+' .location-map-view-bar").getBoundingClientRect();return i.height>100&&r.height>0&&i.right<=b.right+1&&r.bottom<=b.bottom+1})()'),true,route+' '+w+': iframe y barra caben en el contenedor.');
+   if(!mobile){
+    // Desconexión simulada (navigator.onLine/evento offline en la página): el mapa se retira y la dirección vuelve; reconectar no lo reactiva.
+    await evaluate('Object.defineProperty(navigator,"onLine",{configurable:true,get:()=>false});window.dispatchEvent(new Event("offline"))');
+    await wait('!document.querySelector("'+box+' iframe")&&!!document.querySelector("'+box+' .location-map-fallback")');
+    assert.ok(await evaluate('document.querySelector(".location-map-fallback-note").textContent.includes("Sin conexión")'),route+': aviso de conexión.');
+    await click(mapButton);await sleep(300);
+    assert.equal(await evaluate('document.querySelectorAll("iframe").length'),0,route+': sin conexión, pulsar no crea el iframe.');
+    assert.equal(externalBlocked.length,before+1,route+': sin conexión no se inicia ninguna petición.');
+    await evaluate('delete navigator.onLine;window.dispatchEvent(new Event("online"))');await sleep(500);
+    assert.equal(await evaluate('document.querySelectorAll("iframe").length'),0,route+': reconectar no reactiva el mapa.');
+    assert.equal(externalBlocked.length,before+1,route+': reconectar no lanza peticiones.');
+    await click(mapButton);await wait('!!document.querySelector("'+box+' iframe")');await click('Ocultar mapa');await wait('!document.querySelector("'+box+' iframe")&&!!document.querySelector("'+box+' .location-map-fallback")');
+    assert.equal(await evaluate('document.activeElement&&document.activeElement.tagName!=="IFRAME"'),true);
+   }
+  }
+ }
+ await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+ console.log('UI: mapa de ubicación (tarjeta inicial, sin peticiones antes de pulsar, desconexión sin reactivación, escritorio y móvil): OK.');
+ // Las fuentes e iconos son locales: la única petición externa permitida es el iframe del mapa tras pulsar el botón.
+ const leaks=externalBlocked.filter(b=>!/^https:\/\/www\.google\.com\/maps\/embed/.test(b.url));
  assert.equal(leaks.length,0,'Peticiones externas inesperadas: '+JSON.stringify(leaks.slice(0,3)));
- console.log('UI: '+externalBlocked.length+' peticiones públicas externas (fuentes, iconos, mapa) bloqueadas antes de enviarse; ninguna petición externa inesperada.');
+ console.log('UI: '+externalBlocked.length+' peticiones externas, todas del mapa tras pulsar el botón y bloqueadas antes de enviarse; ninguna otra.');
  }finally{try{socket?.close()}catch{}cleanup?.()}}
 main().catch(e=>{console.error(e.message);process.exitCode=1;server.close()});

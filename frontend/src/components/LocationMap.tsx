@@ -1,54 +1,52 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useReducer } from 'react'
 import { useCompanySetting } from '../context/companySettings'
-import { probeMapReachable } from '../mapAvailability'
+import { INITIAL_MAP_STATE, locationMapReducer } from '../locationMapState'
 import { MAP_EMBED_URL } from '../siteLinks'
 import '../styles/location-map.css'
 
-type MapState = 'map' | 'fallback' | 'retrying'
-
-// Embedded map of the business location (single source: siteLinks.ts). The parent decides its size.
-// Sin conexión (o si Google Maps no responde) muestra una tarjeta local con la dirección institucional guardada en el panel
-// (la misma que el resto del sitio, mismo valor por defecto) en lugar de un iframe roto. El resto de la página no depende del mapa.
+// Ubicación del negocio (URL única en siteLinks.ts). Siempre muestra primero una tarjeta local con la dirección institucional
+// guardada en el panel; el iframe de Google Maps no existe (ni genera peticiones externas) hasta que se pulsa «Mostrar mapa».
+// Si el navegador se desconecta con el mapa abierto, se retira el iframe y vuelve la tarjeta. El resto de la página no depende del mapa.
 export default function LocationMap({ title = 'Ubicación de Horus Group SRL' }: { title?: string }) {
   const setting = useCompanySetting()
   const address = setting('direccion', 'Cajamarca - Peru')
-  // Optimista: con red se pinta el mapa como siempre y se comprueba en segundo plano. Sin interfaz de red ni se intenta.
-  const [state, setState] = useState<MapState>(() => (typeof navigator !== 'undefined' && navigator.onLine === false ? 'fallback' : 'map'))
-  const [attempt, setAttempt] = useState(0)
+  const [state, dispatch] = useReducer(locationMapReducer, INITIAL_MAP_STATE)
 
   useEffect(() => {
-    let cancelled = false
-    const check = () => {
-      if (navigator.onLine === false) { setState('fallback'); return }
-      void probeMapReachable().then(ok => { if (!cancelled) setState(ok ? 'map' : 'fallback') })
-    }
-    const goOffline = () => setState('fallback')
-    const timer = setTimeout(check, 0)
-    window.addEventListener('online', check)
+    const goOffline = () => dispatch({ type: 'offline' })
+    const goOnline = () => dispatch({ type: 'online' })
     window.addEventListener('offline', goOffline)
+    window.addEventListener('online', goOnline)
     return () => {
-      cancelled = true
-      clearTimeout(timer)
-      window.removeEventListener('online', check)
       window.removeEventListener('offline', goOffline)
+      window.removeEventListener('online', goOnline)
     }
-  }, [attempt])
+  }, [])
 
-  if (state === 'map') {
-    return <iframe src={MAP_EMBED_URL} title={title} loading="lazy" allowFullScreen referrerPolicy="no-referrer-when-downgrade" />
+  if (state.view === 'map') {
+    return (
+      <div className="location-map-view">
+        <iframe src={MAP_EMBED_URL} title={title} allowFullScreen referrerPolicy="no-referrer-when-downgrade" />
+        <div className="location-map-view-bar">
+          <span className="location-map-view-address"><i className="fas fa-location-dot" aria-hidden="true" /> {address}</span>
+          <button type="button" className="location-map-action" onClick={() => dispatch({ type: 'hide' })}>
+            Ocultar mapa
+          </button>
+        </div>
+      </div>
+    )
   }
-  const retrying = state === 'retrying'
   return (
     <div className="location-map-fallback" role="group" aria-label={title}>
       <span className="location-map-fallback-icon" aria-hidden="true"><i className="fas fa-location-dot" /></span>
-      <h3>Mapa no disponible sin conexión</h3>
+      <h3>Horus Group SRL</h3>
       <p className="location-map-fallback-address">{address}</p>
-      <p className="location-map-fallback-note" role="status">
-        {retrying ? 'Comprobando la conexión…' : 'Mostramos la dirección registrada. El mapa aparecerá cuando haya conexión a Internet.'}
-      </p>
-      <button type="button" className="location-map-fallback-retry" disabled={retrying} onClick={() => { setState('retrying'); setAttempt(n => n + 1) }}>
-        <i className="fas fa-rotate-right" aria-hidden="true" /> Reintentar
+      <button type="button" className="location-map-action" onClick={() => dispatch({ type: 'show', online: navigator.onLine !== false })}>
+        <i className="fas fa-map" aria-hidden="true" /> Mostrar mapa — requiere Internet
       </button>
+      <p className="location-map-fallback-note" role="status">
+        {state.notice === 'offline' ? 'Sin conexión a Internet: el mapa no está disponible ahora. La dirección sigue arriba.' : ''}
+      </p>
     </div>
   )
 }

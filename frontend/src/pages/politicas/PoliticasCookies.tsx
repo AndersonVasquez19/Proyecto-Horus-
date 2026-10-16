@@ -64,7 +64,7 @@ export default function PoliticasCookies() {
         </div>
         <div className="policy-item">
           <h3>Servicios externos</h3>
-          <p>Las tipografías y los iconos se sirven desde este mismo sitio. Para mostrar el mapa de ubicación, tu navegador realiza solicitudes a los servidores de este proveedor externo:</p>
+          <p>Las tipografías y los iconos se sirven desde este mismo sitio. El mapa de ubicación solo se carga cuando pulsas «Mostrar mapa»; en ese momento tu navegador realiza solicitudes a los servidores de este proveedor externo:</p>
           <dl className="policy-defs">
             {[
               { title: 'Google Maps',          desc: 'Mapa de ubicación, en las páginas de Inicio y Contactos.' },
