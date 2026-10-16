@@ -72,7 +72,7 @@ const ACADEMIC = {
     ['actor_id','int',true],['actor_rol',"ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL','SECRETARIA')",true],['operador','varchar(100)',true],['estado_anterior','varchar(30)',true],
     ['estado_nuevo','varchar(30)',true],['campos','json',true],['revision','int',true],['motivo','varchar(300)',true]],
 };
-// [tabla, índice, columnas en orden, único]
+// [tabla, índice, columnas en orden, único, longitudes de prefijo opcionales (una por columna; omitido = ninguna columna con prefijo)]
 const ACADEMIC_INDEXES = [
   ['estudiantes','estudiantes_documento_uq',['doc_pais','doc_tipo','doc_numero'],true], ['estudiantes','estudiantes_nombre_idx',['apellidos','nombres'],false],
   ['convocatorias','convocatorias_curso_idx',['curso_id','fecha_inicio'],false], ['convocatorias','convocatorias_estado_idx',['estado','fecha_inicio'],false],
@@ -129,8 +129,9 @@ async function checkAcademic(db, indexes) {
   for (const i of [...indexes].sort((a, b) => Number(a.SEQ_IN_INDEX) - Number(b.SEQ_IN_INDEX))) {
     if (!ACADEMIC[i.TABLE_NAME] || i.INDEX_NAME === 'PRIMARY') continue;
     const key = i.TABLE_NAME + '.' + i.INDEX_NAME;
-    const index = actual.get(key) ?? { table: i.TABLE_NAME, name: i.INDEX_NAME, columns: [], unique: [] };
+    const index = actual.get(key) ?? { table: i.TABLE_NAME, name: i.INDEX_NAME, columns: [], unique: [], prefixes: [] };
     index.columns.push(i.COLUMN_NAME); index.unique.push(Number(i.NON_UNIQUE) === 0);
+    index.prefixes.push(i.SUB_PART === null || i.SUB_PART === undefined ? null : Number(i.SUB_PART));
     actual.set(key, index);
   }
   const shared = columns => columns.some(c => ['email', 'telefono'].includes(c)) ? ': email y telefono deben poder compartirse' : '';
@@ -140,9 +141,12 @@ async function checkAcademic(db, indexes) {
     problems.push(index.table + ': índice único no previsto ' + index.name + ' (' + index.columns.join(', ') + ')' + shared(index.columns));
   }
   // Cada índice previsto: en su tabla, con las mismas columnas en el mismo orden y la misma unicidad.
-  for (const [table, name, expected, unique] of ACADEMIC_INDEXES) {
+  // Un índice por prefijo (SUB_PART no nulo) no equivale al índice completo: UNIQUE(doc_numero(1)) trataría como duplicados dos DNI distintos.
+  const prefixText = prefixes => prefixes.map(p => p ?? 'completa').join(', ');
+  for (const [table, name, expected, unique, expectedPrefixes = expected.map(() => null)] of ACADEMIC_INDEXES) {
     const index = actual.get(table + '.' + name);
     if (!index) problems.push(table + ': falta índice ' + name);
+    else if (index.columns.join(',') === expected.join(',') && index.prefixes.join(',') !== expectedPrefixes.join(',')) problems.push(table + ': índice ' + name + ' con longitud de prefijo distinta (columnas ' + index.columns.join(', ') + '; longitud ' + prefixText(index.prefixes) + '; se esperaba ' + prefixText(expectedPrefixes) + ')' + (index.unique.some(Boolean) && index.columns.some(c => ['email', 'telefono'].includes(c)) ? shared(index.columns) : ''));
     else if (index.columns.join(',') !== expected.join(',') || index.unique.some(u => u !== unique)) problems.push(table + ': índice ' + name + ' distinto (' + (index.unique.every(Boolean) ? 'único' : 'no único') + ' sobre ' + index.columns.join(', ') + '; se esperaba ' + (unique ? 'único' : 'no único') + ' sobre ' + expected.join(', ') + ')' + (index.unique.some(Boolean) ? shared(index.columns) : ''));
   }
   const [keys] = await db.query("SELECT k.TABLE_NAME, k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, r.DELETE_RULE, r.UPDATE_RULE FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME AND r.TABLE_NAME = k.TABLE_NAME WHERE k.TABLE_SCHEMA = DATABASE() AND k.REFERENCED_TABLE_NAME IS NOT NULL ORDER BY k.ORDINAL_POSITION");
@@ -170,7 +174,7 @@ async function checkAcademic(db, indexes) {
 function normalizeType(type) { return type.toLowerCase().replace(/\binteger\b/g, 'int').replace(/int\(\d+\)/g, 'int').replace(/\s/g, ''); }
 async function check(db) {
   const [columns] = await db.query('SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()');
-  const [indexes] = await db.query('SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()');
+  const [indexes] = await db.query('SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX, SUB_PART FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()');
   const problems = [];
   for (const expected of expectedColumns()) {
     const actual = columns.find(c => c.TABLE_NAME === expected.table && c.COLUMN_NAME === expected.name);
