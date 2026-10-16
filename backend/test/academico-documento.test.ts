@@ -183,6 +183,18 @@ test('exigirDocumentoCertificable: acepta el válido, rechaza parciales o invál
 // intérprete mínimo (AND/OR, IS [NOT] NULL, =, REGEXP_LIKE con lógica de tres valores como MySQL) y se evalúa sobre un
 // corpus amplio de filas, comparando con el resultado de normalizarDocumento. Cualquier construcción SQL no reconocida
 // hace fallar la prueba en vez de ignorarse.
+//
+// Limitaciones del intérprete (no sustituye a MySQL):
+//  - REGEXP_LIKE se evalúa con RegExp de JavaScript, mientras que MySQL 8.4 usa ICU. Solo se admite un subconjunto cuyo
+//    significado coincide: anclas ^ y $, clases [..] con rangos, cuantificadores {m} y {m,n} y letras/dígitos literales. Todo lo
+//    demás (\, ., *, +, ?, |, grupos, etc.) se RECHAZA en vez de interpretarse por aproximación.
+//  - Los literales con barra invertida se rechazan. MySQL aplica escapes de cadena (\d vale «d», \\d vale «\d», \n es un salto de
+//    línea) y RegExp no: interpretarlos mal aprobaría un SQL distinto del real. Tampoco se admiten comillas dobles ni NO_BACKSLASH_ESCAPES.
+//  - Diferencias conocidas sin verificar aquí: en ICU «$» puede coincidir antes de un terminador de línea final (p. ej. «12345678\n»),
+//    y RegExp opera por unidades UTF-16 mientras ICU lo hace por puntos de código. El corpus no cubre esos casos; solo la prueba de
+//    integración con MySQL 8.4 real puede confirmarlos.
+//  - Una sola migración o un SQL concatenado: ante varias definiciones de una restricción o del ENUM, rige la última; si la última
+//    operación es un DROP, la restricción no existe y la prueba falla.
 // ---------------------------------------------------------------------------------------------------------------------
 
 type Valor = string | boolean | null;
@@ -205,6 +217,8 @@ function tokenizar(sql: string): string[] {
       if (sql.slice(pos).trim() === '') break;
       throw new Error('token SQL no reconocido en la expresión CHECK');
     }
+    // MySQL interpreta los escapes de cadena (\d → d, \n → salto de línea) y aquí no: se rechaza en lugar de aprobar en falso.
+    if (m[1].startsWith("'") && m[1].includes('\\')) throw new Error('literal SQL con barra invertida no soportado por la prueba de paridad');
     tokens.push(m[1]);
     pos = re.lastIndex;
   }
@@ -243,6 +257,7 @@ function analizar(expresion: string): Nodo {
       const col = columna();
       esperar(',');
       const patron = cadena();
+      if (!/^[\^$[\]{},\-A-Za-z0-9]+$/.test(patron)) throw new Error('patrón REGEXP_LIKE fuera del subconjunto soportado por la prueba de paridad');
       esperar(',');
       const flags = cadena();
       esperar(')');
@@ -314,15 +329,20 @@ function evaluar(n: Nodo, fila: Record<string, string | null>): Valor {
 // MySQL acepta la fila si CHECK no da FALSE (NULL cuenta como aprobado).
 const cumple = (nodo: Nodo, fila: Record<string, string | null>) => evaluar(nodo, fila) !== false;
 
+// Esquema efectivo: manda la última operación sobre la restricción (CONSTRAINT .. CHECK o DROP CHECK/CONSTRAINT).
 function extraerCheck(sql: string, nombre: string): string {
-  const inicio = sql.indexOf(`CONSTRAINT \`${nombre}\` CHECK (`);
+  const definicion = `CONSTRAINT \`${nombre}\` CHECK (`;
+  const inicio = sql.lastIndexOf(definicion);
   assert.notEqual(inicio, -1, `no se encontró la restricción ${nombre}`);
+  const baja = [...sql.matchAll(new RegExp(`DROP\\s+(?:CHECK|CONSTRAINT)\\s+\`${nombre}\``, 'gi'))].pop();
+  assert.ok(!baja || baja.index < inicio, `la restricción ${nombre} se elimina sin redefinirse`);
   let i = sql.indexOf('(', inicio);
   const desde = i + 1;
   let profundidad = 0;
   let enCadena = false;
   for (; i < sql.length; i++) {
     const c = sql[i];
+    if (enCadena && c === '\\') throw new Error('literal SQL con barra invertida no soportado por la prueba de paridad');
     if (c === "'") enCadena = !enCadena;
     if (enCadena) continue;
     if (c === '(') profundidad++;
@@ -335,7 +355,7 @@ const MIGRACION = '20261015-academico-estructura.sql';
 const sqlOriginal = readFileSync(join(__dirname, '..', 'migrations', MIGRACION), 'utf8');
 
 function enumTipos(sql: string): string[] {
-  const m = /`doc_tipo` ENUM\(([^)]*)\)/.exec(sql);
+  const m = [...sql.matchAll(/`doc_tipo` ENUM\(([^)]*)\)/g)].pop(); // la última definición (CREATE o MODIFY) es la efectiva
   assert.ok(m, 'no se encontró el ENUM de doc_tipo');
   return [...m[1].matchAll(/'([^']*)'/g)].map(x => x[1]);
 }
@@ -425,6 +445,7 @@ test('paridad: la prueba detecta reglas SQL alteradas incorrectamente', () => {
     ['^PE$', '^[A-Z]{2}$'],
     ['^[0-9]{8}$', '^[0-9]{8}'],
     ["'^PE$', 'c'", "'^PE$', 'i'"],
+    ['^[0-9]{8}$', '^\\d{8}$'], // una sola barra invertida (en MySQL «\d» vale «d»): antes se aprobaba en falso
   ];
   for (const [de, a] of mutaciones) {
     let alterado: string;
@@ -445,4 +466,26 @@ test('paridad: la prueba detecta reglas SQL alteradas incorrectamente', () => {
   const sinCompleto = sqlOriginal.replace('(`doc_pais` IS NOT NULL AND `doc_tipo` IS NOT NULL AND `doc_numero` IS NOT NULL))', '(`doc_pais` IS NOT NULL))');
   assert.notEqual(sinCompleto, sqlOriginal);
   assert.ok(discrepancias(sinCompleto).length > 0);
+});
+
+test('paridad: los literales SQL con barra invertida se rechazan de forma explícita', () => {
+  const reemplazar = (a: string) => sqlOriginal.split('^[0-9]{8}$').join(a);
+  // Una barra (\d), dos barras (\\d), una comilla escapada (\') y un escape de control (\n): ninguno se interpreta ni se ignora.
+  for (const a of ['^\\d{8}$', '^\\\\d{8}$', "^\\'{8}$", '^\\n{8}$']) {
+    assert.notEqual(reemplazar(a), sqlOriginal);
+    assert.throws(() => discrepancias(reemplazar(a)), /barra invertida|fuera del subconjunto/, `se aceptó el literal ${a}`);
+  }
+});
+
+test('paridad: los patrones fuera del subconjunto soportado se rechazan', () => {
+  for (const a of ['^.{8}$', '^[0-9]+$', '^(?:[0-9]{8})$', '^[0-9]{8}|x$']) {
+    assert.throws(() => discrepancias(sqlOriginal.split('^[0-9]{8}$').join(a)), /fuera del subconjunto/, `se aceptó el patrón ${a}`);
+  }
+});
+
+test('paridad: sobre un SQL concatenado rige la última definición; un DROP sin redefinición falla', () => {
+  const redefinir = `\nALTER TABLE \`certificados\` DROP CHECK \`certificados_documento_chk\`;\nALTER TABLE \`certificados\` ADD CONSTRAINT \`certificados_documento_chk\` CHECK (\`estudiante_doc_tipo\` = 'DNI' AND REGEXP_LIKE(\`estudiante_doc_pais\`, '^PE$', 'c') AND REGEXP_LIKE(\`estudiante_doc_numero\`, '^[0-9]{9}$', 'c'));\n`;
+  assert.ok(discrepancias(sqlOriginal + redefinir).length > 0, 'debe verse la definición posterior, no la original');
+  assert.throws(() => discrepancias(`${sqlOriginal}\nALTER TABLE \`certificados\` DROP CHECK \`certificados_documento_chk\`;\n`), /se elimina sin redefinirse/);
+  assert.deepEqual(discrepancias(sqlOriginal + '\n-- sin cambios\n'), []);
 });
