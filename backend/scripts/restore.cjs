@@ -1,10 +1,11 @@
 // Restauración explícita en una base AISLADA: `npm run db:restore -- --file=<respaldo.sql.gz> --target=horus_restore_<nombre> --yes`.
 // Nunca restaura sobre la base configurada ni sobre datos existentes: el destino debe llamarse horus_restore_*, no existir o estar vacío.
 // `--verify-only` comprueba la firma SHA-256 y el contenido del archivo sin conectarse a MySQL. El script no ejecuta DROP.
+// Tras cargar, comprueba recuentos (manifiesto) e integridad referencial; si algo falla termina con código 1 y «RESTAURACIÓN FALLIDA».
 const { createReadStream, existsSync, readFileSync } = require('node:fs');
 const { createGunzip } = require('node:zlib');
 const { resolve } = require('node:path');
-const { BACKUP_MAGIC, restoreDatabaseDefaults, isAllowedStatement, validateManifest, validateRestoreTarget, sha256File, parseArgs } = require('./backup-lib.cjs');
+const { BACKUP_MAGIC, restoreDatabaseDefaults, isAllowedStatement, validateManifest, validateRestoreTarget, referentialIntegrity, sha256File, parseArgs } = require('./backup-lib.cjs');
 
 class UserError extends Error {}
 const fail = message => { throw new UserError(message); };
@@ -92,6 +93,15 @@ async function main() {
       }
       console.log('Recuentos verificados en ' + manifest.tables.length + ' tablas.');
     }
+    // Recuentos correctos no implican relaciones correctas, y SET FOREIGN_KEY_CHECKS=1 no revisa lo ya insertado: se comprueba cada clave
+    // foránea declarada (con o sin manifiesto). Si falla, el destino se deja tal cual para revisarlo (no se borra) y el origen no se toca.
+    const integrity = await referentialIntegrity(db, target);
+    if (integrity.problems.length) {
+      fail('RESTAURACIÓN FALLIDA: integridad referencial rota en «' + target + '».\n' + integrity.problems.map(problem => '  - ' + problem.relation + ': ' + problem.reason).join('\n') +
+        '\nLa base «' + target + '» queda incompleta y NO debe usarse; no se borró nada. Revísala y elimínala manualmente (DROP DATABASE `' + target + '`).');
+    }
+    const composite = integrity.checked.filter(key => key.columns.length > 1).length;
+    console.log('Integridad referencial verificada: ' + integrity.checked.length + ' claves foráneas (' + composite + ' compuestas), sin filas huérfanas: ' + integrity.checked.map(key => key.name).join(', ') + '.');
     console.log('La base «' + target + '» queda aparte de la configurada. Elimínala manualmente cuando termines de revisarla.');
   } finally { await db.end().catch(() => {}); }
 }

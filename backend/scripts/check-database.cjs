@@ -123,15 +123,27 @@ async function checkAcademic(db, indexes) {
     const id = columns.find(c => c.TABLE_NAME === table && c.COLUMN_NAME === 'id');
     if (id && !/\bauto_increment\b/i.test(id.EXTRA)) problems.push(table + '.id: falta AUTO_INCREMENT');
   }
-  // Ningún índice único fuera de los previstos (p. ej. UNIQUE(email) impediría que varios estudiantes compartan contacto).
-  const allowedUnique = new Set(['PRIMARY', ...ACADEMIC_INDEXES.filter(([, , , unique]) => unique).map(([, name]) => name)]);
-  const extraUnique = new Map();
-  for (const i of indexes) if (ACADEMIC[i.TABLE_NAME] && Number(i.NON_UNIQUE) === 0 && !allowedUnique.has(i.INDEX_NAME)) extraUnique.set(i.TABLE_NAME + '.' + i.INDEX_NAME, [...(extraUnique.get(i.TABLE_NAME + '.' + i.INDEX_NAME) ?? []), i.COLUMN_NAME]);
-  for (const [key, cols] of extraUnique) problems.push(key.replace('.', ': índice único no previsto ') + ' (' + cols.join(', ') + ')' + (cols.some(c => ['email', 'telefono'].includes(c)) ? ': email y telefono deben poder compartirse' : ''));
+  // Índices reales de cada tabla académica: { columnas en orden, único }. Los nombres de índice son locales a su tabla, así que cada
+  // índice se compara con lo previsto para ESA tabla: certificados_codigo_uq creado en estudiantes no es el índice de certificados.
+  const actual = new Map();
+  for (const i of [...indexes].sort((a, b) => Number(a.SEQ_IN_INDEX) - Number(b.SEQ_IN_INDEX))) {
+    if (!ACADEMIC[i.TABLE_NAME] || i.INDEX_NAME === 'PRIMARY') continue;
+    const key = i.TABLE_NAME + '.' + i.INDEX_NAME;
+    const index = actual.get(key) ?? { table: i.TABLE_NAME, name: i.INDEX_NAME, columns: [], unique: [] };
+    index.columns.push(i.COLUMN_NAME); index.unique.push(Number(i.NON_UNIQUE) === 0);
+    actual.set(key, index);
+  }
+  const shared = columns => columns.some(c => ['email', 'telefono'].includes(c)) ? ': email y telefono deben poder compartirse' : '';
+  // Ningún índice único fuera de los previstos en su tabla (p. ej. UNIQUE(email) impediría que varios estudiantes compartan contacto).
+  for (const index of actual.values()) {
+    if (!index.unique.some(Boolean) || ACADEMIC_INDEXES.some(([table, name]) => table === index.table && name === index.name)) continue;
+    problems.push(index.table + ': índice único no previsto ' + index.name + ' (' + index.columns.join(', ') + ')' + shared(index.columns));
+  }
+  // Cada índice previsto: en su tabla, con las mismas columnas en el mismo orden y la misma unicidad.
   for (const [table, name, expected, unique] of ACADEMIC_INDEXES) {
-    const parts = indexes.filter(i => i.TABLE_NAME === table && i.INDEX_NAME === name).sort((a, b) => Number(a.SEQ_IN_INDEX) - Number(b.SEQ_IN_INDEX));
-    if (!parts.length) problems.push(table + ': falta índice ' + name);
-    else if (parts.map(i => i.COLUMN_NAME).join(',') !== expected.join(',') || parts.some(i => (Number(i.NON_UNIQUE) === 0) !== unique)) problems.push(table + ': índice ' + name + ' distinto');
+    const index = actual.get(table + '.' + name);
+    if (!index) problems.push(table + ': falta índice ' + name);
+    else if (index.columns.join(',') !== expected.join(',') || index.unique.some(u => u !== unique)) problems.push(table + ': índice ' + name + ' distinto (' + (index.unique.every(Boolean) ? 'único' : 'no único') + ' sobre ' + index.columns.join(', ') + '; se esperaba ' + (unique ? 'único' : 'no único') + ' sobre ' + expected.join(', ') + ')' + (index.unique.some(Boolean) ? shared(index.columns) : ''));
   }
   const [keys] = await db.query("SELECT k.TABLE_NAME, k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, r.DELETE_RULE, r.UPDATE_RULE FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME AND r.TABLE_NAME = k.TABLE_NAME WHERE k.TABLE_SCHEMA = DATABASE() AND k.REFERENCED_TABLE_NAME IS NOT NULL ORDER BY k.ORDINAL_POSITION");
   for (const [table, name, cols, referenced, refCols] of ACADEMIC_FOREIGN_KEYS) {

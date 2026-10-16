@@ -48,3 +48,29 @@ test('db:check E4.2: se rechazan expresiones con otra lógica aunque conserven e
 test('db:check E4.2: una sintaxis no reconocida no se acepta por aproximación', () => {
   for (const text of ['a = ', '(a = 1', "a = 'sin cerrar", 'a = 1 garbage', 'a BETWEEN 1 AND 2', 'a LIKE 1', 'a ; b', 'case end']) assert.throws(() => canonical(text), text);
 });
+
+test('db:check E4.2: los literales numéricos se comparan exactos, sin coma flotante (reverificación de Codex)', () => {
+  // Reproducción exacta: Number() convertía ambos en 1.
+  assert.ok(!same('revision >= 1.00000000000000000001', 'revision >= 1'), '1 frente a 1.00000000000000000001');
+  assert.ok(!same('(`revision` >= 1.00000000000000000001)', migration.checks.convocatorias_revision_chk), 'contra la migración real');
+  // Pares distintos que Number() redondearía al mismo double.
+  for (const [a, b] of [['0.1', '0.10000000000000000001'], ['9007199254740993', '9007199254740992'], ['123456789012345678901234567890', '123456789012345678901234567891'], ['0.3', '0.30000000000000001']]) {
+    assert.equal(Number(a), Number(b), 'precondición: JavaScript no distingue ' + a + ' de ' + b);
+    assert.ok(!same('x >= ' + a, 'x >= ' + b), a + ' ≠ ' + b);
+  }
+  // Mismo valor exacto con otro formato: equivalentes al comparar.
+  for (const text of ['revision >= 1.0', 'revision >= 01.000', 'revision >= 1.', '(`revision` >= 0001)']) assert.ok(same(text, migration.checks.convocatorias_revision_chk), text);
+  assert.ok(same('x = .5', 'x = 0.50'));
+  assert.ok(same("x in (1.0, 2)", 'x in (1, 2.00)'), 'también en IN');
+  // Negativos: MySQL guarda -1 como -(1).
+  assert.ok(same('x > -1', 'x > -(1)')); assert.ok(same('x > -(1.50)', 'x > -1.5')); assert.ok(same('x = -0', 'x = 0'));
+  assert.ok(!same('x > -1', 'x > 1')); assert.ok(!same('x > -1', 'x > -1.00000000000000000001'));
+  assert.ok(!same('x > -y', 'x > y'), 'menos unario sobre una columna');
+  // Fuera de una comparación la escala escrita cuenta (1.0 es DECIMAL, 1 es INT): no se iguala por aproximación.
+  assert.ok(!same('f(1.0)', 'f(1)'));
+  assert.ok(!same('case when a = 1 then 1.0 else 2 end', 'case when a = 1 then 1 else 2 end'));
+});
+
+test('db:check E4.2: literales numéricos no admitidos se rechazan en lugar de aproximarse', () => {
+  for (const text of ['x >= 1e0', 'x >= 1E-3', 'x >= 1.5e2', 'x >= 1..2', 'x >= 1.2.3', 'x >= 1abc', 'x >= 0x1F', 'x - 1 >= 0', 'x >= 1 - 1', 'x >= -- 1', 'x >= +1']) assert.throws(() => canonical(text), text);
+});

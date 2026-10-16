@@ -248,3 +248,40 @@ test('colación: restore con un manifiesto de colación hostil se detiene antes 
     assert.doesNotMatch(result.stderr, /No se pudo restaurar/, 'falló por el manifiesto, no por intentar conectar');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('integridad referencial tras restaurar: una consulta explícita por clave foránea declarada (simples y compuestas), identificadores escapados', async () => {
+  const fk = (tableName: string, name: string, cols: [string, string][], refTable: string, refSchema = 'horus_restore_x') => cols.map(([columnName, refColumn]) => ({ tableName, name, columnName, refSchema, refTable, refColumn }));
+  const keyRows = [
+    ...fk('convocatorias', 'convocatorias_curso_fk', [['curso_id', 'id']], 'cursos'),
+    ...fk('certificados', 'certificados_sustituye_fk', [['sustituye_a_id', 'id'], ['matricula_id', 'matricula_id']], 'certificados'),
+    ...fk('raro`tabla', 'raro_fk', [['col`x', 'id']], 'cursos'),
+  ];
+  const orphans: Record<string, number> = { convocatorias: 1, certificados: 0, 'raro`tabla': 0 };
+  const log: { sql: string; params?: unknown[] }[] = [];
+  const db = {
+    async query(sql: string, params?: unknown[]) {
+      log.push({ sql, params });
+      if (sql.includes('information_schema.KEY_COLUMN_USAGE')) return [keyRows];
+      if (sql.includes('information_schema.TABLES')) return [['convocatorias', 'cursos', 'certificados', 'raro`tabla'].map(name => ({ name }))];
+      const m = sql.match(/^SELECT COUNT\(\*\) AS n FROM `horus_restore_x`\.`((?:[^`]|``)+)` AS c WHERE/);
+      if (m) return [[{ n: orphans[m[1].replace(/``/g, '`')] }]];
+      throw new Error('Consulta no prevista: ' + sql);
+    },
+  };
+  const result = await lib.referentialIntegrity(db, 'horus_restore_x');
+  assert.ok(log.every(entry => !/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|SET)\b/.test(entry.sql)), 'solo lee');
+  assert.deepEqual(log[0].params, ['horus_restore_x'], 'el esquema va como parámetro');
+  assert.deepEqual(result.checked.map((key: { name: string; columns: string[] }) => key.name + ':' + key.columns.join('+')), ['convocatorias_curso_fk:curso_id', 'certificados_sustituye_fk:sustituye_a_id+matricula_id', 'raro_fk:col`x']);
+  const composite = log.find(entry => entry.sql.includes('`certificados` AS c'))!.sql;
+  assert.equal(composite, 'SELECT COUNT(*) AS n FROM `horus_restore_x`.`certificados` AS c WHERE c.`sustituye_a_id` IS NOT NULL AND c.`matricula_id` IS NOT NULL AND NOT EXISTS (SELECT 1 FROM `horus_restore_x`.`certificados` AS p WHERE p.`id` = c.`sustituye_a_id` AND p.`matricula_id` = c.`matricula_id`)', 'clave compuesta: todas las columnas a la vez y MATCH SIMPLE (NULL no se comprueba)');
+  assert.ok(log.some(entry => entry.sql.includes('`raro``tabla` AS c WHERE c.`col``x` IS NOT NULL')), 'comillas inversas duplicadas');
+  assert.deepEqual(result.problems.map((p: { relation: string; reason: string }) => p.relation + ': ' + p.reason), ['convocatorias(curso_id) → cursos(id) [convocatorias_curso_fk]: 1 fila huérfana']);
+
+  // Referencia a otra base o a una tabla ausente: fallo sin consultar fuera de la copia.
+  const strange = [...fk('a', 'a_fk', [['b_id', 'id']], 'b', 'horus_db'), ...fk('c', 'c_fk', [['d_id', 'id']], 'tabla_ausente')];
+  const log2: string[] = [];
+  const db2 = { async query(sql: string) { log2.push(sql); if (sql.includes('KEY_COLUMN_USAGE')) return [strange]; if (sql.includes('information_schema.TABLES')) return [[{ name: 'a' }, { name: 'c' }]]; throw new Error('Consulta no prevista: ' + sql); } };
+  const result2 = await lib.referentialIntegrity(db2, 'horus_restore_x');
+  assert.deepEqual(result2.problems.map((p: { name: string; reason: string }) => p.name + ': ' + p.reason), ['a_fk: referencia otra base de datos', 'c_fk: la tabla referenciada no existe en la copia']);
+  assert.ok(!log2.some(sql => sql.includes('horus_db')), 'nunca consulta la otra base');
+});

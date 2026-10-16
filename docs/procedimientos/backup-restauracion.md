@@ -58,7 +58,7 @@ npm run db:restore -- --file=backend\.backups\horus-horus_db-20261010-003600.sql
 La firma `.sha256` detecta daños y cambios **accidentales o parciales**, pero no demuestra el origen del archivo: quien pueda reemplazar el respaldo puede reemplazar también su firma. Guarda
 el hash en un lugar distinto (por ejemplo, junto al registro de la copia cifrada) si necesitas autenticidad.
 
-Protecciones (todas se comprueban **antes** de escribir):
+Protecciones (las 1-8 se comprueban **antes** de escribir; los recuentos del punto 7 y el punto 9, después de cargar):
 
 1. Exige el `.sha256` y que coincida; un archivo modificado, truncado o sin firma se rechaza.
 2. Solo se ejecutan `CREATE TABLE`, `INSERT INTO` y unos `SET` fijos, y cada línea se valida **completa**: los `INSERT` solo admiten literales (sin subconsultas ni `SELECT`) y los
@@ -69,6 +69,21 @@ Protecciones (todas se comprueban **antes** de escribir):
 6. Sin `--yes` solo informa de lo que haría.
 7. Valida el manifiesto (nombres de tabla seguros y firma coincidente) y, al terminar, compara el recuento de cada tabla. El manifiesto no se firma por separado.
 8. **Colación:** la base se crea con el `charset`/`collation` del manifiesto (validados: solo `[a-z0-9_]`, y la colación debe empezar por el charset). Antes de crear nada comprueba que el servidor de destino los admite; si no, se detiene con un mensaje y **sin sustituirlos**. Una copia anterior (sin `database`) o sin manifiesto usa `utf8mb4_unicode_ci` y lo avisa: es el comportamiento histórico y puede no coincidir con la base original. Si el destino ya existe (vacío) no se modifica y se avisa de la diferencia. Las tablas existentes conservan la colación de su `CREATE TABLE`; nada se convierte.
+
+9. **Integridad referencial (después de cargar, con o sin manifiesto):** el respaldo se carga con `FOREIGN_KEY_CHECKS=0`, y volver a activarlo
+   **no** revisa las filas ya insertadas; unos recuentos correctos tampoco prueban que las relaciones lo sean. Por eso se leen de
+   `information_schema.KEY_COLUMN_USAGE` todas las claves foráneas **declaradas** en la copia (también las compuestas, como
+   `certificados_sustituye_fk`) y se busca con una consulta explícita cada fila cuya referencia no exista (semántica de InnoDB: una fila con
+   alguna columna de la clave a `NULL` no se comprueba). Una referencia a otra base o a una tabla que no vino en el respaldo también es un fallo.
+   Las relaciones **sin** clave foránea declarada (`academico_historial.actor_id`, `admin_auditoria.actor_id` y `cuenta_id`) no se comprueban
+   aquí: son reglas de negocio aparte.
+
+**Restauración fallida.** Si cualquier comprobación posterior a la carga falla (recuentos o integridad referencial), el comando termina con
+código de salida 1 y un mensaje que empieza por `RESTAURACIÓN FALLIDA` (o «El recuento de … no coincide»), con cada relación afectada
+(`tabla(columnas) → tabla(columnas) [clave]: N filas huérfanas`); nunca imprime «Integridad referencial verificada». El destino
+`horus_restore_<nombre>` **se conserva tal cual** para poder revisarlo (no se borra automáticamente) y la base de origen no se toca; no debe
+usarse ni promoverse. Elimínalo a mano cuando termines (`DROP DATABASE`, comprobando antes el nombre). Una restauración correcta termina con
+código 0 y la línea `Integridad referencial verificada: N claves foráneas (M compuestas), sin filas huérfanas: …`.
 
 La restauración **no** sobrescribe la base de producción. Para recuperarla tras un incidente:
 

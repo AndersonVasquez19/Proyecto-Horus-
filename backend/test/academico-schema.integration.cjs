@@ -457,6 +457,15 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         ['CHECK con el nombre correcto y expresión TRUE', ['ALTER TABLE convocatorias DROP CHECK convocatorias_revision_chk', 'ALTER TABLE convocatorias ADD CONSTRAINT convocatorias_revision_chk CHECK (TRUE)'], 'convocatorias: restricción convocatorias_revision_chk con otra expresión'],
         ['columna generada con la condición invertida', ["ALTER TABLE certificados MODIFY vigente_matricula_id INT GENERATED ALWAYS AS (CASE WHEN estado <> 'vigente' THEN matricula_id ELSE NULL END) STORED"], 'certificados.vigente_matricula_id: no es la columna generada STORED prevista'],
         ['UNIQUE(email), incompatible con contactos compartidos', ['ALTER TABLE estudiantes ADD UNIQUE KEY estudiantes_email_uq (email)'], 'estudiantes: índice único no previsto estudiantes_email_uq (email): email y telefono deben poder compartirse'],
+        // Reverificación de Codex: los nombres de índice son locales a cada tabla; un nombre previsto en certificados no vale en estudiantes.
+        ['UNIQUE(email) con el nombre de un índice de certificados', ['ALTER TABLE estudiantes ADD UNIQUE KEY certificados_codigo_uq (email)'], 'estudiantes: índice único no previsto certificados_codigo_uq (email): email y telefono deben poder compartirse'],
+        ['UNIQUE(telefono) con el nombre de un índice de certificados', ['ALTER TABLE estudiantes ADD UNIQUE KEY certificados_codigo_uq (telefono)'], 'estudiantes: índice único no previsto certificados_codigo_uq (telefono): email y telefono deben poder compartirse'],
+        ['índice previsto con las columnas en otro orden', ['ALTER TABLE convocatorias DROP INDEX convocatorias_estado_idx, ADD KEY convocatorias_estado_idx (fecha_inicio, estado)'], 'convocatorias: índice convocatorias_estado_idx distinto (no único sobre fecha_inicio, estado; se esperaba no único sobre estado, fecha_inicio)'],
+        ['índice previsto sobre otra columna (email)', ['ALTER TABLE estudiantes DROP INDEX estudiantes_documento_uq, ADD UNIQUE KEY estudiantes_documento_uq (email)'], 'estudiantes: índice estudiantes_documento_uq distinto (único sobre email; se esperaba único sobre doc_pais, doc_tipo, doc_numero): email y telefono deben poder compartirse'],
+        ['índice único previsto convertido en no único', ['ALTER TABLE certificados DROP INDEX certificados_codigo_uq, ADD KEY certificados_codigo_uq (codigo_verificacion)'], 'certificados: índice certificados_codigo_uq distinto (no único sobre codigo_verificacion; se esperaba único sobre codigo_verificacion)'],
+        ['índice no único previsto convertido en único', ['ALTER TABLE estudiantes DROP INDEX estudiantes_nombre_idx, ADD UNIQUE KEY estudiantes_nombre_idx (apellidos, nombres)'], 'estudiantes: índice estudiantes_nombre_idx distinto (único sobre apellidos, nombres; se esperaba no único sobre apellidos, nombres)'],
+        // Reverificación de Codex: Number() igualaba ambos umbrales.
+        ['CHECK con un umbral decimal que coma flotante redondea a 1', ['ALTER TABLE convocatorias DROP CHECK convocatorias_revision_chk', 'ALTER TABLE convocatorias ADD CONSTRAINT convocatorias_revision_chk CHECK (revision >= 1.00000000000000000001)'], 'convocatorias: restricción convocatorias_revision_chk con otra expresión'],
         ['id sin AUTO_INCREMENT (tabla sin referencias)', ['ALTER TABLE academico_historial MODIFY id INT NOT NULL'], 'academico_historial.id: falta AUTO_INCREMENT'],
         // estudiantes.id está referenciado por matriculas: MySQL solo permite alterarlo con FOREIGN_KEY_CHECKS=0 en la sesión.
         ['id sin AUTO_INCREMENT (tabla referenciada)', ['SET FOREIGN_KEY_CHECKS=0', 'ALTER TABLE estudiantes MODIFY id INT NOT NULL'], 'estudiantes.id: falta AUTO_INCREMENT'],
@@ -470,14 +479,40 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         assert.ok(schema.output.includes(message), label + ': db:check debe informar «' + message + '»');
         t.diagnostic('rechazado: ' + label + ' -> ' + message);
       }
-      // Control: la misma regla reescrita con otro formato (paréntesis, mayúsculas, sin comillas inversas) se sigue aceptando.
-      const name = await installed();
+      // Control: la misma regla reescrita con otro formato (paréntesis, mayúsculas, sin comillas inversas, el mismo valor exacto escrito
+      // como 1.0 o 01.000) se sigue aceptando tal como MySQL la devuelve.
+      for (const expression of ['((((REVISION)) >= 1))', 'revision >= 1.0', 'revision >= 01.000']) {
+        const name = await installed();
+        const db = await connectTo(name);
+        try { for (const statement of ['ALTER TABLE convocatorias DROP CHECK convocatorias_revision_chk', 'ALTER TABLE convocatorias ADD CONSTRAINT convocatorias_revision_chk CHECK (' + expression + ')']) await db.query(statement); }
+        finally { await db.end(); }
+        const schema = await runScript('check-database.cjs', name);
+        assert.equal(schema.code, 0, expression + ': ' + schema.output);
+        t.diagnostic('aceptado: la misma expresión con otro formato -> ' + expression);
+      }
+    });
+
+    await t.test('literales numéricos tal como los guarda MySQL 8.4: negativos, decimales e IN conservan su valor exacto', async () => {
+      const { canonical } = require('../scripts/sql-expression.cjs'); // sin dependencias: no carga database.cjs ni .env
+      const name = await createDb();
       const db = await connectTo(name);
-      try { for (const statement of ['ALTER TABLE convocatorias DROP CHECK convocatorias_revision_chk', 'ALTER TABLE convocatorias ADD CONSTRAINT convocatorias_revision_chk CHECK ((((REVISION)) >= 1))']) await db.query(statement); }
-      finally { await db.end(); }
-      const schema = await runScript('check-database.cjs', name);
-      assert.equal(schema.code, 0, schema.output);
-      t.diagnostic('aceptado: la misma expresión con otro formato');
+      try {
+        const declared = { p_neg: 'x > -1', p_neg_dec: 'y <> -(1.50)', p_fino: 'y >= 1.00000000000000000001', p_ceros: 'y >= 01.000', p_punto: 'y >= .5', p_in: 'x in (1, 2.0, -3)' };
+        await db.query('CREATE TABLE sonda (x INT, y DECIMAL(40,30), ' + Object.entries(declared).map(([c, e]) => 'CONSTRAINT ' + c + ' CHECK (' + e + ')').join(', ') + ') ENGINE=InnoDB');
+        const [rows] = await db.query("SELECT CONSTRAINT_NAME AS c, CHECK_CLAUSE AS e FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() ORDER BY 1");
+        assert.equal(rows.length, Object.keys(declared).length);
+        for (const { c, e } of rows) {
+          assert.equal(canonical(e), canonical(declared[c]), c + ': lo que devuelve MySQL (' + e + ') equivale a lo declarado');
+          t.diagnostic(c + ': ' + declared[c] + '  ->  MySQL: ' + e);
+        }
+        const stored = Object.fromEntries(rows.map(({ c, e }) => [c, e]));
+        assert.notEqual(canonical(stored.p_fino), canonical('y >= 1'), '1.00000000000000000001 no se confunde con 1');
+        assert.equal(canonical(stored.p_ceros), canonical('y >= 1'), '01.000 es 1');
+        assert.notEqual(canonical(stored.p_neg), canonical('x > 1'), '-1 no es 1');
+        // MySQL aplica de verdad la diferencia: 1 no cumple y >= 1.00000000000000000001.
+        await rejects(db.query('INSERT INTO sonda (x, y) VALUES (1, 1)'), 'chk:p_fino');
+        await db.query('INSERT INTO sonda (x, y) VALUES (1, 1.00000000000000000001)');
+      } finally { await db.end(); }
     });
 
     await t.test('db:backup y db:restore reales con certificados vigentes y anulados: se conservan datos y relaciones y se recalcula la columna generada', async () => {
@@ -539,6 +574,14 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
       const restore = await runScript('restore.cjs', source, ['--file=' + file, '--target=' + target, '--yes']);
       assert.equal(restore.code, 0, restore.output);
       assert.match(restore.output, /Recuentos verificados en \d+ tablas/);
+      // Integridad referencial explícita: TODAS las claves foráneas declaradas en el origen (anteriores y académicas, la compuesta y las de actores).
+      const declaredKeys = await connectTo(source).then(async c => { try { return (await c.query('SELECT CONSTRAINT_NAME AS n FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() ORDER BY TABLE_NAME, CONSTRAINT_NAME'))[0].map(r => r.n); } finally { await c.end(); } });
+      const verified = restore.output.match(/Integridad referencial verificada: (\d+) claves foráneas \((\d+) compuestas\), sin filas huérfanas: (.*)\./);
+      assert.ok(verified, restore.output);
+      assert.deepEqual([Number(verified[1]), Number(verified[2])], [declaredKeys.length, 1]);
+      assert.deepEqual(verified[3].split(', ').sort(), [...declaredKeys].sort(), 'se comprueba cada clave foránea declarada');
+      for (const key of ['convocatorias_curso_fk', 'matriculas_confirmado_por_fk', 'certificados_anulado_por_fk', 'certificados_emitido_por_fk', 'certificados_sustituye_fk', 'attention_contact_fk', 'cotizaciones_contacto_fk', 'convenio_fotos_convenio_id_fkey']) assert.ok(declaredKeys.includes(key), key);
+      t.diagnostic('restauración válida: ' + verified[0]);
 
       // Todas las tablas (anteriores y académicas): misma definición y mismas filas, incluida la columna generada recalculada.
       // SHOW CREATE TABLE de la copia escribe «CHARACTER SET utf8mb4 COLLATE x» donde el origen pone «COLLATE x» (equivalente: la colación
@@ -578,6 +621,74 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         await rejects(db.query('DELETE FROM certificados WHERE id = ?', [certs.a]), 1451);
       } finally { await db.end(); }
       t.diagnostic('restauración real: ' + Object.keys(before).length + ' tablas idénticas (definición y filas); certificados: 1 anulado + 2 vigentes, columna generada recalculada; db:check aceptado en la copia');
+    });
+
+    // Reverificación de Codex: un respaldo con firma y recuentos VÁLIDOS (lo genera el db:backup real) pero con filas huérfanas, creadas en
+    // el origen con FOREIGN_KEY_CHECKS=0, no puede restaurarse con éxito. El destino fallido se conserva para revisarlo y el origen no cambia.
+    async function backupWithOrphans(corrupt) {
+      const source = await installed();
+      const db = await connectTo(source);
+      try { await corrupt(db); } finally { await db.end(); }
+      const before = await snapshot(source, []);
+      const dir = join(cwd, 'backups-' + randomBytes(4).toString('hex'));
+      const backup = await runScript('backup.cjs', source, ['--dir=' + dir]);
+      assert.equal(backup.code, 0, backup.output);
+      const file = join(dir, readdirSync(dir).find(f => f.endsWith('.sql.gz')));
+      const verify = await runScript('restore.cjs', source, ['--file=' + file, '--verify-only']);
+      assert.equal(verify.code, 0, 'la firma SHA-256 y el contenido son válidos: ' + verify.output);
+      const target = 'horus_restore_e42_' + randomBytes(12).toString('hex');
+      created.push(target);
+      const restore = await runScript('restore.cjs', source, ['--file=' + file, '--target=' + target, '--yes']);
+      assert.equal(restore.code, 1, 'la restauración con huérfanos debe fallar: ' + restore.output);
+      assert.match(restore.output, /Recuentos verificados en \d+ tablas/, 'los recuentos del manifiesto son correctos: el fallo no depende de un archivo dañado');
+      assert.match(restore.output, /RESTAURACIÓN FALLIDA: integridad referencial rota/);
+      assert.ok(!/Integridad referencial verificada/.test(restore.output), 'nunca se declara verificada');
+      assert.ok(restore.output.includes('queda incompleta y NO debe usarse; no se borró nada'));
+      const [kept] = await q('SELECT COUNT(*) AS n FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?', [target]);
+      assert.ok(Number(kept.n) > 0, 'el destino fallido se conserva para revisarlo (no se borra automáticamente)');
+      const after = await snapshot(source, []);
+      assert.deepEqual(after, before, 'el origen no cambia');
+      return restore.output;
+    }
+    const certificate = (db, matricula, codigo, emisor, sustituye = null) => db.query("INSERT INTO certificados (matricula_id, codigo_verificacion, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por, sustituye_a_id) VALUES (?, ?, 'Rosa Ficticia', 'Prueba', 'PE', 'DNI', '00012345', 'Curso Ficticio', 'curso', 'Noviembre 2026', ?, ?)", [matricula, codigo, emisor, sustituye]).then(([r]) => r.insertId);
+
+    await t.test('db:restore rechaza un respaldo válido cuya convocatoria apunta a un curso inexistente', async () => {
+      const output = await backupWithOrphans(async db => {
+        await db.query("INSERT INTO cursos (titulo, slug, descripcion, tipo, estado, createdAt, updatedAt) VALUES ('Curso Ficticio', 'curso-ficticio-e42', 'Ficticio', 'curso', 'publicado', NOW(), NOW())");
+        await db.query("INSERT INTO convocatorias (curso_id, nombre) SELECT id, 'Convocatoria válida' FROM cursos");
+        await db.query('SET FOREIGN_KEY_CHECKS=0');
+        await db.query("INSERT INTO convocatorias (curso_id, nombre) VALUES (999999, 'Convocatoria huérfana (ficticia)')");
+      });
+      const lines = output.split('\n').filter(line => line.startsWith('  - '));
+      assert.deepEqual(lines, ['  - convocatorias(curso_id) → cursos(id) [convocatorias_curso_fk]: 1 fila huérfana'], 'solo la relación afectada');
+      t.diagnostic('rechazado: ' + lines.join(' | '));
+    });
+
+    await t.test('db:restore rechaza huérfanos en la clave compuesta de sustitución y en las relaciones de actores', async () => {
+      const output = await backupWithOrphans(async db => {
+        await db.query("INSERT INTO admin_users (nombre, email, password, rol, createdAt, updatedAt) VALUES ('Coordinadora Ficticia', 'coordinadora@horus-e42.test', 'hash-ficticio', 'COORDINADORA_INSTITUCIONAL', NOW(), NOW())");
+        const [[{ coord }]] = await db.query('SELECT id AS coord FROM admin_users');
+        await db.query("INSERT INTO cursos (titulo, slug, descripcion, tipo, estado, createdAt, updatedAt) VALUES ('Curso Ficticio', 'curso-ficticio-e42', 'Ficticio', 'curso', 'publicado', NOW(), NOW())");
+        const [cv] = await db.query("INSERT INTO convocatorias (curso_id, nombre) SELECT id, 'Noviembre 2026' FROM cursos");
+        const [e1] = await db.query("INSERT INTO estudiantes (nombres, apellidos) VALUES ('Uno Ficticio', 'Prueba')");
+        const [e2] = await db.query("INSERT INTO estudiantes (nombres, apellidos) VALUES ('Dos Ficticio', 'Prueba')");
+        const [m1] = await db.query("INSERT INTO matriculas (estudiante_id, convocatoria_id, cumplimiento, confirmado_por, confirmado_rol, confirmado_at) VALUES (?, ?, 'cumplido', ?, 'COORDINADORA_INSTITUCIONAL', NOW(3))", [e1.insertId, cv.insertId, coord]);
+        const [m2] = await db.query('INSERT INTO matriculas (estudiante_id, convocatoria_id) VALUES (?, ?)', [e2.insertId, cv.insertId]);
+        const a = await certificate(db, m2.insertId, 'E42HUERFANO0000000001', coord); // A pertenece a la matrícula m2
+        const b = await certificate(db, m1.insertId, 'E42HUERFANO0000000002', coord);
+        await db.query('SET FOREIGN_KEY_CHECKS=0');
+        await db.query('UPDATE matriculas SET confirmado_por = 999999 WHERE id = ?', [m1.insertId]);
+        await db.query("UPDATE certificados SET estado = 'anulado', anulado_por = 999998, anulado_at = NOW(3), anulacion_motivo = 'Prueba (ficticia)' WHERE id = ?", [b]);
+        // C (matrícula m1) dice sustituir a A, que existe pero es de m2: cada columna por separado existe, el par (id, matricula_id) no.
+        await certificate(db, m1.insertId, 'E42HUERFANO0000000003', coord, a);
+      });
+      const lines = output.split('\n').filter(line => line.startsWith('  - ')).sort();
+      assert.deepEqual(lines, [
+        '  - certificados(anulado_por) → admin_users(id) [certificados_anulado_por_fk]: 1 fila huérfana',
+        '  - certificados(sustituye_a_id, matricula_id) → certificados(id, matricula_id) [certificados_sustituye_fk]: 1 fila huérfana',
+        '  - matriculas(confirmado_por) → admin_users(id) [matriculas_confirmado_por_fk]: 1 fila huérfana',
+      ]);
+      t.diagnostic('rechazado: ' + lines.join(' | '));
     });
   } finally {
     await Promise.allSettled(clients.map(client => client.$disconnect()));

@@ -2,7 +2,7 @@
 // Formato del respaldo (.sql.gz): UNA sentencia por línea, solo CREATE TABLE, INSERT INTO y unos pocos SET. Nunca DROP, GRANT ni USE.
 const { createHash } = require('node:crypto');
 const { createReadStream } = require('node:fs');
-const { escape } = require('mysql2');
+const { escape, escapeId } = require('mysql2');
 
 const BACKUP_MAGIC = '-- horus-backup v1';
 const INSERT_BATCH_ROWS = 200;
@@ -135,6 +135,41 @@ async function dumpDatabase({ db, write, includeEphemeral = false, now = new Dat
   } finally { await db.query('ROLLBACK').catch(() => {}); }
 }
 
+// Integridad referencial de una base restaurada. El respaldo se carga con FOREIGN_KEY_CHECKS=0, y volver a activarlo NO revisa las filas ya
+// insertadas: un respaldo con firma y recuentos correctos puede traer una convocatoria cuyo curso no existe. Por eso cada clave foránea
+// DECLARADA en la base (leída de information_schema, compuestas incluidas) se comprueba con una consulta explícita sobre los datos.
+// Semántica de InnoDB (MATCH SIMPLE): una fila con alguna columna de la clave a NULL no tiene que existir en la tabla referenciada.
+// Los identificadores salen de los metadatos del servidor y se escapan igualmente con escapeId (comillas inversas duplicadas, sin calificar).
+// Una relación sin clave foránea declarada (p. ej. academico_historial.actor_id) no se comprueba aquí: es una regla de negocio aparte.
+const ident = name => escapeId(String(name), true);
+async function referentialIntegrity(db, schema) {
+  const [rows] = await db.query('SELECT TABLE_NAME AS tableName, CONSTRAINT_NAME AS name, COLUMN_NAME AS columnName, REFERENCED_TABLE_SCHEMA AS refSchema, REFERENCED_TABLE_NAME AS refTable, REFERENCED_COLUMN_NAME AS refColumn FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION', [schema]);
+  const keys = new Map();
+  for (const row of rows) {
+    const id = row.tableName + '.' + row.name;
+    const key = keys.get(id) ?? { table: String(row.tableName), name: String(row.name), columns: [], refSchema: String(row.refSchema), refTable: String(row.refTable), refColumns: [] };
+    key.columns.push(String(row.columnName)); key.refColumns.push(String(row.refColumn));
+    keys.set(id, key);
+  }
+  const [tables] = await db.query("SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'", [schema]);
+  const existing = new Set(tables.map(table => String(table.name)));
+  const checked = [], problems = [];
+  for (const key of keys.values()) {
+    const relation = key.table + '(' + key.columns.join(', ') + ') → ' + key.refTable + '(' + key.refColumns.join(', ') + ') [' + key.name + ']';
+    checked.push({ ...key, relation });
+    // Solo se consulta la propia base restaurada: una referencia a otra base (o a una tabla que no vino en el respaldo) es un fallo, no se sigue.
+    if (key.refSchema !== schema) { problems.push({ ...key, relation, reason: 'referencia otra base de datos' }); continue; }
+    if (!existing.has(key.refTable)) { problems.push({ ...key, relation, reason: 'la tabla referenciada no existe en la copia' }); continue; }
+    const child = ident(schema) + '.' + ident(key.table), parent = ident(schema) + '.' + ident(key.refTable);
+    const notNull = key.columns.map(column => 'c.' + ident(column) + ' IS NOT NULL').join(' AND ');
+    const match = key.columns.map((column, i) => 'p.' + ident(key.refColumns[i]) + ' = c.' + ident(column)).join(' AND ');
+    const [[count]] = await db.query('SELECT COUNT(*) AS n FROM ' + child + ' AS c WHERE ' + notNull + ' AND NOT EXISTS (SELECT 1 FROM ' + parent + ' AS p WHERE ' + match + ')');
+    const orphans = Number(count.n);
+    if (orphans) problems.push({ ...key, relation, orphans, reason: orphans + (orphans === 1 ? ' fila huérfana' : ' filas huérfanas') });
+  }
+  return { checked, problems };
+}
+
 // Destino de una restauración: solo bases aisladas con prefijo horus_restore_, nunca la configurada, y servidor local salvo autorización expresa.
 function validateRestoreTarget({ target, live, host, allowRemote }) {
   if (!/^horus_restore_[a-z0-9_]{1,40}$/.test(target || '')) return 'El destino debe llamarse horus_restore_<nombre> (minúsculas, números y guiones bajos).';
@@ -161,4 +196,4 @@ function parseArgs(argv) {
   return args;
 }
 
-module.exports = { GENERATED_COLUMN, restoreDatabaseDefaults, FALLBACK_DATABASE, validateManifest, BACKUP_MAGIC, EPHEMERAL_TABLES, sqlValue, insertStatements, singleLine, isAllowedStatement, dumpDatabase, validateRestoreTarget, sha256File, parseArgs };
+module.exports = { GENERATED_COLUMN, restoreDatabaseDefaults, FALLBACK_DATABASE, validateManifest, BACKUP_MAGIC, EPHEMERAL_TABLES, sqlValue, insertStatements, singleLine, isAllowedStatement, dumpDatabase, referentialIntegrity, validateRestoreTarget, sha256File, parseArgs };
