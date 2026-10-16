@@ -97,3 +97,38 @@ test('migraciones: la 20261011 es aditiva y admite filas existentes (columnas nu
   assert.ok(sql.slice(0, 2).every(s => /^ALTER TABLE cotizaciones ADD COLUMN idempotencia_\w+ \w+\(\d+\) NULL$/.test(s)));
   assert.match(sql[2], /^ALTER TABLE cotizaciones ADD UNIQUE KEY cotizaciones_idempotencia_clave \(idempotencia_clave\)$/);
 });
+
+test('migraciones: la 20261015-academico-estructura (E4.2) solo crea las cinco tablas académicas, restrictivas y sin datos, reflejadas en schema.prisma y db:check', () => {
+  const sql = statements(read('20261015-academico-estructura'));
+  const tables = ['estudiantes', 'convocatorias', 'matriculas', 'certificados', 'academico_historial']; // orden de dependencias: cada CREATE es atómico
+  assert.deepEqual(sql.map(s => (s.match(/^CREATE TABLE IF NOT EXISTS `(\w+)` \(/) ?? [])[1]), tables);
+  assert.ok(versions.indexOf('20261015-academico-estructura') > versions.indexOf('20261014-admin-auditoria'), 'referencia a admin_users y cursos ya existentes');
+  const all = sql.join('\n');
+  assert.ok(!/ON (DELETE|UPDATE) (CASCADE|SET NULL|SET DEFAULT)/i.test(all), 'ninguna relación borra ni modifica en cascada');
+  assert.equal((all.match(/FOREIGN KEY/g) ?? []).length, (all.match(/ON DELETE RESTRICT ON UPDATE RESTRICT/g) ?? []).length);
+  assert.ok(!/reniec|verificad|validad|consulta_/i.test(all), 'sin campos que afirmen una verificación externa del documento');
+  assert.match(all, /`doc_tipo` ENUM\('DNI','CE','PASAPORTE'\) NULL/);
+  assert.match(all, /`doc_numero` VARCHAR\(20\) NULL/, 'VARCHAR conserva los ceros iniciales');
+  assert.match(all, /UNIQUE KEY `estudiantes_documento_uq` \(`doc_pais`, `doc_tipo`, `doc_numero`\)/);
+  assert.match(all, /UNIQUE KEY `matriculas_estudiante_convocatoria_uq` \(`estudiante_id`, `convocatoria_id`\)/);
+  assert.match(all, /`confirmado_rol` ENUM\('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL'\) NULL/, 'la secretaria no confirma el cumplimiento');
+  assert.match(all, /`vigente_matricula_id` INT GENERATED ALWAYS AS \(CASE WHEN `estado` = 'vigente' THEN `matricula_id` ELSE NULL END\) STORED/);
+  assert.match(all, /UNIQUE KEY `certificados_vigente_uq` \(`vigente_matricula_id`\)/, 'un solo certificado vigente por matrícula');
+  assert.match(all, /FOREIGN KEY \(`sustituye_a_id`, `matricula_id`\) REFERENCES `certificados` \(`id`, `matricula_id`\)/, 'la sustitución es de la misma matrícula');
+  for (const column of ['estudiante_doc_pais', 'estudiante_doc_tipo', 'estudiante_doc_numero']) assert.match(all, new RegExp('`' + column + '` [A-Z]+(\\([^)]*\\))? NOT NULL'), 'sin documento no hay certificado: ' + column);
+  // Un CHECK que evalúa a NULL se da por cumplido: las reglas con columnas nulas exigen IS NOT NULL antes de comparar.
+  assert.match(all, /CONSTRAINT `estudiantes_documento_completo_chk` CHECK \(\(`doc_pais` IS NULL AND `doc_tipo` IS NULL AND `doc_numero` IS NULL\) OR \(`doc_pais` IS NOT NULL AND `doc_tipo` IS NOT NULL AND `doc_numero` IS NOT NULL\)\)/);
+  assert.match(all, /`confirmado_rol` IS NOT NULL AND `confirmado_rol` IN/);
+  const historial = sql[4];
+  assert.ok(!/FOREIGN KEY|REFERENCES/i.test(historial), 'el historial es independiente');
+  assert.ok(!/`(nombres|apellidos|email|correo|telefono|doc_\w+|password|token|ip)`/i.test(historial), 'el historial no guarda datos personales');
+  const schema = readFileSync(join(__dirname, '..', 'prisma', 'schema.prisma'), 'utf8'), check = readFileSync(join(__dirname, '..', 'scripts', 'check-database.cjs'), 'utf8');
+  for (const [model, table] of [['Estudiante', 'estudiantes'], ['Convocatoria', 'convocatorias'], ['Matricula', 'matriculas'], ['Certificado', 'certificados'], ['AcademicoHistorial', 'academico_historial']]) {
+    assert.match(schema, new RegExp('model ' + model + ' \\{[\\s\\S]*?@@map\\("' + table + '"\\)'), model);
+    assert.ok(check.includes(table + ': ['), 'db:check debe comprobar las columnas de ' + table);
+  }
+  const certificado = schema.match(/model Certificado \{([\s\S]*?)\n\}/)![1];
+  assert.ok(!/^\s+vigente_matricula_id\b/m.test(certificado), 'Prisma no declara (ni escribe) la columna generada');
+  assert.ok(!/onDelete: (Cascade|SetNull)|onUpdate: (Cascade|SetNull)/.test(schema.slice(schema.indexOf('model Estudiante'))), 'relaciones académicas restrictivas también en Prisma');
+  for (const name of [...all.matchAll(/(?:KEY|CONSTRAINT) `(\w+)`/g)].map(match => match[1])) assert.ok(check.includes("'" + name + "'"), 'db:check debe verificar ' + name);
+});

@@ -1,7 +1,7 @@
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { connect } = require('./database.cjs');
-const versions = ['20260909-create-catalogo', '20260921-create-cotizaciones', '20261002-complete-institutional', '20261002-original-design', '20261002-create-convenios', '20261003-remove-otros-category', '20261009-chatbot-metrics', '20261010-newsletter-default-novedades', '20261011-cotizaciones-idempotencia', '20261014-admin-rol', '20261014-admin-auditoria'];
+const versions = ['20260909-create-catalogo', '20260921-create-cotizaciones', '20261002-complete-institutional', '20261002-original-design', '20261002-create-convenios', '20261003-remove-otros-category', '20261009-chatbot-metrics', '20261010-newsletter-default-novedades', '20261011-cotizaciones-idempotencia', '20261014-admin-rol', '20261014-admin-auditoria', '20261015-academico-estructura'];
 async function applySql(db, name) {
   const sql = readFileSync(join(__dirname, '../migrations', name + '.sql'), 'utf8');
   for (const statement of sql.split(';').map(s => s.trim()).filter(Boolean)) await db.query(statement);

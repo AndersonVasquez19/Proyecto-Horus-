@@ -161,6 +161,16 @@ jobs:
           node --test -r ./test/isolate-env.cjs test/access-guard-http.integration.cjs
         env:
           ACCESS_GUARD_HTTP_TEST_DB: 'true'
+      # H-BACK-01 E4.2: estructura académica (instalación, actualización desde E4.1, migración parcial, restricciones y Prisma).
+      # Mismas barreras que E3.5 y E3.6, todas antes de crear nada; va después de ellas porque exige un servidor sin tablas ajenas.
+      # Solo crea y elimina horus_e42_<hex>.
+      - name: Integración de la estructura académica (E4.2)
+        run: |
+          ACADEMICO_SCHEMA_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ACADEMICO_SCHEMA_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/academico-schema.integration.cjs
+        env:
+          ACADEMICO_SCHEMA_TEST_DB: 'true'
       - name: Integración de la colación en db:backup y db:restore
         run: node --test test/backup-collation.integration.cjs
         env:

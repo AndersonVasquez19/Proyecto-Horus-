@@ -35,3 +35,17 @@ Las pruebas cubren módulos, CRUD, publicación, fechas, importes, concurrencia,
 ## Convenios
 
 Convenio y ConvenioFoto se crean mediante 20261002-create-convenios.sql, registrada en el ejecutor existente. Las fotos tienen FK con borrado en cascada de registros y permanecen separadas de GaleriaItem. Ninguna lectura, compilación o arranque importa datos. La carga inicial de los cinco convenios es un mantenimiento explícito e idempotente. Consulta [Convenios](CONVENIOS.md) para contratos, activación manual y vista previa.
+
+## Académico (E4.2)
+
+`20261015-academico-estructura` crea, vacías y solo con `CREATE TABLE IF NOT EXISTS` (cada una atómica en MySQL 8), `estudiantes`, `convocatorias`, `matriculas`, `certificados` y `academico_historial` (modelos `Estudiante`, `Convocatoria`, `Matricula`, `Certificado` y `AcademicoHistorial`). Solo es estructura: ningún servicio ni ruta la usa todavía. Las reglas viven en MySQL y Prisma no las valida:
+
+- Documento opcional pero todo o nada (`doc_pais`, `doc_tipo`, `doc_numero`), único por la combinación de los tres. DNI = `PE` + 8 dígitos; CE = `PE` + 1-12 alfanuméricos; pasaporte = país ISO alfa-2 + 1-20 alfanuméricos; siempre en mayúsculas y sin espacios ni guiones (el servicio normaliza antes de guardar). Registro manual: no hay campos de verificación externa.
+- Convocatorias con fechas (`DATE`) y estado propios: no leen ni modifican `cursos.fecha_inicio` ni `cursos.estado`. Estudiantes y convocatorias se archivan (`archivado_at`); matrículas y certificados se anulan. Todas las claves foráneas son `RESTRICT`: no se puede borrar un curso, estudiante, convocatoria, matrícula, certificado sustituido ni administrador referenciado.
+- Matrícula única por estudiante y convocatoria. El cumplimiento confirmado exige `confirmado_por`, `confirmado_at` y `confirmado_rol`, que solo admite `GERENTE_GENERAL` o `COORDINADORA_INSTITUCIONAL`.
+- Certificados: copia de los datos de emisión (documento obligatorio), código aleatorio de 16-32 `[A-Z0-9]`, anulados conservados con quién, cuándo y por qué. Un solo vigente por matrícula mediante la columna generada `STORED` `vigente_matricula_id` con índice único (no declarada en Prisma a propósito: Prisma no admite columnas generadas y nunca debe escribirla). La sustitución enlaza con `sustituye_a_id` a un certificado de la misma matrícula (clave foránea compuesta) y una sola vez; el orden «anular y después emitir», el motivo y los permisos los comprobará el servicio en una transacción.
+- `academico_historial`, sin claves foráneas ni datos personales (`campos` guarda solo nombres de campos), se escribirá en la misma transacción que el cambio académico.
+
+Con el adaptador, Prisma 6.19.3 entrega una violación de `CHECK` (MySQL 3819) como `DriverAdapterError` (`cause.code = 3819` y el nombre de la restricción en el mensaje), no como `PrismaClientKnownRequestError`; las de `UNIQUE` y claves foráneas llegan como `P2002` y `P2003`. `db:check` verifica la estructura real (columnas, índices, claves foráneas, `CHECK` y columna generada): una tabla previa con otra forma no se corrige en silencio.
+
+`test/academico-schema.integration.cjs` lo comprueba contra un MySQL 8.4 desechable (instalación desde cero, actualización desde E4.1 con datos, recuperación de una migración parcial, cada restricción y Prisma). Exige `ACADEMICO_SCHEMA_TEST_DB=true` y el `server_uuid` del contenedor; solo crea y elimina `horus_e42_<hex>`.
