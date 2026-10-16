@@ -1,6 +1,7 @@
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { connect } = require('./database.cjs');
+const { canonical, definitionsFromMigration } = require('./sql-expression.cjs');
 function expectedColumns() {
   const sql = readFileSync(join(__dirname, '../migrations/00000000-initial.sql'), 'utf8');
   const legacy = [...sql.matchAll(/CREATE TABLE IF NOT EXISTS \x60([^\x60]+)\x60 \(\n([\s\S]*?)\n\)/g)].flatMap(([, table, body]) =>
@@ -109,9 +110,24 @@ async function checkAcademic(db, indexes) {
     const extra = columns.filter(c => c.TABLE_NAME === table).map(c => c.COLUMN_NAME).filter(name => !expected.some(([e]) => e === name));
     if (extra.length) problems.push(table + ': columnas no previstas (' + extra.join(', ') + ')');
   }
+  // Las expresiones (CHECK y columna generada) se comparan por su forma canónica con las de la propia migración: se toleran el formato
+  // y los paréntesis que añade MySQL, no un cambio de lógica (TRUE, condición invertida, otro operando).
+  const migration = definitionsFromMigration(readFileSync(join(__dirname, '../migrations/20261015-academico-estructura.sql'), 'utf8'));
+  const sameExpression = (actual, expected) => { try { return canonical(actual) === canonical(expected); } catch { return false; } };
   const generated = columns.find(c => c.TABLE_NAME === 'certificados' && c.COLUMN_NAME === 'vigente_matricula_id');
-  const expression = String(generated?.GENERATION_EXPRESSION ?? '').toLowerCase();
-  if (generated && !(/stored generated/i.test(generated.EXTRA) && expression.includes('estado') && expression.includes('vigente') && expression.includes('matricula_id'))) problems.push('certificados.vigente_matricula_id: no es la columna generada STORED prevista');
+  if (generated && !(/^STORED GENERATED$/i.test(generated.EXTRA) && sameExpression(generated.GENERATION_EXPRESSION, migration.generated['certificados.vigente_matricula_id']))) problems.push('certificados.vigente_matricula_id: no es la columna generada STORED prevista');
+  // Clave primaria (id) con AUTO_INCREMENT en cada tabla académica.
+  for (const table of Object.keys(ACADEMIC)) {
+    const primary = indexes.filter(i => i.TABLE_NAME === table && i.INDEX_NAME === 'PRIMARY').map(i => i.COLUMN_NAME);
+    if (primary.join(',') !== 'id') problems.push(table + ': la clave primaria no es (id)');
+    const id = columns.find(c => c.TABLE_NAME === table && c.COLUMN_NAME === 'id');
+    if (id && !/\bauto_increment\b/i.test(id.EXTRA)) problems.push(table + '.id: falta AUTO_INCREMENT');
+  }
+  // Ningún índice único fuera de los previstos (p. ej. UNIQUE(email) impediría que varios estudiantes compartan contacto).
+  const allowedUnique = new Set(['PRIMARY', ...ACADEMIC_INDEXES.filter(([, , , unique]) => unique).map(([, name]) => name)]);
+  const extraUnique = new Map();
+  for (const i of indexes) if (ACADEMIC[i.TABLE_NAME] && Number(i.NON_UNIQUE) === 0 && !allowedUnique.has(i.INDEX_NAME)) extraUnique.set(i.TABLE_NAME + '.' + i.INDEX_NAME, [...(extraUnique.get(i.TABLE_NAME + '.' + i.INDEX_NAME) ?? []), i.COLUMN_NAME]);
+  for (const [key, cols] of extraUnique) problems.push(key.replace('.', ': índice único no previsto ') + ' (' + cols.join(', ') + ')' + (cols.some(c => ['email', 'telefono'].includes(c)) ? ': email y telefono deben poder compartirse' : ''));
   for (const [table, name, expected, unique] of ACADEMIC_INDEXES) {
     const parts = indexes.filter(i => i.TABLE_NAME === table && i.INDEX_NAME === name).sort((a, b) => Number(a.SEQ_IN_INDEX) - Number(b.SEQ_IN_INDEX));
     if (!parts.length) problems.push(table + ': falta índice ' + name);
@@ -125,11 +141,15 @@ async function checkAcademic(db, indexes) {
     if (!same) problems.push(table + ': clave foránea ' + name + ' distinta');
     if (!parts.every(k => ['RESTRICT','NO ACTION'].includes(k.DELETE_RULE) && ['RESTRICT','NO ACTION'].includes(k.UPDATE_RULE))) problems.push(table + ': clave foránea ' + name + ' no es restrictiva');
   }
-  const [checks] = await db.query("SELECT TABLE_NAME, CONSTRAINT_NAME, ENFORCED FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND CONSTRAINT_TYPE = 'CHECK'");
-  for (const [table, names] of Object.entries(ACADEMIC_CHECKS)) for (const name of names) {
-    const row = checks.find(c => c.TABLE_NAME === table && c.CONSTRAINT_NAME === name);
-    if (!row) problems.push(table + ': falta restricción ' + name);
-    else if (row.ENFORCED !== 'YES') problems.push(table + ': restricción ' + name + ' no se aplica');
+  const [checks] = await db.query("SELECT t.TABLE_NAME, t.CONSTRAINT_NAME, t.ENFORCED, c.CHECK_CLAUSE FROM information_schema.TABLE_CONSTRAINTS t JOIN information_schema.CHECK_CONSTRAINTS c ON c.CONSTRAINT_SCHEMA = t.CONSTRAINT_SCHEMA AND c.CONSTRAINT_NAME = t.CONSTRAINT_NAME WHERE t.TABLE_SCHEMA = DATABASE() AND t.CONSTRAINT_TYPE = 'CHECK'");
+  for (const [table, names] of Object.entries(ACADEMIC_CHECKS)) {
+    for (const name of names) {
+      const row = checks.find(c => c.TABLE_NAME === table && c.CONSTRAINT_NAME === name);
+      if (!row) problems.push(table + ': falta restricción ' + name);
+      else if (row.ENFORCED !== 'YES') problems.push(table + ': restricción ' + name + ' no se aplica');
+      else if (!sameExpression(row.CHECK_CLAUSE, migration.checks[name])) problems.push(table + ': restricción ' + name + ' con otra expresión');
+    }
+    for (const row of checks) if (row.TABLE_NAME === table && !names.includes(row.CONSTRAINT_NAME)) problems.push(table + ': restricción no prevista ' + row.CONSTRAINT_NAME);
   }
   const [engines] = await db.query("SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?)", [Object.keys(ACADEMIC)]);
   for (const row of engines) if (row.ENGINE !== 'InnoDB') problems.push(row.TABLE_NAME + ': motor distinto de InnoDB');

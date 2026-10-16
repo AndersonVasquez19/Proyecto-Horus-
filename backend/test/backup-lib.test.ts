@@ -13,7 +13,7 @@ const restoreScript = join(__dirname, '..', 'scripts', 'restore.cjs');
 
 type Row = Record<string, unknown>;
 // Base simulada: registra cada consulta y responde como lo haría MySQL. Nada se conecta a un servidor.
-function fakeDb(tables: Record<string, { ddl: string; rows: Row[]; pk?: string[] }>, countOverride: Record<string, number> = {}, schema = { charset: 'utf8mb4', collation: 'utf8mb4_0900_ai_ci' }) {
+function fakeDb(tables: Record<string, { ddl: string; rows: Row[]; pk?: string[]; extra?: Record<string, string> }>, countOverride: Record<string, number> = {}, schema = { charset: 'utf8mb4', collation: 'utf8mb4_0900_ai_ci' }) {
   const log: string[] = [];
   const db = {
     log,
@@ -23,6 +23,7 @@ function fakeDb(tables: Record<string, { ddl: string; rows: Row[]; pk?: string[]
       if (/^(SET SESSION|START TRANSACTION|ROLLBACK)/.test(sql)) return [[]];
       if (sql.startsWith('SELECT VERSION()')) return [[{ version: '8.0.36' }]];
       if (sql.includes('information_schema.SCHEMATA')) return [[{ charset: schema.charset, collation: schema.collation }]];
+      if (sql.includes('information_schema.COLUMNS')) return [Object.entries(tables).flatMap(([tableName, t]) => Object.keys(t.rows[0] ?? {}).map(columnName => ({ tableName, columnName, extra: t.extra?.[columnName] ?? '' })))];
       if (sql.includes('information_schema.TABLES')) return [Object.keys(tables).sort().map(name => ({ name }))];
       if ((m = sql.match(/^SHOW CREATE TABLE `(\w+)`/))) return [[{ Table: m[1], 'Create Table': tables[m[1]].ddl }]];
       if ((m = sql.match(/^SELECT COUNT\(\*\) AS n FROM `(\w+)`/))) return [[{ n: countOverride[m[1]] ?? tables[m[1]].rows.length }]];
@@ -81,6 +82,33 @@ test('el volcado solo lee: instantánea REPEATABLE READ de solo lectura, sin esc
   assert.deepEqual(manifest.database, { charset: 'utf8mb4', collation: 'utf8mb4_0900_ai_ci' }, 'el manifiesto registra charset y colación de la base, consultados al servidor');
   assert.ok(db.log.some(sql => /information_schema\.SCHEMATA.*DATABASE\(\)/.test(sql)));
   assert.doesNotMatch(JSON.stringify(manifest), /password|mysql:\/\//i, 'sin secretos ni cadenas de conexión');
+});
+
+test('columnas generadas: su definición queda en el CREATE TABLE, pero no se insertan (MySQL las recalcula); las demás se copian todas', async () => {
+  for (const extra of ['STORED GENERATED', 'VIRTUAL GENERATED', 'PERSISTENT GENERATED']) assert.match(extra, lib.GENERATED_COLUMN);
+  for (const extra of ['', 'auto_increment', 'DEFAULT_GENERATED', 'DEFAULT_GENERATED on update CURRENT_TIMESTAMP(3)']) assert.doesNotMatch(extra, lib.GENERATED_COLUMN, extra);
+  const ddl = 'CREATE TABLE `certificados` (\n  `id` int NOT NULL AUTO_INCREMENT,\n  `matricula_id` int NOT NULL,\n  `estado` enum(\'vigente\',\'anulado\') NOT NULL,\n'
+    + '  `vigente_matricula_id` int GENERATED ALWAYS AS ((case when (`estado` = _utf8mb4\'vigente\') then `matricula_id` else NULL end)) STORED,\n'
+    + '  `emitido_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB';
+  const db = fakeDb({
+    certificados: {
+      ddl, extra: { id: 'auto_increment', vigente_matricula_id: 'STORED GENERATED', emitido_at: 'DEFAULT_GENERATED' },
+      rows: [
+        { id: 1, matricula_id: 7, estado: 'anulado', vigente_matricula_id: null, emitido_at: '2026-10-01 10:00:00.000' },
+        { id: 2, matricula_id: 7, estado: 'vigente', vigente_matricula_id: 7, emitido_at: '2026-10-02 10:00:00.000' },
+      ],
+    },
+    contactos: { ddl: 'CREATE TABLE `contactos` (`id` int NOT NULL, `nombre` varchar(10))', rows: [{ id: 1, nombre: 'N' }] },
+  });
+  const lines: string[] = [];
+  const manifest = await lib.dumpDatabase({ db, write: async (line: string) => { lines.push(line); } });
+  assert.ok(lines.includes(lib.singleLine(ddl)), 'la columna generada se conserva en la definición');
+  assert.ok(lib.isAllowedStatement(lib.singleLine(ddl)), 'su CREATE TABLE pasa la lista blanca');
+  const inserts = lines.filter(line => line.startsWith('INSERT INTO `certificados`'));
+  assert.deepEqual(inserts, ["INSERT INTO `certificados` (`id`,`matricula_id`,`estado`,`emitido_at`) VALUES (1,7,'anulado','2026-10-01 10:00:00.000'),(2,7,'vigente','2026-10-02 10:00:00.000');"]);
+  assert.ok(lines.includes("INSERT INTO `contactos` (`id`,`nombre`) VALUES (1,'N');"), 'otras tablas: todas sus columnas');
+  assert.deepEqual(manifest.tables.map((t: { name: string; dumped: number; generatedColumns?: string[] }) => [t.name, t.dumped, t.generatedColumns]), [['certificados', 2, ['vigente_matricula_id']], ['contactos', 1, undefined]]);
+  assert.equal(lib.validateManifest(manifest, ''), '', 'el manifiesto con generatedColumns sigue siendo válido');
 });
 
 test('si el recuento cambia durante el volcado se aborta en lugar de entregar un respaldo incoherente', async () => {

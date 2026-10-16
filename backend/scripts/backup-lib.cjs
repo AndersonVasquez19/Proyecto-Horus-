@@ -9,6 +9,9 @@ const INSERT_BATCH_ROWS = 200;
 const PAGE_ROWS = 1000;
 // Cuotas temporales: se conserva la estructura pero no los datos (caducan en minutos y no tienen valor de respaldo).
 const EPHEMERAL_TABLES = new Set(['rate_limit_buckets']);
+// Columnas generadas (VIRTUAL/STORED; PERSISTENT en MariaDB): MySQL las calcula y rechaza un valor explícito, así que su definición va en el
+// CREATE TABLE pero no en los INSERT. DEFAULT_GENERATED (p. ej. DEFAULT CURRENT_TIMESTAMP) es una columna normal y sí se copia.
+const GENERATED_COLUMN = /\b(?:VIRTUAL|STORED|PERSISTENT) GENERATED\b/i;
 const FIXED_STATEMENTS = new Set(['SET NAMES utf8mb4;', 'SET FOREIGN_KEY_CHECKS=0;', 'SET UNIQUE_CHECKS=0;', 'SET FOREIGN_KEY_CHECKS=1;', 'SET UNIQUE_CHECKS=1;']);
 const IDENT = /^[A-Za-z0-9_$]+$/;
 // Nombres de charset y colación de MySQL/MariaDB (p. ej. utf8mb4, utf8mb4_0900_ai_ci): minúsculas, números y guion bajo.
@@ -99,6 +102,8 @@ async function dumpDatabase({ db, write, includeEphemeral = false, now = new Dat
     await write('-- Contiene datos personales y hashes de contraseñas: guárdalo cifrado y fuera del repositorio.');
     for (const statement of ['SET NAMES utf8mb4;', 'SET FOREIGN_KEY_CHECKS=0;', 'SET UNIQUE_CHECKS=0;']) await write(statement);
     const [tables] = await db.query("SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME");
+    const [columnInfo] = await db.query('SELECT TABLE_NAME AS tableName, COLUMN_NAME AS columnName, EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()');
+    const generated = new Set(columnInfo.filter(column => GENERATED_COLUMN.test(String(column.extra ?? ''))).map(column => column.tableName + '.' + column.columnName));
     for (const { name } of tables) {
       const id = quoteId(name);
       const [[ddl]] = await db.query('SHOW CREATE TABLE ' + id);
@@ -112,13 +117,14 @@ async function dumpDatabase({ db, write, includeEphemeral = false, now = new Dat
         for (let offset = 0; ; offset += PAGE_ROWS) {
           const paging = order.length ? ' ORDER BY ' + order.join(',') + ' LIMIT ' + PAGE_ROWS + ' OFFSET ' + offset : '';
           const [rows] = await db.query('SELECT * FROM ' + id + paging);
-          if (rows.length) for (const statement of insertStatements(name, Object.keys(rows[0]), rows)) await write(statement);
+          if (rows.length) for (const statement of insertStatements(name, Object.keys(rows[0]).filter(column => !generated.has(name + '.' + column)), rows)) await write(statement);
           dumped += rows.length;
           if (!order.length || rows.length < PAGE_ROWS) break;
         }
         if (dumped !== expected) throw new Error('El recuento de ' + name + ' cambió durante el volcado (' + dumped + ' de ' + expected + ').');
       }
-      manifest.tables.push({ name, rows: expected, dumped });
+      const recalculated = [...generated].filter(key => key.startsWith(name + '.')).map(key => key.slice(name.length + 1)).sort();
+      manifest.tables.push({ name, rows: expected, dumped, ...(recalculated.length ? { generatedColumns: recalculated } : {}) });
     }
     if (tables.some(table => table.name === 'horus_migrations')) {
       const [applied] = await db.query('SELECT name FROM horus_migrations ORDER BY name');
@@ -155,4 +161,4 @@ function parseArgs(argv) {
   return args;
 }
 
-module.exports = { restoreDatabaseDefaults, FALLBACK_DATABASE, validateManifest, BACKUP_MAGIC, EPHEMERAL_TABLES, sqlValue, insertStatements, singleLine, isAllowedStatement, dumpDatabase, validateRestoreTarget, sha256File, parseArgs };
+module.exports = { GENERATED_COLUMN, restoreDatabaseDefaults, FALLBACK_DATABASE, validateManifest, BACKUP_MAGIC, EPHEMERAL_TABLES, sqlValue, insertStatements, singleLine, isAllowedStatement, dumpDatabase, validateRestoreTarget, sha256File, parseArgs };

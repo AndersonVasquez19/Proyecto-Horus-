@@ -33,6 +33,9 @@ npm run db:backup -- --include-rate-limits             # incluye las cuotas temp
   - `.sql.gz.sha256`: firma SHA-256 en formato `sha256sum`.
   - `.sql.gz.manifest.json`: tablas, filas, versión del servidor, migraciones aplicadas y `database` (`charset` y `collation` predeterminados de la base, consultados a MySQL; lo heredan las tablas que se creen después). Las copias anteriores no tienen `database`.
 - `rate_limit_buckets` conserva la estructura pero no los datos (las cuotas caducan en minutos).
+- Las columnas generadas (`VIRTUAL`/`STORED GENERATED`, p. ej. `certificados.vigente_matricula_id`) se conservan en el `CREATE TABLE` pero no
+  van en los `INSERT`: MySQL rechaza un valor explícito (error 3105) y las recalcula al restaurar. El manifiesto las lista en `generatedColumns`
+  de su tabla. Las columnas con valor por defecto calculado (`DEFAULT CURRENT_TIMESTAMP`, `DEFAULT_GENERATED`) son normales y sí se copian.
 - Nunca sobrescribe un respaldo existente y borra el archivo parcial si falla.
 
 ### Seguridad del archivo

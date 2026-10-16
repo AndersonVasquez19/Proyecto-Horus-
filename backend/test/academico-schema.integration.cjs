@@ -8,13 +8,14 @@
 //  1. ACADEMICO_SCHEMA_TEST_DB=true explícito.  2. DB_HOST de bucle local y DB_PORT explícito.
 //  3. @@server_uuid de la conexión = ACADEMICO_SCHEMA_TEST_SERVER_UUID, obtenido por otra vía (docker exec en el contenedor propio).
 //  4. Servidor recién creado (Uptime < 1 h) y sin tablas en ninguna base ajena a las del sistema.
-// Solo crea y elimina bases horus_e42_<hex>. Datos ficticios (ningún documento ni nombre real). Este proceso no importa database.cjs
+// Solo crea y elimina bases horus_e42_<hex> y horus_restore_e42_<hex> (destino de db:restore). Datos ficticios (ningún documento ni nombre real). Este proceso no importa database.cjs
 // (no carga ningún .env): los scripts reales se lanzan como procesos hijos con un directorio de trabajo temporal y un entorno mínimo.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { randomBytes } = require('node:crypto');
 const { spawn } = require('node:child_process');
-const { mkdtempSync, rmSync, realpathSync, readFileSync } = require('node:fs');
+const { mkdtempSync, rmSync, realpathSync, readFileSync, readdirSync } = require('node:fs');
+const { gunzipSync } = require('node:zlib');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const mysql = require('mysql2/promise');
@@ -56,9 +57,9 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
     PATH: process.env.PATH ?? '', ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
     DB_HOST: host, DB_PORT: String(port), DB_NAME: name, DB_USER: credentials.user, DB_PASS: credentials.password, DB_SSL: 'false',
   });
-  function runScript(file, name) {
+  function runScript(file, name, args = []) {
     return new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, ['-r', join(__dirname, 'isolate-env.cjs'), join(backend, 'scripts', file)], { cwd, env: env(name), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+      const child = spawn(process.execPath, ['-r', join(__dirname, 'isolate-env.cjs'), join(backend, 'scripts', file), ...args], { cwd, env: env(name), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
       let output = '';
       child.stdout.on('data', chunk => { output += chunk; });
       child.stderr.on('data', chunk => { output += chunk; });
@@ -328,6 +329,9 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         note('borrar curso con convocatorias (Prisma)', await rejects(prisma.curso.delete({ where: { id: curso.id } }), 'P2003'));
         note('borrar curso con convocatorias (SQL)', await rejects(raw.query('DELETE FROM cursos WHERE id = ?', [curso.id]), 1451));
         note('cambiar id de curso referenciado (SQL)', await rejects(raw.query('UPDATE cursos SET id = 999998 WHERE id = ?', [curso.id]), 1451));
+        note('convocatoria con revisión 0', await rejects(prisma.convocatoria.update({ where: { id: conv.id }, data: { revision: 0 } }), 'chk:convocatorias_revision_chk'));
+        note('convocatoria con revisión negativa (SQL)', await rejects(raw.query('UPDATE convocatorias SET revision = -1 WHERE id = ?', [conv.id]), 'chk:convocatorias_revision_chk'));
+        assert.equal((await prisma.convocatoria.findUnique({ where: { id: conv.id } })).revision, 1, 'la revisión de la convocatoria no cambió');
         await prisma.convocatoria.update({ where: { id: conv2.id }, data: { estado: 'cancelada', archivado_at: new Date(), revision: { increment: 1 } } });
         assert.equal(await raw.query('SELECT * FROM cursos WHERE id = ?', [curso.id]).then(([rows]) => JSON.stringify(rows)), cursoAntes, 'el curso (y su fecha_inicio) no cambia por sus convocatorias');
 
@@ -346,6 +350,8 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         note('confirmación por SECRETARIA (SQL, sin modo estricto)', await rejects(raw.query("UPDATE matriculas SET cumplimiento = 'cumplido', confirmado_por = ?, confirmado_rol = 'SECRETARIA', confirmado_at = NOW(3) WHERE id = ?", [sec.id, mat.id]), 'chk:matriculas_confirmacion_chk'));
         await raw.query('SET SESSION sql_mode = DEFAULT');
         note('confirmado_por inexistente (P2003)', await rejects(prisma.matricula.update({ where: { id: mat.id }, data: { cumplimiento: 'cumplido', confirmado_por: 999999, confirmado_rol: 'GERENTE_GENERAL', confirmado_at: new Date() } }), 'P2003'));
+        note('matrícula con revisión 0', await rejects(prisma.matricula.update({ where: { id: mat.id }, data: { revision: 0 } }), 'chk:matriculas_revision_chk'));
+        note('matrícula nueva con revisión 0 (SQL)', await rejects(raw.query('INSERT INTO matriculas (estudiante_id, convocatoria_id, revision) VALUES (?, ?, 0)', [sinDoc1.id, conv2.id]), 'chk:matriculas_revision_chk'));
         note('pendiente con datos de confirmación', await rejects(prisma.matricula.update({ where: { id: matSinDoc.id }, data: { confirmado_por: coord.id, confirmado_rol: 'COORDINADORA_INSTITUCIONAL', confirmado_at: new Date() } }), 'chk:matriculas_confirmacion_chk'));
         assert.equal((await prisma.matricula.findUnique({ where: { id: mat.id } })).cumplimiento, 'pendiente', 'ningún rechazo modificó la matrícula');
 
@@ -396,6 +402,10 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         note('código de 15 caracteres', await rejects(prisma.certificado.create({ data: { ...snapshotData(matSinDoc.id), codigo_verificacion: 'ABCDEFGHIJKLMNO' } }), 'chk:certificados_codigo_chk'));
         note('certificado sin documento (SQL)', await rejects(raw.query('INSERT INTO certificados (matricula_id, codigo_verificacion, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por) VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?)', [matSinDoc.id, code(), 'X', 'Y', 'C', 'curso', 'N', coord.id]), 1048));
         note('certificado con DNI inválido', await rejects(prisma.certificado.create({ data: { ...snapshotData(matSinDoc.id), estudiante_doc_numero: '1234', codigo_verificacion: code() } }), 'chk:certificados_documento_chk'));
+        note('certificado con nombres en blanco', await rejects(prisma.certificado.create({ data: { ...snapshotData(matSinDoc.id), estudiante_nombres: '   ', codigo_verificacion: code() } }), 'chk:certificados_nombres_chk'));
+        note('certificado con nombres vacíos (SQL)', await rejects(raw.query('INSERT INTO certificados (matricula_id, codigo_verificacion, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [matSinDoc.id, code(), '', 'Y', 'PE', 'DNI', '00012345', 'C', 'curso', 'N', coord.id]), 'chk:certificados_nombres_chk'));
+        note('certificado con fin de convocatoria anterior al inicio', await rejects(prisma.certificado.create({ data: { ...snapshotData(matSinDoc.id), convocatoria_fecha_inicio: new Date('2026-12-01T00:00:00Z'), convocatoria_fecha_fin: new Date('2026-11-30T00:00:00Z'), codigo_verificacion: code() } }), 'chk:certificados_fechas_chk'));
+        assert.equal(await prisma.certificado.count({ where: { matricula_id: matSinDoc.id } }), 0, 'ningún certificado rechazado quedó guardado');
         note('escribir la columna generada (SQL)', await rejects(raw.query('UPDATE certificados SET vigente_matricula_id = NULL WHERE id = ?', [a.id]), 3105));
         note('anular sin motivo', await rejects(prisma.certificado.update({ where: { id: a.id }, data: { estado: 'anulado', anulado_por: gerente.id, anulado_at: new Date() } }), 'chk:certificados_anulacion_chk'));
         note('vigente con datos de anulación', await rejects(prisma.certificado.update({ where: { id: a.id }, data: { anulacion_motivo: 'x' } }), 'chk:certificados_anulacion_chk'));
@@ -432,6 +442,142 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         assert.equal(await raw.query('SELECT * FROM cursos WHERE id = ?', [curso.id]).then(([rows]) => JSON.stringify(rows)), cursoAntes, 'el curso sigue intacto');
       } finally { await raw.end(); }
       for (const [label, result] of Object.entries(codes)) t.diagnostic(label + ' -> ' + result);
+    });
+
+    // Instalación completa (init + migraciones) sobre una base nueva, sin pasar todavía por db:check.
+    async function installed() {
+      const name = await createDb();
+      for (const script of ['init-database.cjs', 'migrate.cjs']) { const run = await runScript(script, name); assert.equal(run.code, 0, run.output); }
+      return name;
+    }
+
+    await t.test('db:check rechaza estructuras incorrectas que conservan los nombres de las restricciones (auditoría E4.2)', async () => {
+      // [caso, sentencias que estropean la estructura, mensaje esperado de db:check]
+      const cases = [
+        ['CHECK con el nombre correcto y expresión TRUE', ['ALTER TABLE convocatorias DROP CHECK convocatorias_revision_chk', 'ALTER TABLE convocatorias ADD CONSTRAINT convocatorias_revision_chk CHECK (TRUE)'], 'convocatorias: restricción convocatorias_revision_chk con otra expresión'],
+        ['columna generada con la condición invertida', ["ALTER TABLE certificados MODIFY vigente_matricula_id INT GENERATED ALWAYS AS (CASE WHEN estado <> 'vigente' THEN matricula_id ELSE NULL END) STORED"], 'certificados.vigente_matricula_id: no es la columna generada STORED prevista'],
+        ['UNIQUE(email), incompatible con contactos compartidos', ['ALTER TABLE estudiantes ADD UNIQUE KEY estudiantes_email_uq (email)'], 'estudiantes: índice único no previsto estudiantes_email_uq (email): email y telefono deben poder compartirse'],
+        ['id sin AUTO_INCREMENT (tabla sin referencias)', ['ALTER TABLE academico_historial MODIFY id INT NOT NULL'], 'academico_historial.id: falta AUTO_INCREMENT'],
+        // estudiantes.id está referenciado por matriculas: MySQL solo permite alterarlo con FOREIGN_KEY_CHECKS=0 en la sesión.
+        ['id sin AUTO_INCREMENT (tabla referenciada)', ['SET FOREIGN_KEY_CHECKS=0', 'ALTER TABLE estudiantes MODIFY id INT NOT NULL'], 'estudiantes.id: falta AUTO_INCREMENT'],
+      ];
+      for (const [label, statements, message] of cases) {
+        const name = await installed();
+        const db = await connectTo(name);
+        try { for (const statement of statements) await db.query(statement); } finally { await db.end(); }
+        const schema = await runScript('check-database.cjs', name);
+        assert.equal(schema.code, 1, label + ': db:check debe fallar');
+        assert.ok(schema.output.includes(message), label + ': db:check debe informar «' + message + '»');
+        t.diagnostic('rechazado: ' + label + ' -> ' + message);
+      }
+      // Control: la misma regla reescrita con otro formato (paréntesis, mayúsculas, sin comillas inversas) se sigue aceptando.
+      const name = await installed();
+      const db = await connectTo(name);
+      try { for (const statement of ['ALTER TABLE convocatorias DROP CHECK convocatorias_revision_chk', 'ALTER TABLE convocatorias ADD CONSTRAINT convocatorias_revision_chk CHECK ((((REVISION)) >= 1))']) await db.query(statement); }
+      finally { await db.end(); }
+      const schema = await runScript('check-database.cjs', name);
+      assert.equal(schema.code, 0, schema.output);
+      t.diagnostic('aceptado: la misma expresión con otro formato');
+    });
+
+    await t.test('db:backup y db:restore reales con certificados vigentes y anulados: se conservan datos y relaciones y se recalcula la columna generada', async () => {
+      // Origen: estado E4.1 con datos habituales, migrado a E4.2 y con datos académicos ficticios.
+      const source = await databaseAtE41();
+      let db = await connectTo(source);
+      try {
+        await db.query("INSERT INTO admin_users (nombre, email, password, rol, createdAt, updatedAt) VALUES ('Gerente Ficticia', 'gerente@horus-e42.test', 'hash-ficticio', 'GERENTE_GENERAL', NOW(), NOW()), ('Coordinadora Ficticia', 'coordinadora@horus-e42.test', 'hash-ficticio', 'COORDINADORA_INSTITUCIONAL', NOW(), NOW())");
+        await db.query("INSERT INTO cursos (titulo, slug, descripcion, tipo, modalidad, duracion, fecha_inicio, estado, createdAt, updatedAt) VALUES ('Curso Ficticio', 'curso-ficticio-e42', 'Descripción ficticia', 'curso', 'virtual', '40 horas', '2026-11-03 09:30:00', 'publicado', NOW(), NOW())");
+        await db.query("INSERT INTO servicios (titulo, slug, descripcion, categoria, estado, createdAt, updatedAt) VALUES ('Servicio Ficticio', 'servicio-ficticio-e42', 'Descripción ficticia', 'soporte', 'publicado', NOW(), NOW())");
+        await db.query("INSERT INTO contactos (nombre, email, telefono, asunto, mensaje, createdAt, updatedAt) VALUES ('Contacto Ficticio', 'contacto@horus-e42.test', '000000000', 'Asunto', 'Mensaje ficticio', NOW(), NOW())");
+      } finally { await db.end(); }
+      await migrateAndCheck(source);
+      db = await connectTo(source);
+      const certs = {};
+      try {
+        const [[{ gerente }]] = await db.query("SELECT id AS gerente FROM admin_users WHERE rol = 'GERENTE_GENERAL'");
+        const [[{ coord }]] = await db.query("SELECT id AS coord FROM admin_users WHERE rol = 'COORDINADORA_INSTITUCIONAL'");
+        const [[{ curso }]] = await db.query('SELECT id AS curso FROM cursos');
+        const [e1] = await db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero, email, telefono) VALUES ('Rosa Ficticia', 'Prueba', 'PE', 'DNI', '00012345', 'compartido@horus-e42.test', '+51 999 000 111')");
+        const [e2] = await db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero, email) VALUES ('Marie Fictive', 'Essai', 'FR', 'PASAPORTE', '24AB12345', 'compartido@horus-e42.test')");
+        await db.query("INSERT INTO estudiantes (nombres, apellidos) VALUES ('Sin Documento', 'Ficticio')");
+        const [cv] = await db.query("INSERT INTO convocatorias (curso_id, nombre, fecha_inicio, fecha_fin, estado) VALUES (?, 'Noviembre 2026', '2026-11-16', '2026-12-11', 'cerrada')", [curso]);
+        const [m1] = await db.query("INSERT INTO matriculas (estudiante_id, convocatoria_id, cumplimiento, confirmado_por, confirmado_rol, confirmado_at, revision) VALUES (?, ?, 'cumplido', ?, 'COORDINADORA_INSTITUCIONAL', '2026-12-12 10:00:00.123', 2)", [e1.insertId, cv.insertId, coord]);
+        const [m2] = await db.query("INSERT INTO matriculas (estudiante_id, convocatoria_id, cumplimiento, confirmado_por, confirmado_rol, confirmado_at, revision) VALUES (?, ?, 'cumplido', ?, 'GERENTE_GENERAL', '2026-12-12 11:00:00.456', 2)", [e2.insertId, cv.insertId, gerente]);
+        const insert = (matricula, codigo, doc, sustituye) => db.query("INSERT INTO certificados (matricula_id, codigo_verificacion, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, curso_duracion, convocatoria_nombre, convocatoria_fecha_inicio, convocatoria_fecha_fin, emitido_por, emitido_at, sustituye_a_id) VALUES (?, ?, ?, 'Prueba', ?, ?, ?, 'Curso Ficticio', 'curso', '40 horas', 'Noviembre 2026', '2026-11-16', '2026-12-11', ?, '2026-12-13 09:00:00.789', ?)", [matricula, codigo, ...doc, coord, sustituye]).then(([r]) => r.insertId);
+        // m1: A emitido, anulado y sustituido por B (vigente). m2: C vigente.
+        certs.a = await insert(m1.insertId, 'E42ANULADO000000000001', ['Rosa Ficticia', 'PE', 'DNI', '00012345'], null);
+        await db.query("UPDATE certificados SET estado = 'anulado', anulado_por = ?, anulado_at = '2026-12-14 08:00:00.000', anulacion_motivo = 'Error tipográfico (ficticio)' WHERE id = ?", [gerente, certs.a]);
+        certs.b = await insert(m1.insertId, 'E42VIGENTE000000000002', ['Rosa Ficticia', 'PE', 'DNI', '00012345'], certs.a);
+        certs.c = await insert(m2.insertId, 'E42VIGENTE000000000003', ['Marie Fictive', 'FR', 'PASAPORTE', '24AB12345'], null);
+        certs.m1 = m1.insertId; certs.m2 = m2.insertId;
+        await db.query("INSERT INTO academico_historial (entidad, entidad_id, operacion, origen, actor_id, actor_rol, estado_anterior, estado_nuevo, campos, revision, motivo) VALUES ('certificado', ?, 'anulacion', 'panel', ?, 'GERENTE_GENERAL', 'vigente', 'anulado', JSON_ARRAY('estado'), 1, 'Error tipográfico (ficticio)')", [certs.a, gerente]);
+      } finally { await db.end(); }
+      const before = await snapshot(source, []);
+      assert.equal(JSON.parse(before.certificados.rows).length, 3);
+
+      // Respaldo con el script real.
+      const dir = join(cwd, 'backups-' + randomBytes(4).toString('hex'));
+      const backup = await runScript('backup.cjs', source, ['--dir=' + dir]);
+      assert.equal(backup.code, 0, backup.output);
+      const file = join(dir, readdirSync(dir).find(f => f.endsWith('.sql.gz')));
+      const lines = gunzipSync(readFileSync(file)).toString('utf8').split('\n');
+      const createCert = lines.find(line => line.startsWith('CREATE TABLE `certificados`'));
+      assert.match(createCert, /`vigente_matricula_id` int GENERATED ALWAYS AS \(.*\) STORED/, 'la definición de la columna generada se conserva');
+      const insertCert = lines.filter(line => line.startsWith('INSERT INTO `certificados`'));
+      assert.equal(insertCert.length, 1);
+      assert.ok(!insertCert[0].includes('`vigente_matricula_id`'), 'el INSERT no incluye la columna generada');
+      for (const column of ['id', 'matricula_id', 'codigo_verificacion', 'estado', 'estudiante_doc_numero', 'emitido_at', 'anulado_por', 'anulacion_motivo', 'sustituye_a_id']) assert.ok(insertCert[0].includes('`' + column + '`'), 'el INSERT incluye ' + column);
+      assert.ok(lines.some(line => line.startsWith('INSERT INTO `estudiantes`') && line.includes('`createdAt`')), 'las columnas DEFAULT_GENERATED (createdAt) sí se copian');
+      const manifest = JSON.parse(readFileSync(file + '.manifest.json', 'utf8'));
+      assert.deepEqual(manifest.tables.filter(table => table.generatedColumns).map(table => [table.name, table.generatedColumns]), [['certificados', ['vigente_matricula_id']]]);
+
+      // Restauración con el script real en una base aislada horus_restore_*.
+      const verify = await runScript('restore.cjs', source, ['--file=' + file, '--verify-only']);
+      assert.equal(verify.code, 0, verify.output);
+      const target = 'horus_restore_e42_' + randomBytes(12).toString('hex');
+      created.push(target);
+      const restore = await runScript('restore.cjs', source, ['--file=' + file, '--target=' + target, '--yes']);
+      assert.equal(restore.code, 0, restore.output);
+      assert.match(restore.output, /Recuentos verificados en \d+ tablas/);
+
+      // Todas las tablas (anteriores y académicas): misma definición y mismas filas, incluida la columna generada recalculada.
+      // SHOW CREATE TABLE de la copia escribe «CHARACTER SET utf8mb4 COLLATE x» donde el origen pone «COLLATE x» (equivalente: la colación
+      // determina el juego); por eso se normaliza solo esa forma y, además, se comparan los metadatos de cada columna en information_schema.
+      const sameCharset = ddl => ddl.replace(/ CHARACTER SET \w+ COLLATE /g, ' COLLATE ');
+      const columnsOf = async name => { const c = await connectTo(name); try { return JSON.stringify((await c.query('SELECT TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_TYPE, CHARACTER_SET_NAME, COLLATION_NAME, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, GENERATION_EXPRESSION FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME, ORDINAL_POSITION'))[0]); } finally { await c.end(); } };
+      assert.equal(await columnsOf(target), await columnsOf(source), 'columnas idénticas en information_schema (tipo, juego, colación, nulabilidad, valor por defecto, EXTRA y expresión generada)');
+      const after = await snapshot(target, []);
+      assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort());
+      for (const table of Object.keys(before)) {
+        assert.equal(sameCharset(after[table].ddl), sameCharset(before[table].ddl), table + ': definición idéntica');
+        assert.equal(after[table].rows, before[table].rows, table + ': filas idénticas');
+      }
+      const check = await runScript('check-database.cjs', target);
+      assert.equal(check.code, 0, check.output);
+      db = await connectTo(target);
+      try {
+        const [rows] = await db.query('SELECT id, matricula_id, codigo_verificacion, estado, vigente_matricula_id, estudiante_doc_numero, anulado_por IS NOT NULL AS anulado, sustituye_a_id FROM certificados ORDER BY id');
+        assert.deepEqual(rows.map(r => [r.id, r.codigo_verificacion, r.estado, r.vigente_matricula_id, r.estudiante_doc_numero, r.anulado, r.sustituye_a_id]), [
+          [certs.a, 'E42ANULADO000000000001', 'anulado', null, '00012345', 1, null],
+          [certs.b, 'E42VIGENTE000000000002', 'vigente', certs.m1, '00012345', 0, certs.a],
+          [certs.c, 'E42VIGENTE000000000003', 'vigente', certs.m2, '24AB12345', 0, null],
+        ]);
+        const [[{ extra }]] = await db.query("SELECT EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'certificados' AND COLUMN_NAME = 'vigente_matricula_id'");
+        assert.equal(extra, 'STORED GENERATED');
+        // Relaciones: ninguna referencia huérfana tras restaurar con FOREIGN_KEY_CHECKS=0.
+        const orphans = await db.query(`SELECT
+          (SELECT COUNT(*) FROM certificados c LEFT JOIN matriculas m ON m.id = c.matricula_id WHERE m.id IS NULL) +
+          (SELECT COUNT(*) FROM certificados c LEFT JOIN certificados s ON s.id = c.sustituye_a_id AND s.matricula_id = c.matricula_id WHERE c.sustituye_a_id IS NOT NULL AND s.id IS NULL) +
+          (SELECT COUNT(*) FROM certificados c LEFT JOIN admin_users u ON u.id = c.emitido_por WHERE u.id IS NULL) +
+          (SELECT COUNT(*) FROM matriculas m LEFT JOIN estudiantes e ON e.id = m.estudiante_id LEFT JOIN convocatorias v ON v.id = m.convocatoria_id WHERE e.id IS NULL OR v.id IS NULL) +
+          (SELECT COUNT(*) FROM convocatorias v LEFT JOIN cursos c ON c.id = v.curso_id WHERE c.id IS NULL) AS n`).then(([[row]]) => Number(row.n));
+        assert.equal(orphans, 0, 'relaciones íntegras');
+        // Las reglas siguen activas en la copia: un segundo vigente, escribir la columna generada o borrar un sustituido se rechazan.
+        await rejects(db.query("INSERT INTO certificados (matricula_id, codigo_verificacion, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por) SELECT ?, 'E42SEGUNDOVIGENTE0004', 'X', 'Y', 'PE', 'DNI', '00012345', 'C', 'curso', 'N', emitido_por FROM certificados WHERE id = ?", [certs.m1, certs.b]), 'uq:certificados_vigente_uq');
+        await rejects(db.query('INSERT INTO certificados (id, matricula_id, codigo_verificacion, estado, vigente_matricula_id, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por) SELECT 999, matricula_id, ?, estado, vigente_matricula_id, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por FROM certificados WHERE id = ?', ['E42CAUSAORIGINAL00005', certs.c]), 3105); // causa del fallo previo
+        await rejects(db.query('DELETE FROM certificados WHERE id = ?', [certs.a]), 1451);
+      } finally { await db.end(); }
+      t.diagnostic('restauración real: ' + Object.keys(before).length + ' tablas idénticas (definición y filas); certificados: 1 anulado + 2 vigentes, columna generada recalculada; db:check aceptado en la copia');
     });
   } finally {
     await Promise.allSettled(clients.map(client => client.$disconnect()));
