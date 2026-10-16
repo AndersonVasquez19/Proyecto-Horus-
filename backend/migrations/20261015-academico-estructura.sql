@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS `estudiantes` (
   `doc_pais` CHAR(2) NULL,
   `doc_tipo` ENUM('DNI','CE','PASAPORTE') NULL,
   `doc_numero` VARCHAR(20) NULL,
+  `email` VARCHAR(254) NULL,
+  `telefono` VARCHAR(30) NULL,
   `archivado_at` DATETIME(3) NULL,
   `revision` INT NOT NULL DEFAULT 1,
   `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),

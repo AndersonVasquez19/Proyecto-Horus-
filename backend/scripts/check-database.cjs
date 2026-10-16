@@ -55,7 +55,7 @@ function expectedColumns() {
 const DOC = "ENUM('DNI','CE','PASAPORTE')", CONFIRMADOR = "ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL')";
 const ACADEMIC = {
   estudiantes: [['id','int',false],['nombres','varchar(120)',false],['apellidos','varchar(120)',false],['doc_pais','char(2)',true],['doc_tipo',DOC,true],
-    ['doc_numero','varchar(20)',true],['archivado_at','datetime(3)',true],['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
+    ['doc_numero','varchar(20)',true],['email','varchar(254)',true],['telefono','varchar(30)',true],['archivado_at','datetime(3)',true],['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
   convocatorias: [['id','int',false],['curso_id','int',false],['nombre','varchar(160)',false],['fecha_inicio','date',true],['fecha_fin','date',true],
     ['estado',"ENUM('planificada','abierta','cerrada','cancelada')",false],['archivado_at','datetime(3)',true],['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
   matriculas: [['id','int',false],['estudiante_id','int',false],['convocatoria_id','int',false],['estado',"ENUM('activa','anulada')",false],

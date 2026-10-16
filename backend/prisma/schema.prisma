@@ -393,6 +393,8 @@ model Estudiante {
   doc_pais String? @db.Char(2)
   doc_tipo DocumentoTipo?
   doc_numero String? @db.VarChar(20)
+  email String? @db.VarChar(254) // opcional y sin UNIQUE: varios estudiantes pueden compartir contacto
+  telefono String? @db.VarChar(30) // opcional y sin UNIQUE
   archivado_at DateTime? @db.DateTime(3) // NULL = activo
   revision Int @default(1)
   createdAt DateTime @default(now()) @db.DateTime(3)

@@ -109,6 +109,8 @@ test('migraciones: la 20261015-academico-estructura (E4.2) solo crea las cinco t
   assert.ok(!/reniec|verificad|validad|consulta_/i.test(all), 'sin campos que afirmen una verificación externa del documento');
   assert.match(all, /`doc_tipo` ENUM\('DNI','CE','PASAPORTE'\) NULL/);
   assert.match(all, /`doc_numero` VARCHAR\(20\) NULL/, 'VARCHAR conserva los ceros iniciales');
+  assert.match(all, /`email` VARCHAR\(254\) NULL,\s+`telefono` VARCHAR\(30\) NULL,/, 'contacto opcional del estudiante');
+  assert.ok(!/(UNIQUE )?(KEY|INDEX)[^\n]*`(email|telefono)`/i.test(all), 'email y telefono no tienen índice ni UNIQUE: se pueden compartir');
   assert.match(all, /UNIQUE KEY `estudiantes_documento_uq` \(`doc_pais`, `doc_tipo`, `doc_numero`\)/);
   assert.match(all, /UNIQUE KEY `matriculas_estudiante_convocatoria_uq` \(`estudiante_id`, `convocatoria_id`\)/);
   assert.match(all, /`confirmado_rol` ENUM\('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL'\) NULL/, 'la secretaria no confirma el cumplimiento');

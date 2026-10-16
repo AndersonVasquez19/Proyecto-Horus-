@@ -270,6 +270,23 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         await prisma.estudiante.create({ data: { nombres: 'Doble Ficticio', apellidos: 'Prueba', doc_pais: 'PE', doc_tipo: 'CE', doc_numero: '00012345' } }); // mismo número, otro tipo
         const estudiantes = await prisma.estudiante.count();
         note('estudiante duplicado', await rejects(prisma.estudiante.create({ data: { nombres: 'Dup', apellidos: 'Dup', doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '00012345' } }), 'uq:estudiantes_documento_uq'));
+        // Contacto opcional y compartible (email VARCHAR(254), telefono VARCHAR(30)): sin UNIQUE, ni solo ni dentro de otro índice.
+        const contactCols = await raw.query("SELECT COLUMN_NAME AS c, COLUMN_TYPE AS t, IS_NULLABLE AS n, COLUMN_DEFAULT AS d FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'estudiantes' AND COLUMN_NAME IN ('email', 'telefono') ORDER BY 1").then(([rows]) => rows);
+        assert.deepEqual(contactCols.map(r => [r.c, r.t, r.n, r.d]), [['email', 'varchar(254)', 'YES', null], ['telefono', 'varchar(30)', 'YES', null]]);
+        const contactIdx = await raw.query("SELECT INDEX_NAME AS i, COLUMN_NAME AS c FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'estudiantes' AND COLUMN_NAME IN ('email', 'telefono')").then(([rows]) => rows);
+        assert.deepEqual(contactIdx, [], 'email y telefono no pertenecen a ningún índice (ni UNIQUE)');
+        assert.equal(sinDoc1.email, null); assert.equal(sinDoc1.telefono, null); // registro sin correo ni teléfono
+        const conContacto1 = await prisma.estudiante.create({ data: { nombres: 'Contacto Uno', apellidos: 'Ficticio', email: 'contacto@horus-e42.test', telefono: '+51 999 000 111' } });
+        const conContacto2 = await prisma.estudiante.create({ data: { nombres: 'Contacto Dos', apellidos: 'Ficticio', email: 'contacto@horus-e42.test', telefono: '+51 999 000 111' } }); // contacto compartido
+        assert.equal((await prisma.estudiante.findUnique({ where: { id: conContacto2.id } })).email, 'contacto@horus-e42.test');
+        assert.equal(await prisma.estudiante.count({ where: { email: 'contacto@horus-e42.test', telefono: '+51 999 000 111' } }), 2);
+        const soloEmail = await prisma.estudiante.create({ data: { nombres: 'Solo Email', apellidos: 'Ficticio', email: 'solo@horus-e42.test' } });
+        assert.equal(soloEmail.telefono, null);
+        const actualizado = await prisma.estudiante.update({ where: { id: conContacto1.id }, data: { telefono: null, email: 'a'.repeat(243) + '@horus.test' } }); // 254 caracteres: el máximo
+        assert.equal(actualizado.email.length, 254); assert.equal(actualizado.telefono, null);
+        await raw.query('INSERT INTO estudiantes (nombres, apellidos, email, telefono) VALUES (?, ?, NULL, NULL), (?, ?, ?, ?)', ['Sql Uno', 'Ficticio', 'Sql Dos', 'Ficticio', 'contacto@horus-e42.test', '+51 999 000 111']); // SQL directo
+        await prisma.estudiante.deleteMany({ where: { id: { in: [conContacto1.id, conContacto2.id, soloEmail.id] } } });
+        await raw.query("DELETE FROM estudiantes WHERE nombres IN ('Sql Uno', 'Sql Dos')");
         // [caso, documento, rechazo esperado]. Un documento parcial viola la regla de completitud (y a veces también la de formato: MySQL informa una).
         const FORMATO = 'chk:estudiantes_documento_formato_chk', PARCIAL = 'chk:estudiantes_documento_';
         const invalid = [
