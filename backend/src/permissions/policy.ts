@@ -33,7 +33,7 @@ const COORDINADORA_INSTITUCIONAL: readonly Permission[] = [
   // Académico (módulos futuros)
   'estudiantes:leer', 'estudiantes:crear', 'estudiantes:editar', 'estudiantes:archivar',
   'convocatorias:leer', 'convocatorias:crear', 'convocatorias:editar', 'convocatorias:cerrar', 'convocatorias:archivar',
-  'matriculas:leer', 'matriculas:crear', 'matriculas:editar', 'matriculas:anular',
+  'matriculas:leer', 'matriculas:crear', 'matriculas:editar', 'matriculas:anular', 'matriculas:confirmar',
   'sesiones:leer', 'sesiones:crear', 'sesiones:editar',
   'asistencia:leer', 'asistencia:registrar',
   'calificaciones:leer', 'calificaciones:registrar',

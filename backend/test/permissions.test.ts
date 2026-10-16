@@ -136,7 +136,7 @@ test('la coordinadora: gestión académica y operativa permitida', () => {
     'reclamaciones:leer', 'estadisticas:leer', 'configuracion:leer',
     'estudiantes:leer', 'estudiantes:crear', 'estudiantes:editar', 'estudiantes:archivar',
     'convocatorias:crear', 'convocatorias:editar', 'convocatorias:cerrar',
-    'matriculas:crear', 'matriculas:editar', 'matriculas:anular',
+    'matriculas:crear', 'matriculas:editar', 'matriculas:anular', 'matriculas:confirmar',
     'sesiones:crear', 'asistencia:registrar', 'calificaciones:registrar', 'certificados:emitir', 'importaciones:previsualizar', 'reportes_academicos:leer',
   ];
   for (const id of allowed) assert.equal(can(C, id), true, id);
@@ -169,6 +169,20 @@ test('la secretaria nunca obtiene cuentas, configuración crítica, calificacion
   }
 });
 
+test('matriculas:confirmar: gerente y coordinadora sí; secretaria y cuenta sin rol no', () => {
+  assert.ok(isPermission('matriculas:confirmar'));
+  assert.ok((ALL_PERMISSIONS as readonly string[]).includes('matriculas:confirmar'));
+  assert.equal(can(G, 'matriculas:confirmar'), true);
+  assert.equal(can(C, 'matriculas:confirmar'), true);
+  assert.equal(can(S, 'matriculas:confirmar'), false);
+  for (const sinRol of [null, undefined, '', 'ADMIN']) assert.equal(can(sinRol, 'matriculas:confirmar'), false);
+  assert.deepEqual(permissionsOf(null), []);
+  // Los permisos de matrículas anteriores se conservan: la secretaria sigue sin anular.
+  for (const id of ['matriculas:leer', 'matriculas:crear', 'matriculas:editar']) assert.equal(can(S, id), true, id);
+  assert.equal(can(S, 'matriculas:anular'), false);
+  assert.ok(FUTURE_RESOURCES.includes('matriculas'), 'matriculas sigue siendo un recurso futuro');
+});
+
 test('la coordinadora no administra cuentas ni configuración crítica', () => {
   for (const id of ALL_PERMISSIONS) if (id.startsWith('cuentas:')) assert.equal(can(C, id), false, id);
   assert.equal(can(C, 'configuracion:editar'), false);
@@ -191,7 +205,7 @@ test('E3.4.1: los tres roles registran consultas manuales (mensajes:crear), pero
   const messages = (role: string) => permissionsOf(role).filter(id => id.startsWith('mensajes:'));
   assert.deepEqual(messages(C), ['mensajes:crear', 'mensajes:editar', 'mensajes:leer']);
   assert.deepEqual(messages(S), ['mensajes:crear', 'mensajes:editar', 'mensajes:leer']);
-  assert.equal(permissionsOf(C).length, 63, 'coordinadora: 62 permisos anteriores + mensajes:crear');
+  assert.equal(permissionsOf(C).length, 64, 'coordinadora: 62 permisos anteriores + mensajes:crear + matriculas:confirmar (E4.1)');
   assert.equal(permissionsOf(S).length, 15, 'secretaria: 14 permisos anteriores + mensajes:crear');
   // La ruta que registra consultas exige exactamente ese permiso (decorador real e inventario).
   const create = ROUTE_INVENTORY.find(route => route.method === 'POST' && route.path === 'admin/messages');

@@ -30,7 +30,7 @@ export const RESOURCE_OPERATIONS = {
   // --- Recursos académicos futuros (los módulos aún no existen) ---
   estudiantes: ['leer', 'crear', 'editar', 'archivar', 'exportar'],
   convocatorias: ['leer', 'crear', 'editar', 'cerrar', 'archivar'],
-  matriculas: ['leer', 'crear', 'editar', 'anular'],
+  matriculas: ['leer', 'crear', 'editar', 'anular', 'confirmar'], // confirmar = declarar administrativamente que se completó o no la capacitación (no es una calificación)
   sesiones: ['leer', 'crear', 'editar'],
   asistencia: ['leer', 'registrar'],
   calificaciones: ['leer', 'registrar', 'corregir_cerradas'],
