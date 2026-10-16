@@ -53,7 +53,23 @@ function expectedColumns() {
 }
 // E4.2 (20261015-academico-estructura). CREATE TABLE IF NOT EXISTS no corrige una tabla que ya existiera con otra forma:
 // por eso se comprueba la estructura real (columnas, índices, claves foráneas, CHECK y la columna generada), no solo su presencia.
-const DOC = "ENUM('DNI','CE','PASAPORTE')", CONFIRMADOR = "ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL')";
+// E4.3b (20261016-academico-solo-dni): el documento académico es solo DNI peruano; un esquema que aún admita CE o PASAPORTE se rechaza.
+const DOC = "ENUM('DNI')", CONFIRMADOR = "ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL')";
+// Migraciones que definen el esquema académico, en su orden de aplicación (el de `versions` en migrate.cjs).
+const ACADEMIC_MIGRATIONS = ['20261015-academico-estructura', '20261016-academico-solo-dni'];
+// Esquema efectivo tras aplicar en orden las migraciones académicas: cada CHECK o columna generada redefinida en una migración
+// posterior sustituye a la anterior, y un DROP CHECK sin redefinición en esa misma migración la elimina de lo esperado.
+function academicDefinitions() {
+  const effective = { checks: {}, generated: {} };
+  for (const name of ACADEMIC_MIGRATIONS) {
+    const sql = readFileSync(join(__dirname, '../migrations', name + '.sql'), 'utf8');
+    const defined = definitionsFromMigration(sql);
+    for (const [, dropped] of sql.matchAll(/DROP CHECK `(\w+)`/g)) if (!(dropped in defined.checks)) delete effective.checks[dropped];
+    Object.assign(effective.checks, defined.checks);
+    Object.assign(effective.generated, defined.generated);
+  }
+  return effective;
+}
 const ACADEMIC = {
   estudiantes: [['id','int',false],['nombres','varchar(120)',false],['apellidos','varchar(120)',false],['doc_pais','char(2)',true],['doc_tipo',DOC,true],
     ['doc_numero','varchar(20)',true],['email','varchar(254)',true],['telefono','varchar(30)',true],['archivado_at','datetime(3)',true],['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
@@ -105,14 +121,19 @@ function academicColumns() {
 }
 async function checkAcademic(db, indexes) {
   const problems = [];
-  const [columns] = await db.query("SELECT TABLE_NAME, COLUMN_NAME, EXTRA, GENERATION_EXPRESSION FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?)", [Object.keys(ACADEMIC)]);
+  const [columns] = await db.query("SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, EXTRA, GENERATION_EXPRESSION FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?)", [Object.keys(ACADEMIC)]);
   for (const [table, expected] of Object.entries(ACADEMIC)) {
     const extra = columns.filter(c => c.TABLE_NAME === table).map(c => c.COLUMN_NAME).filter(name => !expected.some(([e]) => e === name));
     if (extra.length) problems.push(table + ': columnas no previstas (' + extra.join(', ') + ')');
   }
-  // Las expresiones (CHECK y columna generada) se comparan por su forma canónica con las de la propia migración: se toleran el formato
-  // y los paréntesis que añade MySQL, no un cambio de lógica (TRUE, condición invertida, otro operando).
-  const migration = definitionsFromMigration(readFileSync(join(__dirname, '../migrations/20261015-academico-estructura.sql'), 'utf8'));
+  // Aviso explícito (además del «tipo distinto» general): el tipo de documento solo puede ser DNI.
+  for (const [table, column] of [['estudiantes', 'doc_tipo'], ['certificados', 'estudiante_doc_tipo']]) {
+    const actual = columns.find(c => c.TABLE_NAME === table && c.COLUMN_NAME === column);
+    if (actual && normalizeType(actual.COLUMN_TYPE) !== normalizeType(DOC)) problems.push(table + '.' + column + ': admite tipos de documento distintos de DNI (' + actual.COLUMN_TYPE + '); falta aplicar 20261016-academico-solo-dni');
+  }
+  // Las expresiones (CHECK y columna generada) se comparan por su forma canónica con las del esquema efectivo de las migraciones: se
+  // toleran el formato y los paréntesis que añade MySQL, no un cambio de lógica (TRUE, condición invertida, otro operando).
+  const migration = academicDefinitions();
   const sameExpression = (actual, expected) => { try { return canonical(actual) === canonical(expected); } catch { return false; } };
   const generated = columns.find(c => c.TABLE_NAME === 'certificados' && c.COLUMN_NAME === 'vigente_matricula_id');
   if (generated && !(/^STORED GENERATED$/i.test(generated.EXTRA) && sameExpression(generated.GENERATION_EXPRESSION, migration.generated['certificados.vigente_matricula_id']))) problems.push('certificados.vigente_matricula_id: no es la columna generada STORED prevista');
@@ -202,4 +223,4 @@ if (require.main === module) (async () => {
     else console.log('Esquema compatible: tablas, columnas, tipos, nulabilidad e indices unicos. No se modificaron datos.');
   } finally { await db.end(); }
 })().catch(() => { console.error('No se pudo verificar el esquema. Revisa conexion y permisos.'); process.exitCode = 1; });
-module.exports = { check };
+module.exports = { check, academicDefinitions, ACADEMIC_MIGRATIONS };

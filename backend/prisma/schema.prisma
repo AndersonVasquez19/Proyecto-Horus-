@@ -375,17 +375,16 @@ model ChatbotPreguntaSinRespuesta {
 // Nada se borra físicamente: estudiantes y convocatorias se archivan, matrículas y certificados se anulan (relaciones RESTRICT).
 // ---------------------------------------------------------------------------------------------------------------------------
 
-// Documentos aceptados. Registro manual: ningún campo indica verificación externa (RENIEC pospuesto).
+// Documento aceptado (E4.3b, migración 20261016-academico-solo-dni): solo DNI peruano. Registro manual: ningún campo indica
+// verificación externa (sin RENIEC); un formato válido no equivale a una identidad verificada.
 enum DocumentoTipo {
   DNI
-  CE
-  PASAPORTE
 }
 
-// Documento opcional (se puede matricular sin él), pero todo o nada: doc_pais (ISO 3166-1 alfa-2), doc_tipo y doc_numero
-// son los tres NULL o los tres completos. Formato en MySQL: DNI = PE + 8 dígitos; CE = PE + 1-12 alfanuméricos; PASAPORTE =
-// cualquier país + 1-20 alfanuméricos. Siempre en MAYÚSCULAS y sin espacios ni guiones (el servicio normaliza antes de
-// guardar); VARCHAR conserva los ceros iniciales. Varios estudiantes sin documento son válidos (UNIQUE admite varios NULL).
+// Documento opcional (se puede registrar y matricular sin él), pero todo o nada: doc_pais, doc_tipo y doc_numero son los tres
+// NULL o los tres completos. Formato en MySQL: país PE, tipo DNI y exactamente 8 dígitos ASCII (CHECK con REGEXP_LIKE y
+// CHAR_LENGTH = 8). El servicio normaliza antes de guardar; VARCHAR conserva los ceros iniciales. Varios estudiantes sin
+// documento son válidos (UNIQUE admite varios NULL). Emitir un certificado exige el DNI completo.
 model Estudiante {
   id Int @id @default(autoincrement())
   nombres String @db.VarChar(120)
@@ -480,7 +479,7 @@ enum CertificadoEstado {
   anulado
 }
 
-// Los datos del estudiante, el curso y la convocatoria se copian al emitir y no cambian después (documento obligatorio:
+// Los datos del estudiante, el curso y la convocatoria se copian al emitir y no cambian después (DNI completo obligatorio:
 // sin él no hay certificado). Un anulado se conserva con quién, cuándo y por qué.
 // Un solo vigente por matrícula: MySQL mantiene la columna generada STORED `vigente_matricula_id` (= matricula_id si
 // vigente, NULL si anulado) con UNIQUE `certificados_vigente_uq`. Esa columna NO se declara aquí a propósito: Prisma no

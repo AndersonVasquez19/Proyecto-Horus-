@@ -1,5 +1,8 @@
 // H-BACK-01 E4.2: estructura de datos académicos (20261015-academico-estructura) contra un MySQL 8.4 REAL y DESECHABLE, con
 // Prisma 6.19.3 y su adaptador MariaDB. No forma parte de `npm test` ni de test:integration; la CI la ejecuta en su MySQL efímero.
+// E4.3b (20261016-academico-solo-dni): documento académico solo DNI peruano. Actualización desde E4.2 con y sin datos, detención
+// segura ante CE/PASAPORTE (modo estricto y no estricto), recuperación de una migración parcial, rechazo por SQL directo y Prisma.
+// Algunas pruebas cambian @@GLOBAL.sql_mode de ESTE servidor desechable (los scripts hijos heredan el modo global) y lo restauran.
 //
 //   ACADEMICO_SCHEMA_TEST_DB=true ACADEMICO_SCHEMA_TEST_SERVER_UUID=<@@server_uuid leído por docker exec> DB_HOST=127.0.0.1 DB_PORT=<puerto>
 //   DB_USER=root DB_PASS=<clave de un solo uso>  node --test -r ./test/isolate-env.cjs test/academico-schema.integration.cjs
@@ -19,7 +22,7 @@ const { gunzipSync } = require('node:zlib');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const mysql = require('mysql2/promise');
-const { PrismaClient, Prisma } = require('@prisma/client');
+const { PrismaClient, Prisma, DocumentoTipo } = require('@prisma/client');
 const { PrismaMariaDb } = require('@prisma/adapter-mariadb');
 
 const backend = join(__dirname, '..');
@@ -27,6 +30,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SYSTEM = ['mysql', 'information_schema', 'performance_schema', 'sys'];
 const NAME = /^horus_e42_[0-9a-f]{24}$/;
 const MIGRATION = '20261015-academico-estructura';
+const SOLO_DNI = '20261016-academico-solo-dni';
 const ACADEMIC_TABLES = ['estudiantes', 'convocatorias', 'matriculas', 'certificados', 'academico_historial'];
 // La lista `versions` se lee como texto: importar migrate.cjs cargaría database.cjs y, con él, un posible backend/.env.
 const VERSIONS = JSON.parse(readFileSync(join(backend, 'scripts', 'migrate.cjs'), 'utf8').match(/const versions = (\[[^\]]*\])/)[1].replaceAll("'", '"'));
@@ -34,7 +38,7 @@ const statementsOf = name => readFileSync(join(backend, 'migrations', name + '.s
 
 test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actualización, recuperación, restricciones y Prisma)', async t => {
   if (process.env.ACADEMICO_SCHEMA_TEST_DB !== 'true') return t.skip('Requiere ACADEMICO_SCHEMA_TEST_DB=true y un MySQL desechable identificado.');
-  assert.equal(VERSIONS.at(-1), MIGRATION, 'la migración E4.2 es la última registrada');
+  assert.deepEqual(VERSIONS.slice(-2), [MIGRATION, SOLO_DNI], 'E4.2 y la de solo DNI son las últimas registradas, en ese orden');
   const host = process.env.DB_HOST || '', port = Number(process.env.DB_PORT || 0);
   const expectedUuid = String(process.env.ACADEMICO_SCHEMA_TEST_SERVER_UUID ?? '').trim().toLowerCase();
   assert.ok(['localhost', '127.0.0.1', '::1'].includes(host) && port > 0, 'DB_HOST de bucle local y DB_PORT explícito');
@@ -76,22 +80,25 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
     return name;
   }
   async function connectTo(name) { return mysql.createConnection({ ...credentials, database: name }); }
-  // Estado E4.1: init + todas las migraciones anteriores a la E4.2, registradas como lo haría migrate.cjs.
-  async function databaseAtE41() {
+  // Estado anterior a `version`: init + todas las migraciones previas, registradas como lo haría migrate.cjs.
+  async function databaseBefore(version) {
     const name = await createDb();
     const init = await runScript('init-database.cjs', name);
     assert.equal(init.code, 0, init.output);
     const db = await connectTo(name);
     try {
       await db.query('CREATE TABLE IF NOT EXISTS horus_migrations (name VARCHAR(190) NOT NULL PRIMARY KEY, applied_at DATETIME NOT NULL)');
-      for (const version of VERSIONS.slice(0, -1)) {
-        for (const statement of statementsOf(version)) await db.query(statement);
-        await db.execute('INSERT INTO horus_migrations (name, applied_at) VALUES (?, ?)', [version, new Date()]);
+      for (const previous of VERSIONS.slice(0, VERSIONS.indexOf(version))) {
+        for (const statement of statementsOf(previous)) await db.query(statement);
+        await db.execute('INSERT INTO horus_migrations (name, applied_at) VALUES (?, ?)', [previous, new Date()]);
       }
     } finally { await db.end(); }
     return name;
   }
-  async function migrateAndCheck(name) {
+  const databaseAtE41 = () => databaseBefore(MIGRATION); // sin tablas académicas
+  const databaseAtE42 = () => databaseBefore(SOLO_DNI); // tablas académicas de E4.2 (todavía con CE y PASAPORTE)
+  // empty: las tablas académicas deben seguir vacías (instalación o actualización sin datos académicos).
+  async function migrateAndCheck(name, { empty = true } = {}) {
     const migrate = await runScript('migrate.cjs', name);
     assert.equal(migrate.code, 0, migrate.output);
     const schema = await runScript('check-database.cjs', name);
@@ -101,8 +108,15 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
     try {
       const [rows] = await db.query('SELECT name FROM horus_migrations ORDER BY name');
       assert.deepEqual(rows.map(row => row.name), [...VERSIONS].sort(), 'cada migración registrada una sola vez');
-      for (const table of ACADEMIC_TABLES) assert.equal((await db.query('SELECT COUNT(*) AS n FROM `' + table + '`'))[0][0].n, 0, table + ' vacía: la migración no inserta datos');
+      if (empty) for (const table of ACADEMIC_TABLES) assert.equal((await db.query('SELECT COUNT(*) AS n FROM `' + table + '`'))[0][0].n, 0, table + ' vacía: la migración no inserta datos');
     } finally { await db.end(); }
+  }
+  // Ejecuta fn con @@GLOBAL.sql_mode = mode en ESTE servidor desechable (las conexiones nuevas, incluidas las de los scripts hijos,
+  // lo heredan) y restaura siempre el valor anterior.
+  async function withGlobalSqlMode(mode, fn) {
+    const [{ previous }] = await q('SELECT @@GLOBAL.sql_mode AS previous');
+    await q('SET GLOBAL sql_mode = ?', [mode]);
+    try { return await fn(); } finally { await q('SET GLOBAL sql_mode = ?', [previous]); }
   }
   // Estructura real leída de information_schema (independiente de db:check).
   async function structure(name) {
@@ -232,13 +246,18 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
       t.diagnostic('recuperación: 4 estados parciales (1-4 de 5 sentencias aplicadas, sin registrar) completados por db:migrate y aceptados por db:check');
     });
 
-    await t.test('una tabla preexistente con otra forma no se corrige en silencio: migrate termina y db:check la rechaza', async () => {
+    await t.test('una tabla preexistente con otra forma no se corrige en silencio: migrate se detiene sin tocarla y db:check la rechaza', async () => {
       const name = await databaseAtE41();
       const db = await connectTo(name);
       try { await db.query('CREATE TABLE `estudiantes` (`id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY, `nombres` VARCHAR(120) NOT NULL, `apellidos` VARCHAR(120) NOT NULL, `doc_tipo` VARCHAR(20) NULL, `doc_numero` BIGINT NULL) ENGINE=InnoDB'); }
       finally { await db.end(); }
+      const before = await snapshot(name, ['horus_migrations']);
       const migrate = await runScript('migrate.cjs', name);
-      assert.equal(migrate.code, 0, 'CREATE TABLE IF NOT EXISTS omite la tabla existente');
+      // CREATE TABLE IF NOT EXISTS omite la tabla existente (E4.2 se registra) y la comprobación previa de la migración de solo DNI
+      // no encuentra doc_pais: migrate termina con error sin modificar la tabla ajena.
+      assert.equal(migrate.code, 1, migrate.output);
+      assert.match(migrate.output, /No se pudo aplicar la migración/);
+      assert.equal((await snapshot(name, ['horus_migrations', 'convocatorias', 'matriculas', 'certificados', 'academico_historial'])).estudiantes.ddl, before.estudiantes.ddl, 'estudiantes sin cambios');
       const schema = await runScript('check-database.cjs', name);
       assert.equal(schema.code, 1);
       for (const fragment of ['estudiantes.doc_pais: falta', 'estudiantes.doc_numero: tipo distinto', 'falta índice estudiantes_documento_uq', 'falta restricción estudiantes_documento_completo_chk'])
@@ -265,11 +284,16 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         const dni = await prisma.estudiante.create({ data: { nombres: 'Rosa Ficticia', apellidos: 'Prueba Tres', doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '00012345' } });
         assert.equal((await prisma.estudiante.findUnique({ where: { id: dni.id } })).doc_numero, '00012345', 'conserva los ceros iniciales');
         assert.equal((await prisma.estudiante.findUnique({ where: { doc_pais_doc_tipo_doc_numero: { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '00012345' } } })).id, dni.id, 'búsqueda por la identidad compuesta');
-        await prisma.estudiante.create({ data: { nombres: 'Carlos Ficticio', apellidos: 'Prueba Cuatro', doc_pais: 'PE', doc_tipo: 'CE', doc_numero: '000123456' } });
-        await prisma.estudiante.create({ data: { nombres: 'Marie Fictive', apellidos: 'Essai', doc_pais: 'FR', doc_tipo: 'PASAPORTE', doc_numero: '24AB12345' } });
-        await prisma.estudiante.create({ data: { nombres: 'Mononimo', apellidos: '', doc_pais: 'CL', doc_tipo: 'PASAPORTE', doc_numero: '24AB12345' } }); // mismo número, otro país
-        await prisma.estudiante.create({ data: { nombres: 'Doble Ficticio', apellidos: 'Prueba', doc_pais: 'PE', doc_tipo: 'CE', doc_numero: '00012345' } }); // mismo número, otro tipo
+        // E4.3b: el cliente generado solo conoce DNI.
+        assert.deepEqual({ ...DocumentoTipo }, { DNI: 'DNI' }, 'DocumentoTipo de Prisma: solo DNI');
+        await prisma.estudiante.create({ data: { nombres: 'Carlos Ficticio', apellidos: 'Prueba Cuatro', doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '00000000' } }); // solo ceros
+        await prisma.estudiante.create({ data: { nombres: 'Mononimo', apellidos: '', doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '00012346' } }); // número contiguo, sin apellidos
+        assert.equal((await prisma.estudiante.findMany({ where: { doc_numero: { startsWith: '000' } }, orderBy: { doc_numero: 'asc' } })).map(e => e.doc_numero).join(','), '00000000,00012345,00012346');
         const estudiantes = await prisma.estudiante.count();
+        // CE y PASAPORTE ya no existen en el cliente: Prisma los rechaza antes de enviar nada a MySQL.
+        note('CE vía Prisma', await rejects(prisma.estudiante.create({ data: { nombres: 'Ce', apellidos: 'Ficticio', doc_pais: 'PE', doc_tipo: 'CE', doc_numero: 'AB123' } }), 'PrismaClientValidationError'));
+        note('PASAPORTE vía Prisma', await rejects(prisma.estudiante.create({ data: { nombres: 'Pas', apellidos: 'Ficticio', doc_pais: 'FR', doc_tipo: 'PASAPORTE', doc_numero: '24AB12345' } }), 'PrismaClientValidationError'));
+        note('cambiar a CE vía Prisma', await rejects(prisma.estudiante.update({ where: { id: dni.id }, data: { doc_tipo: 'CE' } }), 'PrismaClientValidationError'));
         note('estudiante duplicado', await rejects(prisma.estudiante.create({ data: { nombres: 'Dup', apellidos: 'Dup', doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '00012345' } }), 'uq:estudiantes_documento_uq'));
         // Contacto opcional y compartible (email VARCHAR(254), telefono VARCHAR(30)): sin UNIQUE, ni solo ni dentro de otro índice.
         const contactCols = await raw.query("SELECT COLUMN_NAME AS c, COLUMN_TYPE AS t, IS_NULLABLE AS n, COLUMN_DEFAULT AS d FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'estudiantes' AND COLUMN_NAME IN ('email', 'telefono') ORDER BY 1").then(([rows]) => rows);
@@ -291,16 +315,16 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         // [caso, documento, rechazo esperado]. Un documento parcial viola la regla de completitud (y a veces también la de formato: MySQL informa una).
         const FORMATO = 'chk:estudiantes_documento_formato_chk', PARCIAL = 'chk:estudiantes_documento_';
         const invalid = [
-          ['documento parcial (solo tipo)', { doc_tipo: 'DNI' }, PARCIAL], ['documento parcial (sin país)', { doc_tipo: 'PASAPORTE', doc_numero: 'X1234567' }, PARCIAL],
+          ['documento parcial (solo tipo)', { doc_tipo: 'DNI' }, PARCIAL], ['documento parcial (sin país)', { doc_tipo: 'DNI', doc_numero: '12345678' }, PARCIAL],
           ['documento parcial (sin número)', { doc_pais: 'PE', doc_tipo: 'DNI' }, PARCIAL], ['documento parcial (sin tipo)', { doc_pais: 'PE', doc_numero: '12345678' }, 'chk:estudiantes_documento_completo_chk'],
           ['DNI de 7 dígitos', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '1234567' }, FORMATO], ['DNI de 9 dígitos', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '123456789' }, FORMATO],
           ['DNI con letras', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '1234567A' }, FORMATO], ['DNI de otro país', { doc_pais: 'AR', doc_tipo: 'DNI', doc_numero: '12345678' }, FORMATO],
-          ['DNI con país en minúsculas', { doc_pais: 'pe', doc_tipo: 'DNI', doc_numero: '12345678' }, FORMATO], ['CE de otro país', { doc_pais: 'CO', doc_tipo: 'CE', doc_numero: '123456789' }, FORMATO],
-          ['CE de 13 caracteres', { doc_pais: 'PE', doc_tipo: 'CE', doc_numero: '1234567890123' }, FORMATO], ['pasaporte en minúsculas', { doc_pais: 'FR', doc_tipo: 'PASAPORTE', doc_numero: '24ab12345' }, FORMATO],
-          ['pasaporte con guion', { doc_pais: 'FR', doc_tipo: 'PASAPORTE', doc_numero: '24-AB12345' }, FORMATO], ['pasaporte con espacio', { doc_pais: 'FR', doc_tipo: 'PASAPORTE', doc_numero: '24AB 1234' }, FORMATO],
-          ['pasaporte de 21 caracteres', { doc_pais: 'FR', doc_tipo: 'PASAPORTE', doc_numero: 'A'.repeat(21) }, 'P2000'], ['país de 1 letra', { doc_pais: 'F', doc_tipo: 'PASAPORTE', doc_numero: 'A1' }, FORMATO],
-          ['país en minúsculas', { doc_pais: 'fr', doc_tipo: 'PASAPORTE', doc_numero: 'A1' }, FORMATO], ['país numérico', { doc_pais: '12', doc_tipo: 'PASAPORTE', doc_numero: 'A1' }, FORMATO],
-          ['número vacío', { doc_pais: 'FR', doc_tipo: 'PASAPORTE', doc_numero: '' }, FORMATO],
+          ['DNI con país en minúsculas', { doc_pais: 'pe', doc_tipo: 'DNI', doc_numero: '12345678' }, FORMATO], ['DNI de 8 letras', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: 'ABCDEFGH' }, FORMATO],
+          ['DNI de 13 dígitos', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '1234567890123' }, FORMATO], ['DNI de 20 dígitos', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '1'.repeat(20) }, FORMATO],
+          ['DNI con guion', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '1234-5678' }, FORMATO], ['DNI con espacio', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '1234 5678' }, FORMATO],
+          ['DNI de 21 caracteres', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '1'.repeat(21) }, 'P2000'], ['país de 1 letra', { doc_pais: 'P', doc_tipo: 'DNI', doc_numero: '12345678' }, FORMATO],
+          ['DNI con salto de línea final', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '12345678\n' }, FORMATO], ['DNI con U+2028 final', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '12345678 ' }, FORMATO],
+          ['país numérico', { doc_pais: '12', doc_tipo: 'DNI', doc_numero: '12345678' }, FORMATO], ['número vacío', { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '' }, FORMATO],
         ];
         for (const [label, doc, expected] of invalid) note(label, await rejects(prisma.estudiante.create({ data: { nombres: 'Rechazo', apellidos: 'Ficticio', ...doc } }), expected));
         note('nombres en blanco', await rejects(prisma.estudiante.create({ data: { nombres: '   ', apellidos: 'Ficticio' } }), 'chk:estudiantes_nombres_chk'));
@@ -402,6 +426,9 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         note('código de 15 caracteres', await rejects(prisma.certificado.create({ data: { ...snapshotData(matSinDoc.id), codigo_verificacion: 'ABCDEFGHIJKLMNO' } }), 'chk:certificados_codigo_chk'));
         note('certificado sin documento (SQL)', await rejects(raw.query('INSERT INTO certificados (matricula_id, codigo_verificacion, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por) VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?)', [matSinDoc.id, code(), 'X', 'Y', 'C', 'curso', 'N', coord.id]), 1048));
         note('certificado con DNI inválido', await rejects(prisma.certificado.create({ data: { ...snapshotData(matSinDoc.id), estudiante_doc_numero: '1234', codigo_verificacion: code() } }), 'chk:certificados_documento_chk'));
+        note('certificado con DNI y salto de línea final', await rejects(prisma.certificado.create({ data: { ...snapshotData(matSinDoc.id), estudiante_doc_numero: '00012345\n', codigo_verificacion: code() } }), 'chk:certificados_documento_chk'));
+        note('certificado con país distinto de PE', await rejects(prisma.certificado.create({ data: { ...snapshotData(matSinDoc.id), estudiante_doc_pais: 'FR', codigo_verificacion: code() } }), 'chk:certificados_documento_chk'));
+        note('certificado PASAPORTE vía Prisma', await rejects(prisma.certificado.create({ data: { ...snapshotData(matSinDoc.id), estudiante_doc_pais: 'FR', estudiante_doc_tipo: 'PASAPORTE', estudiante_doc_numero: '24AB12345', codigo_verificacion: code() } }), 'PrismaClientValidationError'));
         note('certificado con nombres en blanco', await rejects(prisma.certificado.create({ data: { ...snapshotData(matSinDoc.id), estudiante_nombres: '   ', codigo_verificacion: code() } }), 'chk:certificados_nombres_chk'));
         note('certificado con nombres vacíos (SQL)', await rejects(raw.query('INSERT INTO certificados (matricula_id, codigo_verificacion, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [matSinDoc.id, code(), '', 'Y', 'PE', 'DNI', '00012345', 'C', 'curso', 'N', coord.id]), 'chk:certificados_nombres_chk'));
         note('certificado con fin de convocatoria anterior al inicio', await rejects(prisma.certificado.create({ data: { ...snapshotData(matSinDoc.id), convocatoria_fecha_inicio: new Date('2026-12-01T00:00:00Z'), convocatoria_fecha_fin: new Date('2026-11-30T00:00:00Z'), codigo_verificacion: code() } }), 'chk:certificados_fechas_chk'));
@@ -474,6 +501,12 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         ['id sin AUTO_INCREMENT (tabla sin referencias)', ['ALTER TABLE academico_historial MODIFY id INT NOT NULL'], 'academico_historial.id: falta AUTO_INCREMENT'],
         // estudiantes.id está referenciado por matriculas: MySQL solo permite alterarlo con FOREIGN_KEY_CHECKS=0 en la sesión.
         ['id sin AUTO_INCREMENT (tabla referenciada)', ['SET FOREIGN_KEY_CHECKS=0', 'ALTER TABLE estudiantes MODIFY id INT NOT NULL'], 'estudiantes.id: falta AUTO_INCREMENT'],
+        // E4.3b: un esquema que vuelva a admitir CE o PASAPORTE, o que pierda la longitud exacta del DNI, se rechaza.
+        ['ENUM de estudiantes con CE reintroducido', ["ALTER TABLE estudiantes MODIFY doc_tipo ENUM('DNI','CE') NULL"], "estudiantes.doc_tipo: admite tipos de documento distintos de DNI (enum('DNI','CE')); falta aplicar 20261016-academico-solo-dni"],
+        ['ENUM de certificados con PASAPORTE reintroducido', ["ALTER TABLE certificados MODIFY estudiante_doc_tipo ENUM('DNI','PASAPORTE') NOT NULL"], "certificados.estudiante_doc_tipo: admite tipos de documento distintos de DNI (enum('DNI','PASAPORTE'))"],
+        ['CHECK de estudiantes sin CHAR_LENGTH (vuelve a aceptar un salto de línea final)', ['ALTER TABLE estudiantes DROP CHECK estudiantes_documento_formato_chk', "ALTER TABLE estudiantes ADD CONSTRAINT estudiantes_documento_formato_chk CHECK (doc_tipo IS NULL OR (doc_pais IS NOT NULL AND doc_numero IS NOT NULL AND doc_tipo = 'DNI' AND REGEXP_LIKE(doc_pais, '^PE$', 'c') AND REGEXP_LIKE(doc_numero, '^[0-9]{8}$', 'c')))"], 'estudiantes: restricción estudiantes_documento_formato_chk con otra expresión'],
+        ['CHECK de certificados que admite PASAPORTE', ['ALTER TABLE certificados DROP CHECK certificados_documento_chk', "ALTER TABLE certificados ADD CONSTRAINT certificados_documento_chk CHECK ((estudiante_doc_tipo = 'DNI' AND REGEXP_LIKE(estudiante_doc_pais, '^PE$', 'c') AND REGEXP_LIKE(estudiante_doc_numero, '^[0-9]{8}$', 'c') AND CHAR_LENGTH(estudiante_doc_numero) = 8) OR estudiante_doc_tipo = 'PASAPORTE')"], 'certificados: restricción certificados_documento_chk con otra expresión'],
+        ['sin la regla de formato de estudiantes', ['ALTER TABLE estudiantes DROP CHECK estudiantes_documento_formato_chk'], 'estudiantes: falta restricción estudiantes_documento_formato_chk'],
       ];
       for (const [label, statements, message] of cases) {
         const name = await installed();
@@ -520,6 +553,239 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
       } finally { await db.end(); }
     });
 
+    // ---------------------------------------------------------------------------------------------------------------------------------
+    // E4.3b: 20261016-academico-solo-dni (solo DNI peruano en estudiantes y certificados).
+    const [ALTER_ESTUDIANTES, ALTER_CERTIFICADOS] = statementsOf(SOLO_DNI);
+    const codigo = () => randomBytes(16).toString('hex').toUpperCase().slice(0, 26);
+    const FORMATO_EST = 'chk:estudiantes_documento_formato_chk', FORMATO_CERT = 'chk:certificados_documento_chk';
+    // Datos académicos ficticios válidos en E4.2 y en solo DNI: ceros iniciales, estudiante sin documento y archivado, matrícula
+    // confirmada, certificado anulado y su sustituto vigente, e historial.
+    async function seedDni(db) {
+      await db.query("INSERT INTO admin_users (nombre, email, password, rol, createdAt, updatedAt) VALUES ('Coordinadora Ficticia', 'coordinadora@horus-e43.test', 'hash-ficticio', 'COORDINADORA_INSTITUCIONAL', NOW(), NOW())");
+      const [[{ coord }]] = await db.query('SELECT MAX(id) AS coord FROM admin_users');
+      await db.query("INSERT INTO cursos (titulo, slug, descripcion, tipo, estado, createdAt, updatedAt) VALUES ('Curso Ficticio', 'curso-ficticio-e43', 'Ficticio', 'curso', 'publicado', NOW(), NOW())");
+      const [[{ curso }]] = await db.query('SELECT MAX(id) AS curso FROM cursos');
+      const [cv] = await db.query("INSERT INTO convocatorias (curso_id, nombre, fecha_inicio, fecha_fin) VALUES (?, 'Noviembre 2026', '2026-11-16', '2026-12-11')", [curso]);
+      const [e1] = await db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero, email) VALUES ('Rosa Ficticia', 'Prueba', 'PE', 'DNI', '00012345', 'compartido@horus-e43.test')");
+      const [e2] = await db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero) VALUES ('Luis Ficticio', 'Prueba', 'PE', 'DNI', '00000001')");
+      await db.query("INSERT INTO estudiantes (nombres, apellidos, archivado_at) VALUES ('Sin Documento', 'Ficticio', '2026-10-01 10:00:00.000')");
+      const [m1] = await db.query("INSERT INTO matriculas (estudiante_id, convocatoria_id, cumplimiento, confirmado_por, confirmado_rol, confirmado_at, revision) VALUES (?, ?, 'cumplido', ?, 'COORDINADORA_INSTITUCIONAL', '2026-12-12 10:00:00.123', 2)", [e1.insertId, cv.insertId, coord]);
+      const [m2] = await db.query('INSERT INTO matriculas (estudiante_id, convocatoria_id) VALUES (?, ?)', [e2.insertId, cv.insertId]);
+      const cert = (matricula, doc, sustituye = null) => db.query("INSERT INTO certificados (matricula_id, codigo_verificacion, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, convocatoria_fecha_inicio, convocatoria_fecha_fin, emitido_por, emitido_at, sustituye_a_id) VALUES (?, ?, 'Nombre Ficticio', 'Prueba', ?, ?, ?, 'Curso Ficticio', 'curso', 'Noviembre 2026', '2026-11-16', '2026-12-11', ?, '2026-12-13 09:00:00.789', ?)", [matricula, codigo(), ...doc, coord, sustituye]).then(([r]) => r.insertId);
+      const a = await cert(m1.insertId, ['PE', 'DNI', '00012345']);
+      await db.query("UPDATE certificados SET estado = 'anulado', anulado_por = ?, anulado_at = '2026-12-14 08:00:00.000', anulacion_motivo = 'Error tipográfico (ficticio)' WHERE id = ?", [coord, a]);
+      await cert(m1.insertId, ['PE', 'DNI', '00012345'], a);
+      await db.query("INSERT INTO academico_historial (entidad, entidad_id, operacion, origen, operador, campos) VALUES ('certificado', ?, 'anulacion', 'terminal', 'e43-prueba', JSON_ARRAY('estado'))", [a]);
+      return { coord, m2: m2.insertId, cert };
+    }
+    async function seeded(databaseAt, corrupt = async () => {}) {
+      const name = await databaseAt();
+      const db = await connectTo(name);
+      try { await corrupt(db, await seedDni(db)); } finally { await db.end(); }
+      return name;
+    }
+    // Líneas de SHOW CREATE TABLE que desaparecen y aparecen.
+    const ddlChanges = (before, after) => ({ removed: before.split('\n').filter(l => !after.split('\n').includes(l)), added: after.split('\n').filter(l => !before.split('\n').includes(l)) });
+    // Entre E4.2 y solo DNI cambian EXACTAMENTE dos líneas por tabla (el ENUM y el CHECK de formato); el resto de cada tabla es idéntico.
+    function assertOnlyDocumentChanged(before, after) {
+      assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort(), 'no se crean ni eliminan tablas');
+      for (const table of Object.keys(before)) {
+        assert.equal(after[table].rows, before[table].rows, table + ': filas idénticas');
+        if (!['estudiantes', 'certificados'].includes(table)) assert.equal(after[table].ddl, before[table].ddl, table + ': definición idéntica');
+      }
+      for (const [table, column, check, nullable] of [['estudiantes', 'doc_tipo', 'estudiantes_documento_formato_chk', 'DEFAULT NULL'], ['certificados', 'estudiante_doc_tipo', 'certificados_documento_chk', 'NOT NULL']]) {
+        const { removed, added } = ddlChanges(before[table].ddl, after[table].ddl);
+        assert.equal(before[table].ddl.split('\n').length, after[table].ddl.split('\n').length, table + ': mismo número de líneas');
+        assert.equal(removed.length, 2, table + ': dos líneas retiradas');
+        assert.ok(removed[0].trim().startsWith('`' + column + "` enum('DNI','CE','PASAPORTE') "), table + ': se retira el ENUM de E4.2');
+        assert.ok(removed[1].trim().startsWith('CONSTRAINT `' + check + '` CHECK '), table + ': se retira el CHECK de E4.2');
+        assert.equal(added.length, 2, table + ': dos líneas nuevas');
+        assert.equal(added[0].trim(), '`' + column + "` enum('DNI') COLLATE utf8mb4_unicode_ci " + nullable + ',', table + ': ENUM solo DNI');
+        assert.match(added[1], new RegExp('CONSTRAINT `' + check + '` CHECK .*= _utf8mb4\'DNI\'.*\\^PE\\$.*\\^\\[0-9\\]\\{8\\}\\$.*char_length\\(`(estudiante_)?doc_numero`\\) = 8'), table + ': CHECK de solo DNI');
+        assert.ok(!/CE|PASAPORTE/.test(added.join('\n')), table + ': sin CE ni PASAPORTE');
+      }
+    }
+
+    await t.test('E4.3b: db:check rechaza el esquema de E4.2; la actualización sin registros solo cambia el ENUM y el CHECK de documento', async () => {
+      const name = await databaseAtE42();
+      const pending = await runScript('check-database.cjs', name);
+      assert.equal(pending.code, 1, 'un esquema que todavía admite CE o PASAPORTE no es compatible');
+      for (const fragment of ["estudiantes.doc_tipo: admite tipos de documento distintos de DNI (enum('DNI','CE','PASAPORTE')); falta aplicar 20261016-academico-solo-dni",
+        "certificados.estudiante_doc_tipo: admite tipos de documento distintos de DNI (enum('DNI','CE','PASAPORTE'))",
+        'estudiantes: restricción estudiantes_documento_formato_chk con otra expresión', 'certificados: restricción certificados_documento_chk con otra expresión'])
+        assert.ok(pending.output.includes(fragment), 'db:check informa: ' + fragment);
+      const before = await snapshot(name, ['horus_migrations']);
+      await migrateAndCheck(name);
+      assertOnlyDocumentChanged(before, await snapshot(name, ['horus_migrations']));
+      await migrateAndCheck(name); // repetir no reaplica nada
+      t.diagnostic('actualización sin registros: ' + Object.keys(before).length + ' tablas; solo cambian 2 líneas en estudiantes y 2 en certificados');
+    });
+
+    await t.test('E4.3b: actualización desde E4.2 con estudiantes y certificados DNI válidos: todos los datos se conservan idénticos', async () => {
+      const name = await seeded(databaseAtE42);
+      const before = await snapshot(name, ['horus_migrations']);
+      await migrateAndCheck(name, { empty: false });
+      const after = await snapshot(name, ['horus_migrations']);
+      assertOnlyDocumentChanged(before, after);
+      const db = await connectTo(name);
+      try {
+        const [est] = await db.query('SELECT doc_pais, doc_tipo, doc_numero, archivado_at IS NOT NULL AS archivado FROM estudiantes ORDER BY id');
+        assert.deepEqual(est.map(r => [r.doc_pais, r.doc_tipo, r.doc_numero, r.archivado]), [['PE', 'DNI', '00012345', 0], ['PE', 'DNI', '00000001', 0], [null, null, null, 1]], 'ceros iniciales y estudiante sin documento conservados');
+        const [certs] = await db.query('SELECT estado, vigente_matricula_id IS NOT NULL AS vigente, sustituye_a_id IS NOT NULL AS sustituye, estudiante_doc_numero FROM certificados ORDER BY id');
+        assert.deepEqual(certs.map(r => [r.estado, r.vigente, r.sustituye, r.estudiante_doc_numero]), [['anulado', 0, 0, '00012345'], ['vigente', 1, 1, '00012345']], 'certificado anulado y su sustituto, con la columna generada');
+      } finally { await db.end(); }
+      t.diagnostic('actualización con datos: ' + Object.keys(before).length + ' tablas con filas idénticas (3 estudiantes, 2 matrículas, 2 certificados, 1 historial)');
+    });
+
+    // La migración se detiene ANTES de cualquier sentencia: ni datos, ni estructura, ni horus_migrations cambian (modo estricto y no estricto).
+    async function blockedUpgrade(label, corrupt, fragments, secret) {
+      const name = await seeded(databaseAtE42, corrupt);
+      const before = await snapshot(name, []);
+      const [{ mode }] = await q('SELECT @@GLOBAL.sql_mode AS mode');
+      assert.match(mode, /STRICT_TRANS_TABLES/, 'el servidor arranca en modo estricto');
+      for (const sqlMode of [null, '']) {
+        const run = sqlMode === null ? await runScript('migrate.cjs', name) : await withGlobalSqlMode(sqlMode, () => runScript('migrate.cjs', name));
+        const where = label + (sqlMode === null ? ' (modo estricto)' : ' (modo no estricto)');
+        assert.equal(run.code, 1, where + ': ' + run.output);
+        assert.match(run.output, /Migración 20261016-academico-solo-dni detenida antes de modificar datos o estructura/, where);
+        for (const fragment of fragments) assert.ok(run.output.includes(fragment), where + ': informa «' + fragment + '»');
+        assert.ok(!run.output.includes(secret), where + ': no muestra el valor del documento');
+        assert.deepEqual(await snapshot(name, []), before, where + ': ni datos, ni estructura, ni horus_migrations cambian');
+        t.diagnostic('detenida: ' + where + ' -> ' + run.output.trim().split('\n').pop().slice(0, 170));
+      }
+      const schema = await runScript('check-database.cjs', name);
+      assert.equal(schema.code, 1, label + ': db:check sigue rechazando el esquema de E4.2');
+    }
+    const insertCert = (db, matricula, coord, doc) => db.query("INSERT INTO certificados (matricula_id, codigo_verificacion, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por) VALUES (?, ?, 'Nombre Ficticio', 'Prueba', ?, ?, ?, 'Curso Ficticio', 'curso', 'Noviembre 2026', ?)", [matricula, codigo(), ...doc, coord]);
+
+    await t.test('E4.3b: con un estudiante CE la actualización se detiene sin modificar nada', async () => {
+      await blockedUpgrade('estudiante CE', db => db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero) VALUES ('Ce Ficticio', 'Prueba', 'PE', 'CE', 'ZQ90817')"), ['(estudiantes: CE 1)'], 'ZQ90817');
+    });
+
+    await t.test('E4.3b: con un certificado PASAPORTE la actualización se detiene sin modificar nada', async () => {
+      await blockedUpgrade('certificado PASAPORTE', (db, seed) => insertCert(db, seed.m2, seed.coord, ['FR', 'PASAPORTE', '24ZQ90817']), ['(certificados: PASAPORTE 1)'], '24ZQ90817');
+    });
+
+    await t.test('E4.3b: con DNI que E4.2 aceptaba y la regla nueva rechaza (terminador final) la actualización se detiene', async () => {
+      await blockedUpgrade('DNI con terminador final', async (db, seed) => {
+        // E4.2 los admitía: el «$» de ICU coincide antes de un salto de línea final.
+        await db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero) VALUES ('Dni Ficticio', 'Prueba', 'PE', 'DNI', ?)", ['90817263\n']);
+        await insertCert(db, seed.m2, seed.coord, ['PE', 'DNI', '90817263 ']);
+      }, ['estudiantes: DNI con formato no admitido 1', 'certificados: DNI con formato no admitido 1'], '90817263');
+    });
+
+    await t.test('E4.3b: cada ALTER aplicado directamente (sin la comprobación previa) con filas no DNI falla sin cambiar nada, en modo estricto y no estricto', async () => {
+      const cases = [
+        ['estudiante CE', db => db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero) VALUES ('Ce', 'Ficticio', 'PE', 'CE', 'AB123')"), ALTER_ESTUDIANTES, 1265, FORMATO_EST],
+        ['estudiante PASAPORTE', db => db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero) VALUES ('Pas', 'Ficticio', 'FR', 'PASAPORTE', '24AB12345')"), ALTER_ESTUDIANTES, 1265, FORMATO_EST],
+        ['estudiante DNI con salto de línea final', db => db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero) VALUES ('Dni', 'Ficticio', 'PE', 'DNI', ?)", ['12345678\n']), ALTER_ESTUDIANTES, FORMATO_EST, FORMATO_EST],
+        ['certificado PASAPORTE', (db, seed) => insertCert(db, seed.m2, seed.coord, ['FR', 'PASAPORTE', '24AB12345']), ALTER_CERTIFICADOS, 1265, FORMATO_CERT],
+        ['certificado CE', (db, seed) => insertCert(db, seed.m2, seed.coord, ['PE', 'CE', 'AB123']), ALTER_CERTIFICADOS, 1265, FORMATO_CERT],
+      ];
+      for (const [label, corrupt, statement, strictError, lenientError] of cases) {
+        const name = await seeded(databaseAtE42, corrupt);
+        const before = await snapshot(name, []);
+        for (const [sqlMode, expected] of [['STRICT_TRANS_TABLES', strictError], ['', lenientError]]) {
+          const db = await connectTo(name);
+          try {
+            await db.query('SET SESSION sql_mode = ?', [sqlMode]);
+            const result = await rejects(db.query(statement), expected);
+            t.diagnostic('ALTER directo, ' + label + ', sql_mode=' + JSON.stringify(sqlMode) + ' -> ' + result.code);
+          } finally { await db.end(); }
+          assert.deepEqual(await snapshot(name, []), before, label + ' (' + JSON.stringify(sqlMode) + '): el ALTER fallido no cambia datos ni estructura');
+        }
+      }
+    });
+
+    await t.test('E4.3b: recuperación de una migración parcialmente aplicada (DDL sin transacción conjunta)', async () => {
+      for (const applied of [1, 2]) {
+        const name = await seeded(databaseAtE42);
+        const db = await connectTo(name);
+        try { for (const statement of [ALTER_ESTUDIANTES, ALTER_CERTIFICADOS].slice(0, applied)) await db.query(statement); } finally { await db.end(); }
+        const partial = await runScript('check-database.cjs', name);
+        if (applied === 1) {
+          assert.equal(partial.code, 1, 'db:check detecta que falta el ALTER de certificados');
+          assert.ok(partial.output.includes('certificados.estudiante_doc_tipo: admite tipos de documento distintos de DNI') && !partial.output.includes('estudiantes.doc_tipo'), partial.output);
+        } else assert.equal(partial.code, 0, 'estructura completa aunque la migración no esté registrada: ' + partial.output);
+        const before = await snapshot(name, ['horus_migrations']);
+        await migrateAndCheck(name, { empty: false }); // repite ambos ALTER (idempotentes) y registra la migración una sola vez
+        const after = await snapshot(name, ['horus_migrations']);
+        for (const table of Object.keys(before)) {
+          assert.equal(after[table].rows, before[table].rows, applied + '/2 ' + table + ': filas idénticas');
+          if (!(applied === 1 && table === 'certificados')) assert.equal(after[table].ddl, before[table].ddl, applied + '/2 ' + table + ': definición idéntica');
+        }
+        t.diagnostic('recuperación: ' + applied + '/2 sentencias aplicadas sin registrar -> db:migrate completa y db:check aceptado, datos idénticos');
+      }
+      // Parcial y, entre ambos ALTER, llega un certificado PASAPORTE (certificados aún lo admite): repetir db:migrate se detiene sin tocar nada.
+      const name = await seeded(databaseAtE42, async (db, seed) => {
+        await db.query(ALTER_ESTUDIANTES);
+        await insertCert(db, seed.m2, seed.coord, ['FR', 'PASAPORTE', '24AB12345']);
+      });
+      const before = await snapshot(name, []);
+      const run = await runScript('migrate.cjs', name);
+      assert.equal(run.code, 1, run.output);
+      assert.ok(run.output.includes('(certificados: PASAPORTE 1)'), run.output);
+      assert.deepEqual(await snapshot(name, []), before, 'estado parcial conservado tal cual: nada se convierte ni se borra');
+      const schema = await runScript('check-database.cjs', name);
+      assert.equal(schema.code, 1);
+      t.diagnostic('parcial con PASAPORTE posterior: detenida sin cambios; db:check sigue señalando certificados');
+    });
+
+    await t.test('E4.3b: MySQL solo acepta DNI peruano de 8 dígitos por SQL directo (modo estricto y no estricto)', async () => {
+      const name = await installed();
+      const db = await connectTo(name);
+      try {
+        const seed = await seedDni(db);
+        const [[{ est0 }]] = await db.query('SELECT COUNT(*) AS est0 FROM estudiantes');
+        const insertEst = doc => db.query('INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero) VALUES (?, ?, ?, ?, ?)', ['Sql', 'Ficticio', ...doc]);
+        const terminators = { '\\n': '\n', '\\r': '\r', '\\r\\n': '\r\n', '\\v': '\v', '\\f': '\f', 'U+0085': '\u0085', 'U+2028': ' ', 'U+2029': ' ' };
+        // [caso, documento, rechazo en modo estricto (null = el mismo CHECK)]. En modo no estricto un tipo fuera del ENUM se guarda como '' y lo rechaza el CHECK.
+        const cases = [
+          ['CE', ['PE', 'CE', 'AB123'], 1265], ['PASAPORTE', ['FR', 'PASAPORTE', '24AB12345'], 1265], ['tipo vacío', ['PE', '', '12345678'], 1265], ['tipo desconocido', ['PE', 'LIBRETA', '12345678'], 1265],
+          ['7 dígitos', ['PE', 'DNI', '1234567'], null], ['9 dígitos', ['PE', 'DNI', '123456789'], null], ['20 dígitos', ['PE', 'DNI', '1'.repeat(20)], null],
+          ['país ES', ['ES', 'DNI', '12345678'], null], ['país en minúsculas', ['pe', 'DNI', '12345678'], null], ['letras', ['PE', 'DNI', 'ABCDEFGH'], null],
+          ['ancho completo', ['PE', 'DNI', '１２３４５６７８'], null], ['espacio de no separación', ['PE', 'DNI', '1234567 '], null], ['espacio final', ['PE', 'DNI', '12345678 '], null],
+          ['7 dígitos + \\n (8 caracteres)', ['PE', 'DNI', '1234567\n'], null], ['\\n inicial', ['PE', 'DNI', '\n12345678'], null],
+          ...Object.entries(terminators).map(([label, end]) => ['8 dígitos + ' + label, ['PE', 'DNI', '12345678' + end], null]),
+        ];
+        for (const sqlMode of ['STRICT_TRANS_TABLES', '']) {
+          await db.query('SET SESSION sql_mode = ?', [sqlMode]);
+          const lenient = sqlMode === '';
+          for (const [label, doc, strictError] of cases) {
+            const where = label + ' sql_mode=' + JSON.stringify(sqlMode);
+            const est = await rejects(insertEst(doc), lenient || strictError === null ? FORMATO_EST : strictError);
+            const cert = await rejects(insertCert(db, seed.m2, seed.coord, doc), lenient || strictError === null ? FORMATO_CERT : strictError);
+            t.diagnostic('rechazado ' + where + ': estudiantes ' + est.code + ', certificados ' + cert.code);
+          }
+          // Cambiar un documento existente a CE o PASAPORTE tampoco es posible.
+          await rejects(db.query("UPDATE estudiantes SET doc_tipo = 'CE', doc_numero = 'AB123' WHERE doc_numero = '00012345'"), lenient ? FORMATO_EST : 1265);
+          await rejects(db.query("UPDATE certificados SET estudiante_doc_pais = 'FR', estudiante_doc_tipo = 'PASAPORTE' WHERE estado = 'vigente'"), lenient ? FORMATO_CERT : 1265);
+        }
+        await db.query('SET SESSION sql_mode = DEFAULT');
+        const [[{ est1 }]] = await db.query('SELECT COUNT(*) AS est1 FROM estudiantes');
+        assert.equal(Number(est1), Number(est0), 'ningún rechazo dejó filas');
+        // Válido: DNI de 8 dígitos ASCII con ceros iniciales, por SQL directo, se guarda sin cambios.
+        await insertEst(['PE', 'DNI', '00000000']);
+        await insertCert(db, seed.m2, seed.coord, ['PE', 'DNI', '00000001']);
+        const [[row]] = await db.query("SELECT doc_tipo, HEX(doc_numero) AS hex FROM estudiantes WHERE nombres = 'Sql'");
+        assert.deepEqual([row.doc_tipo, row.hex], ['DNI', '3030303030303030'], 'texto exacto con ceros iniciales');
+        assert.equal((await db.query('SELECT COUNT(*) AS n FROM certificados WHERE matricula_id = ?', [seed.m2]))[0][0].n, 1);
+      } finally { await db.end(); }
+      const schema = await runScript('check-database.cjs', name);
+      assert.equal(schema.code, 0, schema.output);
+    });
+
+    await t.test('E4.3b: db:check acepta la regla de solo DNI escrita con otro formato equivalente', async () => {
+      const name = await installed();
+      const db = await connectTo(name);
+      try {
+        for (const statement of ['ALTER TABLE estudiantes DROP CHECK estudiantes_documento_formato_chk',
+          "ALTER TABLE estudiantes ADD CONSTRAINT estudiantes_documento_formato_chk CHECK (((doc_tipo IS NULL)) OR ((doc_pais IS NOT NULL) AND (doc_numero IS NOT NULL) AND (doc_tipo = 'DNI') AND regexp_like(doc_pais, '^PE$', 'c') AND regexp_like(doc_numero, '^[0-9]{8}$', 'c') AND (char_length(doc_numero) = 8.0)))"]) await db.query(statement);
+      } finally { await db.end(); }
+      const schema = await runScript('check-database.cjs', name);
+      assert.equal(schema.code, 0, schema.output);
+    });
+
     await t.test('db:backup y db:restore reales con certificados vigentes y anulados: se conservan datos y relaciones y se recalcula la columna generada', async () => {
       // Origen: estado E4.1 con datos habituales, migrado a E4.2 y con datos académicos ficticios.
       const source = await databaseAtE41();
@@ -538,7 +804,7 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         const [[{ coord }]] = await db.query("SELECT id AS coord FROM admin_users WHERE rol = 'COORDINADORA_INSTITUCIONAL'");
         const [[{ curso }]] = await db.query('SELECT id AS curso FROM cursos');
         const [e1] = await db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero, email, telefono) VALUES ('Rosa Ficticia', 'Prueba', 'PE', 'DNI', '00012345', 'compartido@horus-e42.test', '+51 999 000 111')");
-        const [e2] = await db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero, email) VALUES ('Marie Fictive', 'Essai', 'FR', 'PASAPORTE', '24AB12345', 'compartido@horus-e42.test')");
+        const [e2] = await db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero, email) VALUES ('Marie Ficticia', 'Ensayo', 'PE', 'DNI', '00000007', 'compartido@horus-e42.test')");
         await db.query("INSERT INTO estudiantes (nombres, apellidos) VALUES ('Sin Documento', 'Ficticio')");
         const [cv] = await db.query("INSERT INTO convocatorias (curso_id, nombre, fecha_inicio, fecha_fin, estado) VALUES (?, 'Noviembre 2026', '2026-11-16', '2026-12-11', 'cerrada')", [curso]);
         const [m1] = await db.query("INSERT INTO matriculas (estudiante_id, convocatoria_id, cumplimiento, confirmado_por, confirmado_rol, confirmado_at, revision) VALUES (?, ?, 'cumplido', ?, 'COORDINADORA_INSTITUCIONAL', '2026-12-12 10:00:00.123', 2)", [e1.insertId, cv.insertId, coord]);
@@ -548,7 +814,7 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         certs.a = await insert(m1.insertId, 'E42ANULADO000000000001', ['Rosa Ficticia', 'PE', 'DNI', '00012345'], null);
         await db.query("UPDATE certificados SET estado = 'anulado', anulado_por = ?, anulado_at = '2026-12-14 08:00:00.000', anulacion_motivo = 'Error tipográfico (ficticio)' WHERE id = ?", [gerente, certs.a]);
         certs.b = await insert(m1.insertId, 'E42VIGENTE000000000002', ['Rosa Ficticia', 'PE', 'DNI', '00012345'], certs.a);
-        certs.c = await insert(m2.insertId, 'E42VIGENTE000000000003', ['Marie Fictive', 'FR', 'PASAPORTE', '24AB12345'], null);
+        certs.c = await insert(m2.insertId, 'E42VIGENTE000000000003', ['Marie Ficticia', 'PE', 'DNI', '00000007'], null);
         certs.m1 = m1.insertId; certs.m2 = m2.insertId;
         await db.query("INSERT INTO academico_historial (entidad, entidad_id, operacion, origen, actor_id, actor_rol, estado_anterior, estado_nuevo, campos, revision, motivo) VALUES ('certificado', ?, 'anulacion', 'panel', ?, 'GERENTE_GENERAL', 'vigente', 'anulado', JSON_ARRAY('estado'), 1, 'Error tipográfico (ficticio)')", [certs.a, gerente]);
       } finally { await db.end(); }
@@ -608,7 +874,7 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         assert.deepEqual(rows.map(r => [r.id, r.codigo_verificacion, r.estado, r.vigente_matricula_id, r.estudiante_doc_numero, r.anulado, r.sustituye_a_id]), [
           [certs.a, 'E42ANULADO000000000001', 'anulado', null, '00012345', 1, null],
           [certs.b, 'E42VIGENTE000000000002', 'vigente', certs.m1, '00012345', 0, certs.a],
-          [certs.c, 'E42VIGENTE000000000003', 'vigente', certs.m2, '24AB12345', 0, null],
+          [certs.c, 'E42VIGENTE000000000003', 'vigente', certs.m2, '00000007', 0, null],
         ]);
         const [[{ extra }]] = await db.query("SELECT EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'certificados' AND COLUMN_NAME = 'vigente_matricula_id'");
         assert.equal(extra, 'STORED GENERATED');
@@ -624,6 +890,11 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         await rejects(db.query("INSERT INTO certificados (matricula_id, codigo_verificacion, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por) SELECT ?, 'E42SEGUNDOVIGENTE0004', 'X', 'Y', 'PE', 'DNI', '00012345', 'C', 'curso', 'N', emitido_por FROM certificados WHERE id = ?", [certs.m1, certs.b]), 'uq:certificados_vigente_uq');
         await rejects(db.query('INSERT INTO certificados (id, matricula_id, codigo_verificacion, estado, vigente_matricula_id, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por) SELECT 999, matricula_id, ?, estado, vigente_matricula_id, estudiante_nombres, estudiante_apellidos, estudiante_doc_pais, estudiante_doc_tipo, estudiante_doc_numero, curso_titulo, curso_tipo, convocatoria_nombre, emitido_por FROM certificados WHERE id = ?', ['E42CAUSAORIGINAL00005', certs.c]), 3105); // causa del fallo previo
         await rejects(db.query('DELETE FROM certificados WHERE id = ?', [certs.a]), 1451);
+        // E4.3b: la copia conserva el ENUM y los CHECK de solo DNI (y los ceros iniciales de los datos restaurados).
+        assert.deepEqual((await db.query("SELECT doc_numero AS n FROM estudiantes WHERE doc_numero IS NOT NULL ORDER BY doc_numero"))[0].map(r => r.n), ['00000007', '00012345']);
+        await rejects(db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero) VALUES ('Ce', 'Copia', 'PE', 'CE', 'AB123')"), 1265);
+        await rejects(db.query("INSERT INTO estudiantes (nombres, apellidos, doc_pais, doc_tipo, doc_numero) VALUES ('Dni', 'Copia', 'PE', 'DNI', '12345678\\n')"), 'chk:estudiantes_documento_formato_chk');
+        await rejects(db.query("UPDATE certificados SET estudiante_doc_tipo = 'PASAPORTE' WHERE id = ?", [certs.c]), 1265);
       } finally { await db.end(); }
       t.diagnostic('restauración real: ' + Object.keys(before).length + ' tablas idénticas (definición y filas); certificados: 1 anulado + 2 vigentes, columna generada recalculada; db:check aceptado en la copia');
     });

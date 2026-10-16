@@ -1,12 +1,12 @@
-// Validación de documentos académicos (E4.3a). Funciones puras: sin base de datos, sin red y sin NestJS.
-// Reglas (espejo de las restricciones CHECK de la migración 20261015-academico-estructura):
-//   DNI        país PE         número: exactamente 8 dígitos
-//   CE         país PE         número: 1 a 12 caracteres [A-Z0-9]
-//   PASAPORTE  país [A-Z]{2}   número: 1 a 20 caracteres [A-Z0-9]
-// País, tipo y número son los tres null/ausentes o los tres completos. Los números son SIEMPRE texto (conservan los
-// ceros iniciales). Este módulo no verifica identidades: no hay RENIEC ni ninguna fuente oficial.
+// Validación de documentos académicos (E4.3a; solo DNI desde E4.3b). Funciones puras: sin base de datos, sin red y sin NestJS.
+// Regla única (espejo de las restricciones CHECK efectivas tras la migración 20261016-academico-solo-dni):
+//   DNI        país PE         número: exactamente 8 dígitos ASCII (0-9)
+// CE y PASAPORTE ya no se admiten en ninguna operación académica nueva. País, tipo y número son los tres null/ausentes o los
+// tres completos; si el documento está presente, el país PE es obligatorio. Los números son SIEMPRE texto (conservan los
+// ceros iniciales). Este módulo solo comprueba el FORMATO: no verifica identidades (no hay RENIEC ni ninguna fuente oficial)
+// y un DNI con formato válido no significa que pertenezca a la persona ni que exista.
 
-export const TIPOS_DOCUMENTO = ['DNI', 'CE', 'PASAPORTE'] as const;
+export const TIPOS_DOCUMENTO = ['DNI'] as const;
 export type TipoDocumento = (typeof TIPOS_DOCUMENTO)[number];
 
 export interface Documento {
@@ -44,18 +44,17 @@ export type ResultadoDocumentoCertificable =
 
 const CAMPOS: readonly CampoDocumento[] = ['doc_pais', 'doc_tipo', 'doc_numero'];
 
-// Mismas expresiones que la migración (MySQL REGEXP_LIKE con 'c': distingue mayúsculas). Sin banderas i/u/m.
+// Mismas expresiones que la migración (MySQL REGEXP_LIKE con 'c': distingue mayúsculas). Sin banderas i/u/m. En JavaScript «$»
+// sin la bandera m solo coincide al final del texto; en MySQL (ICU) también antes de un salto de línea final, por eso la
+// migración exige además CHAR_LENGTH = 8. Aquí esos caracteres ya se rechazan antes (solo ASCII imprimible).
 export const PATRONES_DOCUMENTO = {
   paisPeru: /^PE$/,
-  paisPasaporte: /^[A-Z]{2}$/,
   dni: /^[0-9]{8}$/,
-  ce: /^[A-Z0-9]{1,12}$/,
-  pasaporte: /^[A-Z0-9]{1,20}$/,
 } as const;
 
 const ERRORES = {
   incompleto: { codigo: 'DOCUMENTO_INCOMPLETO', mensaje: 'El documento debe indicar país, tipo y número, o dejarse completamente vacío.' },
-  requerido: { codigo: 'DOCUMENTO_REQUERIDO', mensaje: 'El estudiante no tiene un documento registrado, necesario para emitir el certificado.' },
+  requerido: { codigo: 'DOCUMENTO_REQUERIDO', mensaje: 'El estudiante no tiene un DNI registrado, necesario para emitir el certificado.' },
   formato: { codigo: 'DOCUMENTO_FORMATO_INVALIDO', mensaje: 'Los datos del documento no tienen un formato válido.' },
 } as const;
 
@@ -120,32 +119,27 @@ export function normalizarDocumento(entrada: unknown): ResultadoDocumento {
   }
   const [pais, tipo, numero] = normalizados;
 
+  // CE, PASAPORTE o cualquier otro tipo: solo se admite DNI.
   if (!(TIPOS_DOCUMENTO as readonly string[]).includes(tipo)) {
-    return fallo({ codigo: 'DOCUMENTO_TIPO_INVALIDO', campo: 'doc_tipo', mensaje: 'El tipo de documento debe ser DNI, CE o PASAPORTE.' });
+    return fallo({ codigo: 'DOCUMENTO_TIPO_INVALIDO', campo: 'doc_tipo', mensaje: 'El único tipo de documento admitido es DNI.' });
   }
   const t = tipo as TipoDocumento;
 
-  const paisValido = t === 'PASAPORTE' ? PATRONES_DOCUMENTO.paisPasaporte.test(pais) : PATRONES_DOCUMENTO.paisPeru.test(pais);
-  if (!paisValido) {
-    return fallo({
-      codigo: 'DOCUMENTO_PAIS_INVALIDO',
-      campo: 'doc_pais',
-      mensaje: t === 'PASAPORTE' ? 'El país del pasaporte debe ser un código de dos letras (A-Z).' : 'El país de un DNI o un CE debe ser PE.',
-    });
+  if (!PATRONES_DOCUMENTO.paisPeru.test(pais)) {
+    return fallo({ codigo: 'DOCUMENTO_PAIS_INVALIDO', campo: 'doc_pais', mensaje: 'El país del DNI debe ser PE.' });
   }
 
-  const patronNumero = t === 'DNI' ? PATRONES_DOCUMENTO.dni : t === 'CE' ? PATRONES_DOCUMENTO.ce : PATRONES_DOCUMENTO.pasaporte;
-  if (!patronNumero.test(numero)) {
-    const regla = t === 'DNI' ? 'exactamente 8 dígitos' : t === 'CE' ? 'de 1 a 12 letras o números' : 'de 1 a 20 letras o números';
-    return fallo({ codigo: 'DOCUMENTO_NUMERO_INVALIDO', campo: 'doc_numero', mensaje: `El número de ${t} debe tener ${regla}.` });
+  if (!PATRONES_DOCUMENTO.dni.test(numero)) {
+    return fallo({ codigo: 'DOCUMENTO_NUMERO_INVALIDO', campo: 'doc_numero', mensaje: 'El número de DNI debe tener exactamente 8 dígitos.' });
   }
 
   return { ok: true, documento: { doc_pais: pais, doc_tipo: t, doc_numero: numero } };
 }
 
 /**
- * Exige que el estudiante (`{ doc_pais, doc_tipo, doc_numero }`) tenga un documento válido para emitir un certificado.
- * Sin documento devuelve DOCUMENTO_REQUERIDO; un documento parcial o inválido devuelve el error de normalizarDocumento.
+ * Exige que el estudiante (`{ doc_pais, doc_tipo, doc_numero }`) tenga un DNI completo y con formato válido para emitir un
+ * certificado. Sin documento devuelve DOCUMENTO_REQUERIDO; un documento parcial, de otro tipo (CE, PASAPORTE) o inválido
+ * devuelve el error de normalizarDocumento. No verifica la identidad.
  */
 export function exigirDocumentoCertificable(estudiante: unknown): ResultadoDocumentoCertificable {
   const r = normalizarDocumento(estudiante);

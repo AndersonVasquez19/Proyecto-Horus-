@@ -134,3 +134,56 @@ test('migraciones: la 20261015-academico-estructura (E4.2) solo crea las cinco t
   assert.ok(!/onDelete: (Cascade|SetNull)|onUpdate: (Cascade|SetNull)/.test(schema.slice(schema.indexOf('model Estudiante'))), 'relaciones académicas restrictivas también en Prisma');
   for (const name of [...all.matchAll(/(?:KEY|CONSTRAINT) `(\w+)`/g)].map(match => match[1])) assert.ok(check.includes("'" + name + "'"), 'db:check debe verificar ' + name);
 });
+
+test('migraciones: la 20261016-academico-solo-dni (E4.3b) solo restringe el documento a DNI peruano, sin tocar datos ni otras reglas', () => {
+  const sql = statements(read('20261016-academico-solo-dni'));
+  assert.equal(versions.indexOf('20261016-academico-solo-dni'), versions.indexOf('20261015-academico-estructura') + 1, 'va justo después de E4.2');
+  assert.equal(sql.length, 2, 'un ALTER TABLE por tabla con documento');
+  const clauses = (statement: string) => statement.split(/,\r?\n\s+/).map(c => c.trim());
+  const [est, cert] = sql.map(clauses);
+  assert.match(est[0], /^ALTER TABLE `estudiantes`\s+DROP CHECK `estudiantes_documento_formato_chk`$/);
+  assert.match(est[1], /^ADD CONSTRAINT `estudiantes_documento_formato_chk` CHECK \(`doc_tipo` IS NULL OR \(`doc_pais` IS NOT NULL AND `doc_numero` IS NOT NULL AND `doc_tipo` = 'DNI' AND REGEXP_LIKE\(`doc_pais`, '\^PE\$', 'c'\) AND REGEXP_LIKE\(`doc_numero`, '\^\[0-9\]\{8\}\$', 'c'\) AND CHAR_LENGTH\(`doc_numero`\) = 8\)\)$/);
+  assert.equal(est[2], "MODIFY `doc_tipo` ENUM('DNI') NULL", 'documento opcional: el tipo admite NULL');
+  assert.match(cert[0], /^ALTER TABLE `certificados`\s+DROP CHECK `certificados_documento_chk`$/);
+  assert.match(cert[1], /^ADD CONSTRAINT `certificados_documento_chk` CHECK \(`estudiante_doc_tipo` = 'DNI' AND REGEXP_LIKE\(`estudiante_doc_pais`, '\^PE\$', 'c'\) AND REGEXP_LIKE\(`estudiante_doc_numero`, '\^\[0-9\]\{8\}\$', 'c'\) AND CHAR_LENGTH\(`estudiante_doc_numero`\) = 8\)$/);
+  assert.equal(cert[2], "MODIFY `estudiante_doc_tipo` ENUM('DNI') NOT NULL", 'certificado: DNI obligatorio');
+  assert.deepEqual([est.length, cert.length], [3, 3], 'ninguna otra cláusula');
+  const all = sql.join('\n');
+  assert.ok(!/CE|PASAPORTE|completo_chk|COLUMN|INDEX|KEY|FOREIGN|RENAME|UPDATE|DELETE|TRUNCATE|\\/.test(all), 'no toca columnas, índices, relaciones, la regla de todo o nada ni datos');
+  assert.ok(!/reniec|verificad/i.test(all), 'sin campos ni reglas que afirmen una verificación externa');
+});
+
+test('migraciones: la 20261016-academico-solo-dni se detiene antes de cualquier sentencia si hay documentos que no son DNI válidos', async () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { preconditions, MigracionDetenida } = require('../scripts/migrate.cjs') as { preconditions: Record<string, (db: unknown) => Promise<void>>; MigracionDetenida: new (m: string) => Error };
+  const precondition = preconditions['20261016-academico-solo-dni'];
+  assert.equal(typeof precondition, 'function');
+  const queries: string[] = [];
+  const fakeDb = (rows: unknown[]) => ({ query: async (sql: string) => { queries.push(sql); return [rows]; } });
+  await precondition(fakeDb([])); // sin filas incompatibles: continúa
+  const query = queries[0];
+  for (const fragment of ['FROM estudiantes', 'FROM certificados', "'^PE$'", "'^[0-9]{8}$'", 'CHAR_LENGTH(doc_numero) = 8', 'CHAR_LENGTH(estudiante_doc_numero) = 8', 'COALESCE(']) assert.ok(query.includes(fragment), fragment);
+  assert.ok(/^SELECT /.test(query) && !/\b(UPDATE|DELETE|ALTER|INSERT|DROP)\b/i.test(query), 'solo lee');
+  let error: Error | null = null;
+  try {
+    await precondition(fakeDb([{ tabla: 'estudiantes', tipo: 'CE', n: 2 }, { tabla: 'certificados', tipo: 'PASAPORTE', n: 1 }, { tabla: 'estudiantes', tipo: 'DNI', n: 1 }, { tabla: 'certificados', tipo: '', n: 3 }]));
+  } catch (e) { error = e as Error; }
+  assert.ok(error instanceof MigracionDetenida);
+  assert.match(error!.message, /detenida antes de modificar datos o estructura/);
+  assert.match(error!.message, /estudiantes: CE 2; certificados: PASAPORTE 1; estudiantes: DNI con formato no admitido 1; certificados: tipo vacío 3/);
+  assert.match(error!.message, /No se convierten, borran ni anonimizan/);
+});
+
+test('migraciones: DocumentoTipo de Prisma y db:check reflejan el esquema efectivo de solo DNI', () => {
+  const schema = readFileSync(join(__dirname, '..', 'prisma', 'schema.prisma'), 'utf8');
+  assert.match(schema, /enum DocumentoTipo \{\r?\n  DNI\r?\n\}/, 'DocumentoTipo: solo DNI');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { academicDefinitions, ACADEMIC_MIGRATIONS } = require('../scripts/check-database.cjs') as { academicDefinitions: () => { checks: Record<string, string> }; ACADEMIC_MIGRATIONS: string[] };
+  assert.deepEqual(ACADEMIC_MIGRATIONS, versions.slice(versions.indexOf('20261015-academico-estructura')), 'db:check recorre todas las migraciones académicas, en orden');
+  const { checks } = academicDefinitions();
+  assert.match(checks.estudiantes_documento_formato_chk, /CHAR_LENGTH\(`doc_numero`\) = 8/, 'regla efectiva de la migración posterior');
+  assert.ok(!/CE|PASAPORTE/.test(checks.estudiantes_documento_formato_chk + checks.certificados_documento_chk));
+  assert.match(checks.estudiantes_documento_completo_chk, /`doc_pais` IS NULL AND `doc_tipo` IS NULL AND `doc_numero` IS NULL/, 'la regla de todo o nada de E4.2 se conserva');
+  const check = readFileSync(join(__dirname, '..', 'scripts', 'check-database.cjs'), 'utf8');
+  assert.ok(check.includes(`DOC = "ENUM('DNI')"`));
+});
