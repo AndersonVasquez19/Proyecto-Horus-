@@ -481,7 +481,9 @@ function modelo(migraciones: string[]): Modelo {
 const { versions } = require('../scripts/migrate.cjs') as { versions: string[] };
 const E42 = '20261015-academico-estructura';
 const SOLO_DNI = '20261016-academico-solo-dni';
-const leer = (nombre: string) => readFileSync(join(__dirname, '..', 'migrations', nombre + '.sql'), 'utf8');
+// Un checkout de Windows con core.autocrlf materializa las migraciones con CRLF: se normaliza solo en memoria.
+const normalizarSaltos = (sql: string) => sql.replace(/\r\n?/g, '\n');
+const leer = (nombre: string) => normalizarSaltos(readFileSync(join(__dirname, '..', 'migrations', nombre + '.sql'), 'utf8'));
 const ACADEMICAS = versions.slice(versions.indexOf(E42));
 const SQL = ACADEMICAS.map(leer);
 const sqlE42 = leer(E42);
@@ -586,6 +588,15 @@ test('paridad: el esquema efectivo (E4.2 + solo DNI) y normalizarDocumento acept
   assert.deepEqual(Object.keys(m.certificados.checks).sort(), ['certificados_anulacion_chk', 'certificados_codigo_chk', 'certificados_documento_chk', 'certificados_fechas_chk', 'certificados_nombres_chk']);
   assert.equal(m.estudiantes.checks.estudiantes_documento_completo_chk, modelo([sqlE42]).estudiantes.checks.estudiantes_documento_completo_chk);
   assert.deepEqual(discrepancias(SQL), []);
+});
+
+test('paridad: el resultado es el mismo con migraciones en CRLF y en LF', () => {
+  const lf = SQL.map(normalizarSaltos);
+  const crlf = lf.map(s => s.replace(/\n/g, '\r\n'));
+  assert.ok(crlf.every(s => s.includes('\r\n')));
+  assert.deepEqual(crlf.map(normalizarSaltos), lf);
+  assert.deepEqual(discrepancias(crlf.map(normalizarSaltos)), []);
+  assert.deepEqual(discrepancias(lf), []);
 });
 
 test('paridad: el esquema de E4.2 sin la migración de solo DNI se detecta (todavía admite CE y PASAPORTE)', () => {
