@@ -36,7 +36,8 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   auth('GET', 'admin/me'), auth('POST', 'admin/password'),
   perm('POST', 'admin/register', 'cuentas:crear', 'Hoy lo puede usar cualquier administrador. Solo gerente; el rol deberá indicarse de forma explícita.'),
   perm('GET', 'admin/users', 'cuentas:leer'),
-  perm('PUT', 'admin/users/:id', 'cuentas:editar', 'Activar o desactivar. El cambio de rol irá en una ruta propia con cuentas:asignar_rol (no existe aún).'),
+  perm('PUT', 'admin/users/:id', 'cuentas:editar', 'Activar o desactivar (deja el rol en NULL). El cambio de rol va en PUT admin/users/:id/rol.'),
+  perm('PUT', 'admin/users/:id/rol', 'cuentas:asignar_rol', 'Roles y usuarios: asignar, cambiar o retirar el rol de otra cuenta activa. Nunca el propio; nunca un rol con permisos que la cuenta que actúa no tenga; conserva al último gerente activo; audita y cierra las sesiones de la cuenta.'),
 
   // --- Configuración y contenido original ---
   perm('GET', 'admin/settings', 'configuracion:leer', 'Las 10 claves (empresa_nombre, ruc, email_contacto, telefono_principal, whatsapp, direccion, horario_atencion, facebook_url, instagram_url, linkedin_url) ya son públicas en GET /settings.'),

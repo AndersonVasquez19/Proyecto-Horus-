@@ -1,5 +1,6 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AdminRole, isAdminRole } from '../../permissions/roles';
+import { can, permissionsOf } from '../../permissions/policy';
 
 // Reglas de integridad de las cuentas administrativas (M-1 y M-2 de H-BACK-01). Funciones puras: AccountsService las evalúa dentro de
 // una transacción con TODAS las filas de admin_users bloqueadas (FOR UPDATE), así dos operaciones simultáneas se deciden una tras otra
@@ -41,6 +42,45 @@ export function planStatusChange(accounts: readonly AccountState[], id: number, 
     changed: true, before: { ...target }, after: { id, activo, rol: null },
     operacion: activo ? 'cuenta_activada' : 'cuenta_desactivada',
     mensaje: activo ? 'Cuenta activada sin rol: un gerente debe asignarle sus permisos.' : 'Cuenta desactivada, rol retirado y sesiones revocadas.',
+  };
+}
+
+// ---- Asignación de roles desde el panel («Roles y usuarios», PUT /admin/users/:id/rol) ----
+// Mismas garantías que admin:assign-role (nunca deja el sistema sin GERENTE_GENERAL activo cuando ya existe uno; solo cuentas activas;
+// cierra las sesiones de la cuenta) y, además:
+//  - Nadie cambia su propio rol (ni para subirlo ni para bajarlo): lo hace otra persona con el permiso.
+//  - Anti-escalamiento independiente de la matriz: solo se puede dar o quitar un rol cuyos permisos tenga la cuenta que actúa. Hoy solo el
+//    gerente tiene cuentas:asignar_rol (y todos los permisos); si algún día otro rol lo recibiera, no podría conceder ni retirar más de lo suyo.
+//  - El cliente envía el rol que veía (rol_actual): si la cuenta cambió entretanto se responde 409 y no se escribe nada.
+export const SELF_ROLE_MESSAGE = 'No puedes cambiar tu propio rol. Debe hacerlo otra cuenta de la gerencia.';
+export const STALE_ROLE_MESSAGE = 'El rol de esta cuenta cambió mientras la consultabas. Actualiza la lista y vuelve a intentarlo.';
+export const INACTIVE_ROLE_MESSAGE = 'La cuenta está desactivada: actívala antes de cambiar su rol.';
+export const ESCALATION_MESSAGE = 'No puedes asignar ni retirar un rol con permisos que tu cuenta no tiene.';
+export const LAST_GERENTE_ROLE_MESSAGE = 'No se puede quitar el rol al único GERENTE_GENERAL activo. Antes debe asignarse ese rol a otra cuenta activa.';
+
+// ¿Tiene la cuenta que actúa todos los permisos del rol? (sin rol = ningún permiso: siempre cubierto).
+const covers = (actorRol: AdminRole | null, rol: AdminRole | null) => rol === null || (actorRol !== null && permissionsOf(rol).every(permission => can(actorRol, permission)));
+
+export type RolePlan =
+  | { changed: false; mensaje: string }
+  | { changed: true; before: AccountState; after: AccountState; operacion: 'rol_asignado' | 'rol_retirado'; mensaje: string };
+
+export function planRoleChange(accounts: readonly AccountState[], id: number, rol: AdminRole | null, expected: AdminRole | null, actorId: number): RolePlan {
+  if (id === actorId) throw new ConflictException(SELF_ROLE_MESSAGE);
+  const actor = accounts.find(account => account.id === actorId);
+  if (!actor || !actor.activo || !actor.rol) throw new ForbiddenException(ESCALATION_MESSAGE);
+  const target = accounts.find(account => account.id === id);
+  if (!target) throw new NotFoundException('Cuenta no encontrada.');
+  if (target.rol !== expected) throw new ConflictException(STALE_ROLE_MESSAGE);
+  if (target.rol === rol) return { changed: false, mensaje: 'La cuenta ya tiene ese rol. No se hicieron cambios.' };
+  if (!target.activo) throw new ConflictException(INACTIVE_ROLE_MESSAGE);
+  if (!covers(actor.rol, target.rol) || !covers(actor.rol, rol)) throw new ForbiddenException(ESCALATION_MESSAGE);
+  const after = { ...target, rol };
+  if (activeGerentes(accounts) >= 1 && activeGerentes(accounts.map(account => (account.id === id ? after : account))) === 0) throw new ConflictException(LAST_GERENTE_ROLE_MESSAGE);
+  return {
+    changed: true, before: { ...target }, after,
+    operacion: rol === null ? 'rol_retirado' : 'rol_asignado',
+    mensaje: rol === null ? 'Rol retirado: la cuenta queda pendiente de autorización y sus sesiones se cerraron.' : 'Rol actualizado. La cuenta deberá iniciar sesión de nuevo.',
   };
 }
 
