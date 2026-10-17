@@ -10,7 +10,7 @@ Vite utiliza el proxy local de `/api`. Para otra API, configurar `VITE_API_BASE_
 
 ## Panel
 
-Login en `/admin/login` y recuperación en `/admin/forgot-password`. No hay registro público: `/admin/register` redirige al login. La sesión se valida contra `/api/admin/me`: un error de conexión ofrece reintento sin borrar el token; un HTTP 401 cierra la sesión.
+Login en `/admin/login` y recuperación en `/admin/forgot-password`. `/admin/register` es el registro público (enlace «Crear cuenta» en el login): la cuenta nace sin rol y, al iniciar sesión, ve «Cuenta pendiente de autorización» hasta que la gerencia le asigne uno. La sesión se valida contra `/api/admin/me`: un error de conexión ofrece reintento sin borrar el token; un HTTP 401 cierra la sesión.
 
 Desde el panel se gestionan contenido, consultas, reclamaciones, cotizaciones, suscripciones, ajustes y cuentas. Las cargas se cancelan al cambiar de vista y las listas usan paginación en el servidor.
 

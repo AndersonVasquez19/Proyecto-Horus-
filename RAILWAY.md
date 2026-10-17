@@ -96,7 +96,7 @@ Para el primer administrador, obtener primero en solo lectura el destino y la id
 - Formularios y chatbot: probar estados de éxito/error y el envío de correo con datos de prueba controlados.
 - MySQL: confirmar que `db:check` pasa y configurar respaldos del volumen antes de recibir datos reales.
 
-No hay registro público de administradores. `POST /api/admin/register` exige una sesión de administrador válida y no devuelve token; `/admin/register` redirige a `/admin/login`. El primer administrador de una instalación nueva se crea con `admin:create`. El panel y las demás operaciones administrativas requieren una sesión válida.
+No hay registro público de administradores: `/admin/register` y `POST /api/admin/signup` crean cuentas **sin rol** (sin acceso al panel hasta que la gerencia asigne uno con `admin:assign-role`). `POST /api/admin/register` exige una sesión válida con `cuentas:crear` y no devuelve token. El primer administrador de una instalación nueva se crea con `admin:create`. El panel y las demás operaciones administrativas requieren una sesión válida.
 
 El chatbot usa la IP validada por Express. Configurar `TRUSTED_PROXY_CIDRS` en cada servicio como se indica abajo; no usar `*`, `true`, cantidades de saltos ni rangos /0. Las cuotas públicas se comparten en MySQL mediante `rate_limit_buckets` (200 POST/min en total para los formularios públicos y un tope de 200/min propio para cada ruta de `/admin/*` con límite: ni el tráfico público ni otra ruta de administración pueden agotar la cuota del inicio de sesión); aplicar la migración de esta versión antes de utilizar sus formularios.
 
