@@ -278,7 +278,8 @@ test('cada ruta declara con su decorador exactamente la clasificación del inven
 
 test('toda ruta /admin queda clasificada y solo las de autoservicio y autenticación quedan sin permiso', () => {
   const noPermission = ROUTE_INVENTORY.filter(route => route.path.startsWith('admin/') && route.access.kind !== 'permiso' && route.access.kind !== 'segun_campo' && route.access.kind !== 'seguimiento').map(route => route.method + ' ' + route.path).sort();
-  assert.deepEqual(noPermission, ['GET admin/me', 'POST admin/forgot-password', 'POST admin/login', 'POST admin/password', 'POST admin/reset-password']);
+  // POST admin/signup: registro público aprobado por el responsable el 2026-10-16; crea cuentas sin rol (test/public-signup.test.ts).
+  assert.deepEqual(noPermission, ['GET admin/me', 'POST admin/forgot-password', 'POST admin/login', 'POST admin/password', 'POST admin/reset-password', 'POST admin/signup']);
   for (const route of ROUTE_INVENTORY) {
     assert.ok(isRouteAccess(route.access), route.path);
     if (route.access.kind === 'segun_campo') assert.ok((route.note ?? '').length > 10, route.path + ' debe explicar la condición');
@@ -293,7 +294,7 @@ test('las rutas públicas y de autoservicio de /admin son exactamente las aproba
   const byKind = (kind: string) => routeHandlers()
     .filter(route => route.key.split(' ')[1].startsWith('admin/') && Reflect.getMetadata(ACCESS_METADATA, route.handler)?.kind === kind)
     .map(route => route.key).sort();
-  assert.deepEqual(byKind('publica'), ['POST admin/forgot-password', 'POST admin/login', 'POST admin/reset-password']);
+  assert.deepEqual(byKind('publica'), ['POST admin/forgot-password', 'POST admin/login', 'POST admin/reset-password', 'POST admin/signup']);
   assert.deepEqual(byKind('autenticada'), ['GET admin/me', 'POST admin/password']);
 });
 

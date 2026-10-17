@@ -32,6 +32,7 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
 
   // --- Autenticación y cuentas ---
   pub('POST', 'admin/login'), pub('POST', 'admin/forgot-password'), pub('POST', 'admin/reset-password'),
+  pub('POST', 'admin/signup', 'Registro público: la cuenta nace sin rol (sin permisos); rechaza campos ajenos al DTO y tiene límite por minuto y por hora.'),
   auth('GET', 'admin/me'), auth('POST', 'admin/password'),
   perm('POST', 'admin/register', 'cuentas:crear', 'Hoy lo puede usar cualquier administrador. Solo gerente; el rol deberá indicarse de forma explícita.'),
   perm('GET', 'admin/users', 'cuentas:leer'),

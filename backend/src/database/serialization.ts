@@ -17,3 +17,8 @@ export function serializeComplaint<T extends { fecha_incidente: Date }>(item: T)
 export function isUniqueViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
+// P2021 (tabla inexistente) o P2022 (columna inexistente): la base no tiene la estructura que espera este código, normalmente porque
+// faltan migraciones. No se corrige aquí (nada de cambios de esquema improvisados): solo permite responder 503 en vez de un 500 genérico.
+export function isSchemaOutdated(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && (error.code === 'P2021' || error.code === 'P2022');
+}
