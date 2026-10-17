@@ -112,6 +112,14 @@ class ConcurrenciaDisponibilidadTest extends TestCase
             $this->assertSame($primero === 'reducir' ? 1 : $edicion->cupo, $actual->cupo);
             $this->assertSame($ocupacion + ($segundo === 'reactivar' ? 1 : 0), Matricula::query()->count());
             $this->assertSame(3, Estudiante::query()->count());
+            // Historial: una creación por matrícula confirmada y ningún movimiento del perdedor.
+            $movimientos = DB::table('matricula_movimientos')->get();
+            $matriculas = Matricula::query()->count();
+            $reactivada = $primero === 'reactivar' ? 1 : 0;
+            $this->assertSame($matriculas, $movimientos->where('tipo', 'CREACION')->unique('matricula_id')->count());
+            $this->assertSame($reactivable ? 1 : 0, $movimientos->where('tipo', 'ANULACION')->count());
+            $this->assertSame($reactivada, $movimientos->where('tipo', 'REACTIVACION')->count());
+            $this->assertSame($matriculas + ($reactivable ? 1 : 0) + $reactivada, $movimientos->count());
         } finally {
             touch($directorio.'/liberar');
             foreach ($procesos as $proceso) {

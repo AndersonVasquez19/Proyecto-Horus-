@@ -5,18 +5,21 @@ namespace App\Models;
 use App\Enums\EstadoMatricula;
 use App\Exceptions\RegistroProtegidoException;
 use App\Support\DisponibilidadAcademica;
+use App\Support\HistorialMatriculas;
 use Database\Factories\MatriculaFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Validation\ValidationException;
 
 /**
  * Matrícula de un estudiante en una edición concreta.
  *
  * Forma parte del historial académico: no se elimina; se cambia su estado
- * (p. ej. a «Anulado»).
+ * (p. ej. a «Anulado»). El alta y cada cambio de estado quedan registrados en
+ * MatriculaMovimiento dentro de la misma transacción.
  */
 #[Fillable(['estudiante_id', 'edicion_id', 'fecha_matricula', 'estado', 'observaciones'])]
 class Matricula extends Model
@@ -36,13 +39,34 @@ class Matricula extends Model
         ];
     }
 
+    /**
+     * Motivo del próximo movimiento (alta o cambio de estado) para el historial.
+     * No es un atributo de la matrícula: se descarta al terminar cada guardado.
+     */
+    private ?string $motivoDelMovimiento = null;
+
+    /**
+     * Indica el motivo que se guardará en el historial con el próximo guardado.
+     */
+    public function conMotivo(?string $motivo): static
+    {
+        $this->motivoDelMovimiento = HistorialMatriculas::normalizarMotivo($motivo);
+
+        return $this;
+    }
+
     public function save(array $options = [])
     {
-        return DisponibilidadAcademica::guardar(
-            $this,
-            $this->exists ? $this->getRawOriginal('edicion_id') : $this->edicion_id,
-            fn (): bool => parent::save($options),
-        );
+        try {
+            return DisponibilidadAcademica::guardar(
+                $this,
+                $this->exists ? $this->getRawOriginal('edicion_id') : $this->edicion_id,
+                fn (): bool => parent::save($options),
+            );
+        } finally {
+            // Un motivo nunca se reutiliza en otro guardado, aunque este falle.
+            $this->motivoDelMovimiento = null;
+        }
     }
 
     protected static function booted(): void
@@ -50,6 +74,22 @@ class Matricula extends Model
         static::saving(function (Matricula $matricula): void {
             $matricula->observaciones = $matricula->observaciones === null ? null : (trim($matricula->observaciones) ?: null);
             $matricula->validarReglas();
+        });
+
+        // created/updated se ejecutan dentro de la transacción de DisponibilidadAcademica,
+        // después del INSERT/UPDATE: el historial se confirma o se revierte con la matrícula.
+        static::created(function (Matricula $matricula): void {
+            HistorialMatriculas::registrarCreacion($matricula, $matricula->motivoDelMovimiento);
+        });
+
+        static::updated(function (Matricula $matricula): void {
+            if ($matricula->wasChanged('estado')) {
+                HistorialMatriculas::registrarCambioDeEstado(
+                    $matricula,
+                    EstadoMatricula::from($matricula->getRawOriginal('estado')),
+                    $matricula->motivoDelMovimiento,
+                );
+            }
         });
 
         static::deleting(function (): void {
@@ -73,6 +113,16 @@ class Matricula extends Model
     public function edicion(): BelongsTo
     {
         return $this->belongsTo(Edicion::class);
+    }
+
+    /**
+     * Historial de movimientos (alta y cambios de estado), de solo lectura.
+     *
+     * @return HasMany<MatriculaMovimiento, $this>
+     */
+    public function movimientos(): HasMany
+    {
+        return $this->hasMany(MatriculaMovimiento::class);
     }
 
     /**
@@ -123,6 +173,9 @@ class Matricula extends Model
                 throw ValidationException::withMessages(['edicion_id' => $motivo]);
             }
 
+            HistorialMatriculas::validarMotivo($this->motivoDelMovimiento);
+            HistorialMatriculas::exigirDisponible($this, 'edicion_id');
+
             return;
         }
 
@@ -147,6 +200,9 @@ class Matricula extends Model
 
                 $this->validarCupo($edicion);
             }
+
+            HistorialMatriculas::validarMotivo($this->motivoDelMovimiento);
+            HistorialMatriculas::exigirDisponible($this, 'estado');
         }
     }
 

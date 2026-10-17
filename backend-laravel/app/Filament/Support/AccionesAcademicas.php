@@ -5,10 +5,12 @@ namespace App\Filament\Support;
 use App\Enums\EstadoMatricula;
 use App\Exceptions\RegistroProtegidoException;
 use App\Models\Matricula;
+use App\Support\HistorialMatriculas;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
 use Filament\Support\Exceptions\Halt;
@@ -88,16 +90,29 @@ final class AccionesAcademicas
                         ->mapWithKeys(fn (EstadoMatricula $estado): array => [$estado->value => $estado->getLabel().' — '.$estado->getDescription()])
                         ->all())
                     ->required(),
+                self::campoMotivo('Motivo (opcional)'),
             ])
             ->action(function (Matricula $record, array $data): void {
                 Gate::authorize('cambiarEstado', $record);
-                self::ejecutarConAviso(fn () => $record->update(['estado' => $data['estado']]));
+                self::ejecutarConAviso(fn () => $record->conMotivo($data['motivo'] ?? null)->update(['estado' => $data['estado']]));
 
                 Notification::make()
                     ->success()
                     ->title('Estado actualizado a «'.$record->estado->getLabel().'»')
                     ->send();
             });
+    }
+
+    /**
+     * Motivo opcional de un cambio de estado; se guarda en el historial de la matrícula.
+     */
+    public static function campoMotivo(string $etiqueta): Textarea
+    {
+        return Textarea::make('motivo')
+            ->label($etiqueta)
+            ->helperText('Se guarda en el historial de la matrícula. No incluya datos personales sensibles.')
+            ->maxLength(HistorialMatriculas::LONGITUD_MAXIMA_MOTIVO)
+            ->rows(2);
     }
 
     /**

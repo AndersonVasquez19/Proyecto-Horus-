@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Matriculas\Schemas;
 
 use App\Enums\EstadoMatricula;
+use App\Filament\Support\AccionesAcademicas;
 use App\Filament\Support\OpcionesAcademicas;
 use App\Models\Estudiante;
 use App\Models\Matricula;
@@ -75,11 +76,22 @@ class MatriculaForm
                             ->required()
                             ->helperText(fn ($state): ?string => ($state instanceof EstadoMatricula ? $state : EstadoMatricula::tryFrom((string) $state))?->getDescription())
                             ->live(),
+                        // Solo al editar y cuando se elige un estado distinto del guardado.
+                        AccionesAcademicas::campoMotivo('Motivo del cambio de estado (opcional)')
+                            ->visible(fn (string $operation, Get $get, ?Matricula $record): bool => $operation === 'edit'
+                                && $record !== null
+                                && self::valorEstado($get('estado')) !== $record->estado->value)
+                            ->columnSpanFull(),
                         Textarea::make('observaciones')
                             ->label('Observaciones')
                             ->rows(3)
                             ->columnSpanFull(),
                     ]),
             ]);
+    }
+
+    private static function valorEstado(mixed $estado): ?string
+    {
+        return $estado instanceof EstadoMatricula ? $estado->value : (filled($estado) ? (string) $estado : null);
     }
 }

@@ -6,6 +6,7 @@ use App\Filament\Resources\Matriculas\Pages\CreateMatricula;
 use App\Filament\Resources\Matriculas\Pages\EditMatricula;
 use App\Filament\Resources\Matriculas\Pages\ListMatriculas;
 use App\Filament\Resources\Matriculas\Pages\ViewMatricula;
+use App\Filament\Resources\Matriculas\RelationManagers\MovimientosRelationManager;
 use App\Filament\Resources\Matriculas\Schemas\MatriculaForm;
 use App\Filament\Resources\Matriculas\Schemas\MatriculaInfolist;
 use App\Filament\Resources\Matriculas\Tables\MatriculasTable;
@@ -71,7 +72,9 @@ class MatriculaResource extends Resource
 
     public static function getRelations(): array
     {
-        return [];
+        return [
+            MovimientosRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
