@@ -12,7 +12,7 @@ Sitio institucional y panel de Horus Group SRL. Frontend React/TypeScript/Vite; 
 - Cotizaciones con importes calculados en el backend, borradores, seguimiento de estados, correo e impresión para guardar PDF.
 - Newsletter con consentimiento y enlace firmado de baja.
 - Carga administrativa de imágenes PNG/JPEG/WebP, hasta 5 MB.
-- Login, recuperación/cambio de contraseña, desactivación de cuentas y revocación de sesiones. Registro público en `/admin/register` (`POST /api/admin/signup`): la cuenta nace sin rol y solo ve «Cuenta pendiente de autorización» hasta que la gerencia le asigne uno con `npm run admin:assign-role`. El alta hecha por un administrador exige sesión y `cuentas:crear`; el primero se crea con `npm run admin:create`.
+- Login, recuperación/cambio de contraseña, desactivación de cuentas y revocación de sesiones. Registro público en `/admin/register` (`POST /api/admin/signup`): la cuenta nace sin rol, puede iniciar sesión de inmediato y entra en «Mi espacio» (sus datos y su contraseña), sin permisos administrativos. El gerente asigna, cambia o retira roles desde «Roles y usuarios» (o con `npm run admin:assign-role`); el backend sigue autorizando con JWT, AccessGuard y RBAC. El alta hecha por un administrador exige sesión y `cuentas:crear`; el primero se crea con `npm run admin:create`.
 - Chatbot basado en contenido publicado y ajustes públicos conocidos, con IA opcional y cuotas compartidas en MySQL.
 
 Las secciones de cableado, cámaras, soporte, asesoramiento y capacitaciones conservan sus diseños originales con datos editables desde el panel. La galería utiliza fotos activas en sus franjas animadas y filtros. Guardar contenido actualiza una web abierta en otra pestaña del mismo navegador; otros visitantes ven los cambios en su siguiente consulta.
@@ -39,7 +39,7 @@ Desde `backend/`: `npm run start:dev`. API en `http://localhost:3000/api`; Swagg
 
 Desde `frontend/`: `npm ci` y `npm run dev`. Vite redirige `/api` al backend. `VITE_API_BASE_URL` permite utilizar otra URL de API.
 
-El panel está en `/admin/dashboard`. El acceso es por `/admin/login`; `/admin/register` es el registro público, que no concede acceso al panel sin un rol asignado. Cada cuenta ve las secciones y operaciones de su rol.
+El panel está en `/admin/dashboard`. El acceso es por `/admin/login`; `/admin/register` es el registro público: la cuenta creada inicia sesión y usa «Mi espacio», pero no obtiene funciones administrativas sin un rol asignado. Cada cuenta con rol ve las secciones y operaciones de su rol.
 
 ## Verificación
 
