@@ -173,34 +173,6 @@ export default function QuienesSomos() {
         </div>
       </section>
 
-      <section className="ns-beliefs">
-        <div className="container">
-          <div className="ns-beliefs-header fade-up">
-            <span className="ns-chip">Lo que creemos</span>
-            <h2>Esto es lo que<br />creemos</h2>
-          </div>
-          <div className="ns-beliefs-list">
-            {[
-              { n:'01', icon:'fa-medal',          color:'#4F46E5', bg:'#EEF2FF', title:'Creemos en la excelencia sin excusas',         desc:'Cada proyecto, cada capacitación, cada instalación técnica debe ser lo mejor que podemos dar. No hay términos medios cuando se trata de la confianza de nuestros clientes.' },
-              { n:'02', icon:'fa-handshake',       color:'#FF6B47', bg:'#FFF1EE', title:'Creemos que la confianza se gana con hechos',   desc:'No prometemos lo que no podemos cumplir. Somos transparentes, puntuales y honestos. Si decimos que lo hacemos, lo hacemos.' },
-              { n:'03', icon:'fa-graduation-cap',  color:'#059669', bg:'#ECFDF5', title:'Creemos en el poder de la educación local',    desc:'Cajamarca tiene profesionales brillantes que merecen formación de primer nivel. Por eso trabajamos con los mejores colegios profesionales de la región.' },
-              { n:'04', icon:'fa-lightbulb',       color:'#7C3AED', bg:'#F5F3FF', title:'Creemos que la tecnología debe ser accesible', desc:'Las soluciones tecnológicas de calidad no son solo para las grandes empresas. Trabajamos para que cualquier negocio o institución en Cajamarca pueda acceder a ellas.' },
-            ].map(b => (
-              <div key={b.n} className="ns-belief fade-up">
-                <div className="ns-belief-num">{b.n}</div>
-                <div className="ns-belief-content">
-                  <h3>{b.title}</h3>
-                  <p>{b.desc}</p>
-                </div>
-                <div className="ns-belief-icon" style={{ color: b.color, background: b.bg }}>
-                  <i className={`fas ${b.icon}`} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       <section className="ns-team" aria-labelledby="ns-team-title">
         <div className="container">
           <div className="ns-section-head fade-up">
