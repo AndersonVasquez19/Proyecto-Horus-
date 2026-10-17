@@ -313,8 +313,8 @@ async function loginSlot() {
     const p = await restore(key);
     if (key === 'sinrol') {
       const text = await p.text('main');
-      ck((await p.evaluate('location.pathname')) === '/admin/dashboard' && (await notice(p)) === 'sin-rol' && text.includes('no tiene un rol asignado'), 'sin rol: aviso de cuenta sin rol en lugar de un inicio de trabajo', { path: await p.path(), notice: await notice(p) });
-      ck(same(await menu(p), []), 'sin rol: no monta ninguna sección administrativa (menú vacío)', await menu(p));
+      ck((await p.evaluate('location.pathname')) === '/admin/dashboard' && (await notice(p)) === 'sin-rol' && text.includes('Cuenta básica'), 'sin rol: espacio básico en lugar de un inicio de trabajo', { path: await p.path(), notice: await notice(p) });
+      ck(same(await menu(p), ['Mi espacio']), 'sin rol: no monta ninguna sección administrativa (solo «Mi espacio»)', await menu(p));
       const other = (await requests()).filter(r => r.who === 'sinrol' && r.route !== '/api/admin/me');
       ck(other.length === 0, 'sin rol: ninguna solicitud administrativa aparte de /admin/me', other);
     } else {

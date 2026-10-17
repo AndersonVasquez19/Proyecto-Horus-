@@ -79,19 +79,19 @@ const handler = async (req, res, { route, json, body }) => {
     const list = await rows(p);
     ck(list.length === 5, 'lista las 5 cuentas que devuelve el servidor (sin datos fijos en el código)', list.length);
     const pending = list.find(r => r.name?.startsWith('José'));
-    ck(pending?.status === 'pendiente' && pending.text.includes('Pendiente de autorización') && pending.text.includes('Asignar rol'), 'la cuenta activa sin rol aparece como «Pendiente de autorización» con «Asignar rol»', pending);
+    ck(pending?.status === 'pendiente' && pending.text.includes('Cuenta básica') && pending.text.includes('Asignar rol'), 'la cuenta activa sin rol aparece como «Cuenta básica» con «Asignar rol»', pending);
     ck(list.find(r => r.name?.startsWith('Ana'))?.status === 'inactiva', 'una cuenta desactivada no se cuenta como pendiente');
     const own = list.find(r => r.name?.startsWith('Gerente'));
     ck(own.text.includes('Tu cuenta') && !own.text.includes('Cambiar rol') && !own.text.includes('Desactivar'), 'la propia cuenta no ofrece cambiar su rol ni desactivarse', own.text);
     // La fila muestra la insignia «Sin rol»: lo que se comprueba son sus botones.
     ck(JSON.stringify(await p.evaluate('[...[...document.querySelectorAll("[data-accounts] tbody tr")].find(tr => tr.innerText.includes("Ana")).querySelectorAll("button")].map(b => b.textContent.trim())')) === '["Activar"]', 'una cuenta desactivada no ofrece cambiar el rol (solo activar)');
-    ck((await p.text('.hw-insights')).replace(/\s+/g, ' ').includes('Pendientes 1'), 'el resumen cuenta 1 pendiente');
+    ck((await p.text('.hw-insights')).replace(/\s+/g, ' ').includes('Básicas 1'), 'el resumen cuenta 1 cuenta básica (sin rol)');
 
     console.log('\n== BÚSQUEDA Y FILTROS');
     await setSearch(p, 'jose'); await sleep(100);
     ck((await rows(p)).length === 1, 'la búsqueda ignora tildes y mayúsculas (jose → José)');
     await setSearch(p, ''); await setSelect(p, 'Filtrar por rol', 'pendientes'); await sleep(100);
-    ck(JSON.stringify((await rows(p)).map(r => r.status)) === '["pendiente"]', 'filtro «Pendientes de autorización»');
+    ck(JSON.stringify((await rows(p)).map(r => r.status)) === '["pendiente"]', 'filtro «Cuentas básicas (sin rol)»');
     await setSelect(p, 'Filtrar por rol', 'todos'); await setSelect(p, 'Filtrar por estado', 'inactivas'); await sleep(100);
     ck(JSON.stringify((await rows(p)).map(r => r.status)) === '["inactiva"]', 'filtro por estado «Desactivadas»');
     await setSelect(p, 'Filtrar por estado', 'todas'); await setSelect(p, 'Filtrar por rol', 'SECRETARIA'); await sleep(100);
@@ -127,7 +127,7 @@ const handler = async (req, res, { route, json, body }) => {
     await ctl('roleDelay', '0'); await ctl('role', '409');
     await p.click('[data-accounts] button', 'Cambiar el rol de Coordinadora'); await p.wait('document.querySelector("dialog[open] .hp-role-option")', 'diálogo de rol');
     await pickRole(p, 'Sin rol'); await sleep(80);
-    ck((await p.text('[data-role-warning]')).includes('pendiente de autorización'), 'retirar el rol avisa de que quedará pendiente de autorización');
+    ck((await p.text('[data-role-warning]')).includes('cuenta básica'), 'retirar el rol avisa de que quedará como cuenta básica');
     await p.evaluate(confirmBtn + '.click(); 1'); await p.wait('document.querySelector("dialog[open] .hp-error")', 'error 409');
     ck((await p.text('dialog[open] .hp-error')).includes('cambió mientras la consultabas') && (await p.evaluate('!!document.querySelector("dialog[open]")')), '409: el mensaje del servidor aparece en el diálogo, que sigue abierto');
     await ctl('role', '500'); const before = (await writes()).length;

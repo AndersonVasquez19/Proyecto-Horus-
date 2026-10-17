@@ -12,7 +12,8 @@ import { AdminRole, isAdminRole } from './roles';
 // Ningún otro módulo la registra (ni con @UseGuards ni como APP_GUARD). Los JwtAuthGuard locales de los controladores se conservan.
 
 export const UNAUTHORIZED_MESSAGE = 'Usuario no encontrado o inactivo.';
-export const NO_ROLE_MESSAGE = 'Tu cuenta no tiene un rol asignado. Solicita a la gerencia que te asigne uno.';
+// Cuenta básica (sin rol): la sesión es válida y conserva el autoservicio, pero esta operación es administrativa.
+export const NO_ROLE_MESSAGE = 'Esta función requiere permisos adicionales. Tu cuenta es básica: solicita a la gerencia que te asigne un rol.';
 export const FORBIDDEN_MESSAGE = 'No tienes permiso para realizar esta operación.';
 
 export interface AccountAccess { activo: boolean; sessionVersion: number; rol: AdminRole | null }

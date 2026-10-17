@@ -51,7 +51,7 @@ test('cambiar rol: nunca la propia cuenta ni una desactivada, y solo con el perm
   assert.deepEqual(rolePayload(accounts[2], 'SECRETARIA'), { rol: 'SECRETARIA', rol_actual: 'COORDINADORA_INSTITUCIONAL' })
   assert.deepEqual(rolePayload(accounts[1], null), { rol: null, rol_actual: null })
   assert.match(roleChangeWarning(accounts[1], 'GERENTE_GENERAL'), /acceso completo/)
-  assert.match(roleChangeWarning(accounts[2], null), /pendiente de autorización/)
+  assert.match(roleChangeWarning(accounts[2], null), /cuenta básica/)
   assert.match(roleChangeWarning(accounts[0], 'SECRETARIA'), /Dejará de tener acceso completo/)
 })
 

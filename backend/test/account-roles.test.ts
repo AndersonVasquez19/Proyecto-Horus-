@@ -122,8 +122,8 @@ test('servicio: asignar un rol bloquea todas las filas, revoca las sesiones de l
   assert.equal(db.rows[1].rol, K); assert.equal(db.rows[1].session_version, 4);
   assert.equal(db.rows[0].session_version, 1, 'las demás cuentas no cambian'); assert.equal(db.rows[2].rol, S);
   assert.deepEqual(db.audit, [{ origen: 'panel', actor_id: 1, cuenta_id: 2, operacion: 'rol_asignado', rol_anterior: null, rol_nuevo: K, activo_anterior: true, activo_nuevo: true, resultado: 'aplicado' }]);
-  // Retirar: vuelve a pendiente de autorización, con otra revocación y otro registro.
-  assert.match((await service.role(2, null, K, 1)).mensaje, /pendiente de autorización/);
+  // Retirar: vuelve a cuenta básica (sin rol), con otra revocación y otro registro.
+  assert.match((await service.role(2, null, K, 1)).mensaje, /cuenta básica/);
   assert.deepEqual([db.rows[1].rol, db.rows[1].session_version, db.audit[1].operacion, db.audit[1].rol_anterior, db.audit[1].rol_nuevo], [null, 5, 'rol_retirado', K, null]);
 });
 

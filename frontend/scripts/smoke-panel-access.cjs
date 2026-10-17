@@ -126,9 +126,9 @@ const LEGACY_MENU = ['Resumen', 'Educación', 'Servicios tecnológicos', 'Galer�
   await clean();
   { const p = await restore('tk-sec', '/admin/dashboard?section=cotizaciones');
     const text = await p.text('main');
-    ck((await p.path()) === '/admin/dashboard?section=cotizaciones' && (await notice(p)) === 'denegado' && text.includes('No tienes acceso a esta sección'), 'secretaria → Cotizaciones: aviso claro, sin redirección (la dirección se conserva)', { path: await p.path(), text });
+    ck((await p.path()) === '/admin/dashboard?section=cotizaciones' && (await notice(p)) === 'denegado' && text.includes('requiere permisos adicionales'), 'secretaria → Cotizaciones: aviso claro, sin redirección (la dirección se conserva)', { path: await p.path(), text });
     ck((await calls('tk-sec', 'cotizaciones')).length === 0, 'y sin ninguna solicitud a /admin/cotizaciones (el componente no se monta)');
-    ck((await p.evaluate('document.title')).startsWith('Acceso no autorizado') && !(await p.evaluate('!!document.querySelector("aside nav .is-active")')), 'el título lo indica y ninguna opción del menú queda marcada');
+    ck((await p.evaluate('document.title')).startsWith('Permisos adicionales') && !(await p.evaluate('!!document.querySelector("aside nav .is-active")')), 'el título lo indica y ninguna opción del menú queda marcada');
     await p.click('main a', 'Ir a mi inicio'); await p.wait("location.pathname === '/admin/messages' && !document.querySelector('[data-panel-access]')", 'inicio de la secretaria');
     ck((await heading(p)).includes('Centro de consultas'), '«Ir a mi inicio» lleva a la Bandeja de mensajes', await heading(p));
     await p.evaluate('history.back(); 1'); await p.wait('location.search.includes("section=cotizaciones")', 'atrás');
@@ -162,11 +162,15 @@ const LEGACY_MENU = ['Resumen', 'Educación', 'Servicios tecnológicos', 'Galer�
   await clean(); await ctl('mode', 'por_roles');
   { const p = await restore('tk-norol');
     const text = await p.text('main');
-    ck((await notice(p)) === 'sin-rol' && text.includes('no tiene un rol asignado') && (await menu(p)).length === 0, 'cuenta sin rol en por_roles: aviso de cuenta sin rol y ninguna sección de trabajo', { text, menu: await menu(p) });
+    ck((await notice(p)) === 'sin-rol' && text.includes('Cuenta básica') && !text.includes('pendiente de autorización') && same(await menu(p), ['Mi espacio']), 'cuenta sin rol en por_roles: espacio básico (sin bloqueo de autorización) y ninguna sección de trabajo', { text, menu: await menu(p) });
+    ck((await p.evaluate('document.title')).startsWith('Mi espacio'), 'el título de la cuenta básica es «Mi espacio»');
     const bad = (await requests()).filter(r => r.token === 'tk-norol' && r.route !== '/api/admin/me');
     ck(bad.length === 0, 'sin ninguna consulta de datos', bad);
     await p.go('/admin/dashboard?section=mensajes', 'document.querySelector("[data-panel-access]")'); await sleep(500);
     ck((await notice(p)) === 'denegado' && (await calls('tk-norol', 'messages')).length === 0, 'por enlace directo tampoco abre la bandeja', { notice: await notice(p), calls: await calls('tk-norol', 'messages'), path: await p.path() });
+    ck((await p.text('main')).includes('requiere permisos adicionales'), 'el aviso explica que la sección requiere permisos adicionales');
+    await p.click('main a', 'Volver a mi espacio'); await p.wait("location.pathname === '/admin/dashboard' && !location.search && document.querySelector('[data-panel-access=sin-rol]')", 'vuelta al espacio básico');
+    ck((await calls('tk-norol', 'messages')).length === 0, '«Volver a mi espacio» regresa al espacio básico sin consultar secciones');
     await p.click('.hp-sidebar-bottom button', 'Ajustes'); await p.wait('location.search.includes("section=configuracion")', 'Ajustes');
     ck((await p.text('main')).includes('Cambiar contraseña'), 'conserva el autoservicio: Ajustes y cambio de contraseña');
     await p.click('.hp-sidebar-bottom button', 'Cerrar sesión'); await p.wait("location.pathname === '/admin/login'", 'login');

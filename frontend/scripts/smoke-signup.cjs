@@ -1,7 +1,7 @@
-// Registro público y cuenta pendiente de autorización con API simulada: nada real (sin MySQL, sin correo, datos ficticios).
+// Registro público y espacio básico de la cuenta nueva con API simulada: nada real (sin MySQL, sin correo, datos ficticios).
 // Cubre: enlace «Crear cuenta» desde el login, formulario (validación local sin solicitudes, campo trampa oculto), cuerpo enviado sin rol,
 // éxito solo tras la respuesta del servidor, doble envío, 409/400/429/500/502/503 con mensajes propios (nunca texto del servidor),
-// móvil sin desborde, login de una cuenta sin rol (vista «Cuenta pendiente de autorización», ninguna solicitud de secciones) y login
+// móvil sin desborde, login de una cuenta sin rol (espacio básico «Mi espacio», sin bloqueo, ninguna solicitud de secciones) y login
 // con 401/503. El kit bloquea antes de enviarla cualquier petición que no sea del servidor simulado y cierra el árbol de Edge.
 const { start, sleep, TOKEN } = require('./smoke-kit.cjs');
 
@@ -60,7 +60,8 @@ const handler = async (req, res, { route, json, body }) => {
     ck((await p.path()) === '/admin/register', 'la ruta pública /admin/register abre el formulario (sin redirigir al login)', await p.path());
     ck(await p.evaluate('document.querySelector(\'.admin-auth__navigation a[href="/admin/register"]\').getAttribute("aria-current") === "page"'), 'la pestaña «Crear cuenta» se marca como página actual');
     ck(await p.evaluate('["nombre", "email", "password", "confirmPassword"].every(id => document.getElementById(id) && document.querySelector(\'label[for="\' + id + \'"]\'))'), 'nombre, correo, contraseña y confirmación con su etiqueta');
-    ck((await p.text('[data-register-authorization]')).includes('pendiente de autorización'), 'el formulario avisa de que el acceso al panel requiere autorización');
+    { const notice = await p.text('[data-register-authorization]');
+      ck(notice.includes('iniciar sesión en cuanto crees tu cuenta') && notice.includes('permisos adicionales') && !notice.includes('pendiente de autorización'), 'el formulario explica que se entra de inmediato y que administrar requiere permisos adicionales', notice); }
     // El input conserva su tamaño propio: lo oculta su contenedor de 1 px con overflow:hidden y clip-path, que es lo que se mide.
     ck(await p.evaluate('(() => { const t = document.getElementById("website"); const box = t.closest(".admin-auth__sr-only"); const r = box?.getBoundingClientRect(); const s = box && getComputedStyle(box); return t.tabIndex === -1 && t.closest("[aria-hidden=true]") !== null && !!r && r.width <= 1 && r.height <= 1 && s.overflow === "hidden"; })()'), 'el campo trampa está oculto (contenedor de 1 px recortado), fuera del orden de tabulación y de los lectores de pantalla');
     ck((await requests()).every(r => r.route === '/api/settings'), 'abrir el formulario no hace solicitudes de cuentas', await requests());
@@ -112,14 +113,16 @@ const handler = async (req, res, { route, json, body }) => {
     await fill(p, valid); await submit(p); await p.wait('location.pathname === "/admin/login"', 'login tras registrarse en móvil');
     ck(await p.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), 'el login con el aviso tampoco desborda'); await p.close(); }
 
-  console.log('\n== CUENTA SIN ROL: «CUENTA PENDIENTE DE AUTORIZACIÓN»');
+  console.log('\n== CUENTA SIN ROL: ESPACIO BÁSICO TRAS EL LOGIN');
   await clean();
   { const p = await open(1280); await p.go('/admin/login');
     await fill(p, { email: NEW_USER.email, password: PASSWORD }); await submit(p);
-    await p.wait('document.querySelector("[data-panel-access]")', 'aviso de cuenta pendiente');
+    await p.wait('document.querySelector("[data-panel-access]")', 'espacio básico');
     const text = await p.text('main');
-    ck((await p.evaluate('document.querySelector("[data-panel-access]").dataset.panelAccess')) === 'sin-rol' && text.includes('pendiente de autorización') && text.includes('no tiene un rol asignado'), 'el panel muestra «Tu cuenta está pendiente de autorización»', text.slice(0, 160));
-    ck((await p.evaluate('[...document.querySelectorAll("aside nav .hp-nav-item")].length')) === 0, 'ninguna sección de trabajo en el menú');
+    ck((await p.evaluate('location.pathname + location.search')) === '/admin/dashboard', 'tras el login la cuenta nueva entra directamente a /admin/dashboard', await p.evaluate('location.pathname + location.search'));
+    ck((await p.evaluate('document.querySelector("[data-panel-access]").dataset.panelAccess')) === 'sin-rol' && text.includes('Cuenta básica') && text.includes('permisos adicionales') && !text.includes('pendiente de autorización'), 'el panel muestra el espacio básico, sin pantalla de autorización pendiente', text.slice(0, 200));
+    ck(JSON.stringify(await p.evaluate('[...document.querySelectorAll("aside nav .hp-nav-item")].map(b => b.textContent.trim())')) === '["Mi espacio"]', 'el menú solo ofrece «Mi espacio»: ninguna sección administrativa');
+    ck(await p.evaluate('!!document.querySelector(\'main a[href="/admin/dashboard?section=configuracion"]\')'), 'el espacio básico lleva a los Ajustes de la propia cuenta');
     ck(await p.evaluate('[...document.querySelectorAll(".hp-sidebar-bottom button")].some(b => b.textContent.includes("Cerrar sesión"))'), 'se puede cerrar sesión');
     const extra = (await requests()).filter(r => r.route.startsWith('/api/admin/') && !['/api/admin/login', '/api/admin/me'].includes(r.route));
     ck(extra.length === 0, 'la cuenta sin rol no solicita ninguna sección administrativa', extra);
@@ -139,5 +142,5 @@ const handler = async (req, res, { route, json, body }) => {
   }
 
   await k.closePages();
-  k.finish('Registro público y cuenta pendiente de autorización');
+  k.finish('Registro público y espacio básico de la cuenta nueva');
 })().catch(error => { console.error('\nERROR DEL SMOKE: ' + (error && error.message ? error.message : String(error))); process.exit(1); });

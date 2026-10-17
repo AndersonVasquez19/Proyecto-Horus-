@@ -12,8 +12,8 @@ import PanelIcon from '../components/PanelIcon';
 
 const SIGNUP_TIMEOUT_MS = 20_000;
 
-// Registro público: cualquier visitante crea una cuenta, que nace SIN rol. Con ella puede iniciar sesión, pero el panel solo le muestra
-// «Cuenta pendiente de autorización» hasta que la gerencia le asigne un rol (procedimiento auditado del backend). Ocultar opciones aquí
+// Registro público: cualquier visitante crea una cuenta, que nace SIN rol. Con ella inicia sesión de inmediato y usa su espacio básico
+// (PanelBasicHome); las funciones administrativas llegan solo si la gerencia le asigna un rol (procedimiento auditado del backend). Ocultar opciones aquí
 // no protege nada: la autorización la decide el backend.
 export default function AdminRegister() {
   const navigate = useNavigate();
@@ -77,8 +77,8 @@ export default function AdminRegister() {
     <AdminAuthLayout registration backToPanel={false} current="register" eyebrow="Comienza aquí" title="Crea tu cuenta"
       description="Completa tus datos para registrarte en Horus Group.">
       <p className="admin-auth__notice" data-register-authorization>
-        Las cuentas nuevas no tienen acceso al panel administrativo hasta que la gerencia las autorice. Podrás iniciar sesión, pero
-        tu cuenta aparecerá como pendiente de autorización.
+        Podrás iniciar sesión en cuanto crees tu cuenta y usar tu espacio personal. Las funciones de administración requieren permisos
+        adicionales que asigna la gerencia.
       </p>
       <form className="admin-auth__form" onSubmit={handleSubmit} aria-busy={loading} noValidate>
         <fieldset className="admin-auth__fields" disabled={loading}>

@@ -73,7 +73,7 @@ function stubs(calls: string[]): Provider[] {
   const stub = (names: string[]) => Object.fromEntries(names.map(name => [name, async () => { calls.push(name); return { ok: true }; }]));
   return [
     { provide: AuthService, useValue: stub(['register', 'login']) },
-    { provide: AccountsService, useValue: stub(['forgot', 'reset', 'password', 'list', 'status']) },
+    { provide: AccountsService, useValue: stub(['forgot', 'reset', 'password', 'list', 'status', 'role']) },
     { provide: AttentionService, useValue: stub(['get', 'save', 'receipt', 'send']) },
     { provide: CotizacionesService, useValue: stub(['list', 'detail', 'create', 'edit', 'email', 'status']) },
     { provide: CatalogoService, useValue: stub(['list', 'detail', 'create', 'update', 'remove', 'archive']) },
@@ -193,6 +193,44 @@ test('autoservicio: una cuenta sin rol consulta su cuenta y cambia su contraseñ
     }
     // Un valor de rol desconocido en la base equivale a no tener rol.
     assert.equal((await call('GET', 'admin/cursos', token(6))).data.mensaje, NO_ROLE_MESSAGE);
+  } finally { await app.close(); }
+});
+
+// Acceso básico: una cuenta sin rol (p. ej. recién registrada) entra a su espacio sin autorización previa, pero el backend sigue
+// negándole toda operación administrativa. Los tres roles conservan exactamente su alcance. 4 = sin rol; 1, 2, 3 = los tres roles.
+test('acceso básico: sin rol usa el autoservicio y recibe 403 en operaciones administrativas; los tres roles conservan su alcance', async () => {
+  const { app, call } = await start(true);
+  try {
+    const roles: Record<number, string | null> = { 4: null, 1: 'GERENTE_GENERAL', 2: 'COORDINADORA_INSTITUCIONAL', 3: 'SECRETARIA' };
+    for (const id of [4, 1, 2, 3]) {
+      const me = await call('GET', 'admin/me', token(id));
+      assert.equal(me.status, 200, 'GET admin/me ' + id);
+      assert.equal(me.data.user.rol, roles[id]);
+      if (id === 4) assert.deepEqual(me.data.user.permisos, [], 'la cuenta básica no recibe permisos');
+      assert.equal((await call('POST', 'admin/password', token(id), { actual: 'x', nueva: 'y' })).status, 200, 'cambio de contraseña ' + id);
+    }
+    // [método, ruta, cuerpo, estado esperado para gerente, coordinadora, secretaria]. La cuenta sin rol: siempre 403.
+    const operations: [string, string, object | undefined, number, number, number][] = [
+      ['GET', 'admin/users', undefined, 200, 403, 403],
+      ['POST', 'admin/register', {}, 201, 403, 403],
+      ['PUT', 'admin/users/2', { activo: false }, 200, 403, 403],
+      ['PUT', 'admin/users/2/rol', { rol: 'SECRETARIA', rol_actual: 'COORDINADORA_INSTITUCIONAL' }, 200, 403, 403],
+      ['GET', 'admin/cursos', undefined, 200, 200, 200],
+      ['POST', 'admin/cursos', {}, 201, 201, 403],
+      ['GET', 'admin/cotizaciones', undefined, 200, 200, 403],
+      ['PUT', 'admin/settings', { ajustes: {} }, 200, 403, 403],
+    ];
+    for (const [method, route, body, gerente, coordinadora, secretaria] of operations) {
+      const basic = await call(method, route, token(4), body);
+      assert.equal(basic.status, 403, 'sin rol ' + method + ' ' + route);
+      assert.equal(basic.data.mensaje, NO_ROLE_MESSAGE);
+      assert.equal(basic.reached, false, 'sin rol no llega al servicio: ' + method + ' ' + route);
+      for (const [id, expected] of [[1, gerente], [2, coordinadora], [3, secretaria]] as const) {
+        const result = await call(method, route, token(id), body);
+        assert.equal(result.status, expected, roles[id] + ' ' + method + ' ' + route);
+        if (expected === 403) { assert.equal(result.data.mensaje, FORBIDDEN_MESSAGE); assert.equal(result.reached, false); }
+      }
+    }
   } finally { await app.close(); }
 });
 

@@ -3,11 +3,10 @@ import PanelIcon from './PanelIcon';
 
 // Avisos de la navegación por permisos (E3.4.3). Sustituyen a la sección: el componente de una sección sin permiso no se monta y,
 // por tanto, no hace ninguna solicitud. No redirigen solos: quien llegó por un enlace directo ve por qué no puede entrar.
-type Kind = 'denegado' | 'sin-rol' | 'sin-secciones';
+// La cuenta sin rol ya no ve un aviso bloqueante: tiene su espacio básico (PanelBasicHome). Aquí solo quedan los avisos puntuales.
+type Kind = 'denegado' | 'sin-secciones';
 const TEXT: Record<Kind, { kicker: string; title: string; body: string }> = {
-  denegado: { kicker: 'ACCESO NO AUTORIZADO', title: 'No tienes acceso a esta sección', body: 'Tu cuenta no tiene permiso para abrir esta parte del panel. Si necesitas usarla, consúltalo con la gerencia.' },
-  // Cuenta sin rol con AccessGuard activa (por ejemplo, creada desde el registro público): la sesión es válida pero no da acceso.
-  'sin-rol': { kicker: 'CUENTA PENDIENTE DE AUTORIZACIÓN', title: 'Tu cuenta está pendiente de autorización', body: 'Iniciaste sesión correctamente, pero tu cuenta todavía no tiene un rol asignado. El acceso a las secciones del panel requiere que la gerencia autorice tu cuenta. Mientras tanto puedes cambiar tu contraseña en Ajustes o cerrar sesión.' },
+  denegado: { kicker: 'PERMISOS ADICIONALES', title: 'Esta sección requiere permisos adicionales', body: 'Tu cuenta puede iniciar sesión y usar su espacio básico, pero no tiene permiso para abrir esta parte del panel. Si la necesitas, solicítala a la gerencia.' },
   'sin-secciones': { kicker: 'SIN SECCIONES', title: 'Tu cuenta no tiene secciones disponibles', body: 'Ninguna sección del panel está habilitada para tu cuenta. Puedes cambiar tu contraseña en Ajustes o cerrar sesión; si necesitas acceso, consúltalo con la gerencia.' },
 };
 
@@ -25,7 +24,7 @@ export default function PanelAccessNotice({ kind, homeTarget, hasHome }: { kind:
       <p>{text.body}</p>
       {kind === 'denegado' && hasHome
         ? <Link className="hp-btn hp-btn-primary" to={homeTarget}>Ir a mi inicio</Link>
-        : <Link className="hp-btn" to="/admin/dashboard?section=configuracion">Ir a Ajustes</Link>}
+        : <Link className="hp-btn" to={kind === 'denegado' ? '/admin/dashboard' : '/admin/dashboard?section=configuracion'}>{kind === 'denegado' ? 'Volver a mi espacio' : 'Ir a Ajustes'}</Link>}
     </div></section>
   </>;
 }

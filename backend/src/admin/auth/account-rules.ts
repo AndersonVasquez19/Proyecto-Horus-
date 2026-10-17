@@ -80,7 +80,7 @@ export function planRoleChange(accounts: readonly AccountState[], id: number, ro
   return {
     changed: true, before: { ...target }, after,
     operacion: rol === null ? 'rol_retirado' : 'rol_asignado',
-    mensaje: rol === null ? 'Rol retirado: la cuenta queda pendiente de autorización y sus sesiones se cerraron.' : 'Rol actualizado. La cuenta deberá iniciar sesión de nuevo.',
+    mensaje: rol === null ? 'Rol retirado: la cuenta queda como cuenta básica, sin funciones administrativas, y sus sesiones se cerraron.' : 'Rol actualizado. La cuenta deberá iniciar sesión de nuevo.',
   };
 }
 

@@ -13,7 +13,8 @@ import PanelDialog from './PanelDialog';
 import PanelIcon from './PanelIcon';
 
 const SAVE_TIMEOUT_MS = 20_000;
-const STATUS_TEXT = { pendiente: 'Pendiente de autorización', activa: 'Activa', inactiva: 'Desactivada' } as const;
+// «pendiente» es la clave interna de una cuenta activa sin rol: se muestra como cuenta básica (puede usar su espacio, no administrar).
+const STATUS_TEXT = { pendiente: 'Cuenta básica', activa: 'Activa', inactiva: 'Desactivada' } as const;
 const STATUS_CLASS = { pendiente: 'hp-state-borrador', activa: 'hp-state-activo', inactiva: '' } as const;
 
 // «Roles y usuarios»: listado de cuentas (GET /admin/users, cuentas:leer), asignación o retiro de rol (PUT /admin/users/:id/rol,
@@ -78,12 +79,12 @@ export default function PanelAccounts() {
 
   return <>
     <div className="hp-heading"><div><p className="hp-kicker">ADMINISTRACIÓN</p><h1>Roles y usuarios</h1>
-      <p>Cuentas del panel y su rol. Las cuentas nuevas quedan pendientes de autorización hasta que se les asigna un rol.</p></div>
+      <p>Cuentas del panel y su rol. Las cuentas nuevas son cuentas básicas: inician sesión y usan su espacio, y solo administran el panel cuando se les asigna un rol.</p></div>
       <button className="hp-btn" onClick={reload} disabled={loading || saving}><PanelIcon name="refresh" />Actualizar</button></div>
     {error && <p className="hp-error" role="alert">{error}</p>}
     <section className="hw-insights" aria-label="Resumen de cuentas" aria-busy={loading}>
       <article><span className="hp-badge">Cuentas</span><strong>{metric(summary.total)}</strong><span>Activas y desactivadas</span></article>
-      <article><span className="hp-badge hp-state-borrador">Pendientes</span><strong>{metric(summary.pendientes)}</strong><span>Activas sin rol asignado</span></article>
+      <article><span className="hp-badge hp-state-borrador">Básicas</span><strong>{metric(summary.pendientes)}</strong><span>Activas sin rol asignado</span></article>
       <article><span className="hp-badge">Gerencia</span><strong>{metric(summary.gerentes)}</strong><span>Gerentes generales activos</span></article>
     </section>
     <section className="hp-card" data-accounts>
@@ -91,7 +92,7 @@ export default function PanelAccounts() {
       <form className="hp-toolbar" role="search" onSubmit={event => event.preventDefault()}>
         <div className="hp-search"><PanelIcon name="search" /><input type="search" aria-label="Buscar por nombre o correo" placeholder="Buscar por nombre o correo…" maxLength={100} value={search} onChange={event => setSearch(event.target.value)} /></div>
         <select aria-label="Filtrar por rol" value={rol} onChange={event => setRol(event.target.value as RoleFilter)}>
-          <option value="todos">Todos los roles</option><option value="pendientes">Pendientes de autorización</option>
+          <option value="todos">Todos los roles</option><option value="pendientes">Cuentas básicas (sin rol)</option>
           {ACCOUNT_ROLES.map(value => <option key={value} value={value}>{ROLE_LABELS[value]}</option>)}
         </select>
         <select aria-label="Filtrar por estado" value={estado} onChange={event => setEstado(event.target.value as StatusFilter)}>
@@ -123,7 +124,7 @@ export default function PanelAccounts() {
         <fieldset disabled={saving || uncertain}><legend>Nuevo rol</legend>
           {[...ACCOUNT_ROLES, null].map(value => <label key={value ?? 'ninguno'} className={'hp-role-option' + (choice === value ? ' is-selected' : '')}>
             <input type="radio" name="rol" checked={choice === value} onChange={() => { setChoice(value); setDialogError(''); }} />
-            <span><strong>{value ? ROLE_LABELS[value] : 'Sin rol (pendiente de autorización)'}</strong><small>{value ? ROLE_HINTS[value] : 'Sin acceso a las secciones del panel.'}</small></span>
+            <span><strong>{value ? ROLE_LABELS[value] : 'Sin rol (cuenta básica)'}</strong><small>{value ? ROLE_HINTS[value] : 'Inicia sesión y usa su espacio, sin funciones administrativas.'}</small></span>
           </label>)}
         </fieldset>
         {choice !== editing.rol && <p className="hp-notice" role="status" data-role-warning><PanelIcon name="lock" size={16} /> {roleChangeWarning(editing, choice)} La cuenta deberá iniciar sesión de nuevo.</p>}
@@ -142,7 +143,7 @@ export default function PanelAccounts() {
         <button type="button" className="hp-btn hp-btn-primary" onClick={saveStatus} disabled={saving}>{saving ? 'Guardando…' : toggling.activo ? 'Desactivar' : 'Activar'}</button></>}>
       <div className="hp-role-form">
         <p className="hp-role-target"><strong>{toggling.nombre}</strong><small>{toggling.email}</small><span>Rol actual: {roleLabel(toggling.rol)}</span></p>
-        <p className="hp-notice" role="status"><PanelIcon name="lock" size={16} /> {toggling.activo ? 'Se cerrarán sus sesiones y perderá su rol. Si se reactiva, quedará pendiente de autorización.' : 'Se activará sin rol: quedará pendiente de autorización hasta que se le asigne uno.'}</p>
+        <p className="hp-notice" role="status"><PanelIcon name="lock" size={16} /> {toggling.activo ? 'Se cerrarán sus sesiones y perderá su rol. Si se reactiva, será una cuenta básica sin funciones administrativas.' : 'Se activará sin rol, como cuenta básica: podrá iniciar sesión, pero no administrar el panel hasta que se le asigne uno.'}</p>
         {dialogError && <p className="hp-error" role="alert">{dialogError}</p>}
       </div>
     </PanelDialog>}

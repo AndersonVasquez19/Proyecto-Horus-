@@ -64,7 +64,7 @@ export const rolePayload = (account: Account, rol: AccountRole | null) => ({ rol
 // Aviso que acompaña la confirmación según el cambio elegido.
 export function roleChangeWarning(account: Account, rol: AccountRole | null): string {
   if (rol === 'GERENTE_GENERAL') return 'Tendrá acceso completo al panel, incluida la gestión de cuentas y roles.'
-  if (rol === null) return 'La cuenta quedará pendiente de autorización y no podrá usar las secciones del panel.'
+  if (rol === null) return 'La cuenta quedará como cuenta básica: podrá iniciar sesión, pero no usar las funciones administrativas.'
   if (account.rol === 'GERENTE_GENERAL') return 'Dejará de tener acceso completo y no podrá gestionar cuentas ni roles.'
   return 'Sus permisos cambiarán según el rol elegido.'
 }
