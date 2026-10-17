@@ -10,8 +10,8 @@ interface AdminAuthLayoutProps {
   description: string;
   registration?: boolean;
   backToPanel?: boolean;
-  // Solo la página de inicio de sesión marca su enlace como página actual; recuperación y restablecimiento no.
-  current?: 'login';
+  // Solo las páginas de inicio de sesión y de registro marcan su enlace como página actual; recuperación y restablecimiento no.
+  current?: 'login' | 'register';
 }
 
 export default function AdminAuthLayout({ children, eyebrow, title, description, registration = false, backToPanel = registration, current }: AdminAuthLayoutProps) {
@@ -51,6 +51,7 @@ export default function AdminAuthLayout({ children, eyebrow, title, description,
           <Link className="admin-auth__mobile-brand" to="/" aria-label="Ir al inicio de Horus Group"><HorusBrand /></Link>
           <nav className="admin-auth__navigation" aria-label="Acceso administrativo">
             <Link to="/admin/login" aria-current={current === 'login' ? 'page' : undefined}>Iniciar sesión</Link>
+            <Link to="/admin/register" aria-current={current === 'register' ? 'page' : undefined}>Crear cuenta</Link>
           </nav>
           <div className="admin-auth__form-icon"><PanelIcon name={registration ? 'user-plus' : 'lock'} size={25} /></div>
           <span className="admin-auth__eyebrow admin-auth__eyebrow--dark">{eyebrow}</span>

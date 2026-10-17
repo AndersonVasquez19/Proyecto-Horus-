@@ -15,9 +15,10 @@ const LOGIN_TIMEOUT_MS = 20_000;
 export default function AdminLogin() {
   const navigate = useNavigate();
   const location = useLocation();
-  const state = location.state as { from?: unknown; expired?: unknown } | null;
+  const state = location.state as { from?: unknown; expired?: unknown; registered?: unknown } | null;
   const returnTo = safeAdminReturn(state?.from) ?? "/admin/dashboard"; // solo rutas internas del panel validadas
   const expired = state?.expired === true;
+  const registered = state?.registered === true; // llegó desde un registro público confirmado por el servidor
   const { login, isAuthenticated, checking, loginFailure } = useAdminAuth();
   const awaitingPanel = useRef(false); // login correcto cuyo panel aún no se abrió (puede faltar validar la sesión con /admin/me)
   const [form, setForm] = useState({ email: '', password: '' });
@@ -90,6 +91,7 @@ export default function AdminLogin() {
     <AdminAuthLayout eyebrow="Tu espacio de trabajo" title="Bienvenido de nuevo" current="login"
       description="Ingresa a tu cuenta para continuar con la gestión de Horus Group.">
       {expired && <p className="admin-auth__notice" role="status">Tu sesión terminó. Inicia sesión de nuevo para continuar; los cambios que no estaban guardados no se conservaron.</p>}
+      {registered && !expired && <p className="admin-auth__notice" role="status" data-register-done>Tu cuenta se creó correctamente. Ya puedes iniciar sesión; el acceso al panel requiere la autorización de la gerencia.</p>}
       <form className="admin-auth__form" onSubmit={handleSubmit} aria-busy={loading}>
         <fieldset className="admin-auth__fields" disabled={loading}>
           <legend className="admin-auth__sr-only">Datos de inicio de sesión</legend>
@@ -110,6 +112,7 @@ export default function AdminLogin() {
         </button>
       </form>
       <p className="admin-auth__forgot"><Link to="/admin/forgot-password">Olvidé mi contraseña</Link></p>
+      <p className="admin-auth__switch">¿No tienes una cuenta? <Link to="/admin/register">Crear cuenta</Link></p>
       <div className="admin-auth__note admin-auth__note--access"><PanelIcon name="shield" size={16} /><span>Tu espacio para gestionar Horus Group.</span></div>
     </AdminAuthLayout>
   );

@@ -6,7 +6,8 @@ import PanelIcon from './PanelIcon';
 type Kind = 'denegado' | 'sin-rol' | 'sin-secciones';
 const TEXT: Record<Kind, { kicker: string; title: string; body: string }> = {
   denegado: { kicker: 'ACCESO NO AUTORIZADO', title: 'No tienes acceso a esta sección', body: 'Tu cuenta no tiene permiso para abrir esta parte del panel. Si necesitas usarla, consúltalo con la gerencia.' },
-  'sin-rol': { kicker: 'CUENTA SIN ROL', title: 'Tu cuenta todavía no tiene un rol asignado', body: 'Mientras la gerencia no te asigne un rol no podrás usar las secciones de trabajo. Puedes cambiar tu contraseña en Ajustes o cerrar sesión.' },
+  // Cuenta sin rol con AccessGuard activa (por ejemplo, creada desde el registro público): la sesión es válida pero no da acceso.
+  'sin-rol': { kicker: 'CUENTA PENDIENTE DE AUTORIZACIÓN', title: 'Tu cuenta está pendiente de autorización', body: 'Iniciaste sesión correctamente, pero tu cuenta todavía no tiene un rol asignado. El acceso a las secciones del panel requiere que la gerencia autorice tu cuenta. Mientras tanto puedes cambiar tu contraseña en Ajustes o cerrar sesión.' },
   'sin-secciones': { kicker: 'SIN SECCIONES', title: 'Tu cuenta no tiene secciones disponibles', body: 'Ninguna sección del panel está habilitada para tu cuenta. Puedes cambiar tu contraseña en Ajustes o cerrar sesión; si necesitas acceso, consúltalo con la gerencia.' },
 };
 

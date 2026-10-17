@@ -35,7 +35,9 @@
     "smoke:chatbot": "npm run build && node scripts/smoke-chatbot.cjs",
     "smoke:session-access": "npm run build && node scripts/smoke-session-access.cjs",
     "smoke:panel-access": "npm run build && node scripts/smoke-panel-access.cjs",
-    "smoke:panel-actions": "npm run build && node scripts/smoke-panel-actions.cjs"
+    "smoke:panel-actions": "npm run build && node scripts/smoke-panel-actions.cjs",
+    "test:signup-form": "node --experimental-strip-types --test tests/signup-form.test.mjs",
+    "smoke:signup": "npm run build && node scripts/smoke-signup.cjs"
   },
   "dependencies": {
     "@fontsource/inter": "5.3.0",

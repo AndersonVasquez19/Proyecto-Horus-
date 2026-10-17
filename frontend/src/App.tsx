@@ -31,6 +31,7 @@ const AdminMessages = lazy(() => import('./panel/pages/AdminMessages'))
 
 import NewsletterUnsubscribe from './pages/NewsletterUnsubscribe'
 const AdminRecovery = lazy(() => import('./panel/pages/AdminRecovery'))
+const AdminRegister = lazy(() => import('./panel/pages/AdminRegister'))
 import CatalogoDetail from './pages/CatalogoDetail'
 import CursoDetail from './pages/educacion/CursoDetail'
 import NotFound from './pages/NotFound'
@@ -78,7 +79,7 @@ function AppRoutes() {
           <Route path="/admin/forgot-password" element={<AdminRecovery />} />
           <Route path="/admin/reset-password" element={<AdminRecovery reset />} />
           <Route path="/admin/login" element={<AdminLogin />} />
-          <Route path="/admin/register" element={<Navigate to="/admin/login" replace />} />
+          <Route path="/admin/register" element={<AdminRegister />} />
 
           <Route element={<AdminRoute />}>
             <Route path="/admin/dashboard" element={<AdminDashboard />} />

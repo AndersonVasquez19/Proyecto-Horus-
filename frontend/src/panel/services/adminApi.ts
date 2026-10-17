@@ -25,8 +25,18 @@ export async function loginAdmin(payload: { email: string; password: string }, s
   return data as { ok: boolean; token: string; user?: unknown; acceso?: unknown };
 }
 
-export async function registerAdmin(payload: { nombre: string; email: string; password: string }) {
-  return panelRequest<{ ok: boolean; mensaje?: string }>('register', null, 'POST', payload);
+// Registro público (sin sesión). La cuenta nace sin rol en el backend; el cliente solo envía estos campos. Como en el login, el texto del
+// servidor no se propaga: la pantalla elige el mensaje según el código HTTP (authError('register', …)).
+export async function signupAccount(payload: { nombre: string; email: string; password: string; website?: string }, signal?: AbortSignal) {
+  const response = await fetch(`${API_BASE}/signup`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload),
+    signal,
+  });
+  const data = await response.json().catch(() => null) as { ok?: boolean } | null;
+  if (!response.ok || !data || data.ok !== true) throw new PanelApiError('Registro rechazado.', response.status);
+  return data as { ok: true };
 }
 
 export async function getCurrentAdmin(token: string, signal?: AbortSignal) {
