@@ -94,7 +94,7 @@ Salida: una línea `OK`/`FALLA` por comprobación (117 en total desde E3.6), `OB
 - **Cambio de permisos «en caliente» por el procedimiento autorizado**: `admin:assign-role` siempre revoca la sesión, así que ese camino no deja la sesión viva con permisos distintos. Solo se ejerce provocando el desfase directamente en la base temporal (caso «403 real»); la revalidación por foco o tras un 403 se cubre además con API simulada (`smoke:session-access`).
 - **Login correcto seguido de un fallo de `/me` y restauración del token anterior**: el backend real devuelve el contrato completo y el panel no consulta `/me` tras el login, de modo que ese camino no se alcanza sin alterar la respuesta real. Lo cubren `test:session-access` y `smoke:session-access` (simulados).
 - **Login simultáneo en dos pestañas con el formulario** y carreras de varias pestañas a la vez: solo se probó el cambio de cuenta y el cierre desde otra pestaña.
-- **Desactivación de cuentas** (`PUT /admin/users/:id`): pertenece a «Cuentas y acceso», que sigue sin habilitar.
+- **Desactivación de cuentas** (`PUT /admin/users/:id`): pertenece a «Roles y usuarios»; la integración comprueba que el gerente abre la sección con el listado real, pero todavía no recorre la desactivación ni el cambio de rol con MySQL (los cubren `test/account-roles.test.ts` y `smoke:roles` con datos simulados).
 - Linux y la CI: el script no se ha ejecutado fuera de Windows, y ni él ni los smokes de navegador forman parte de la CI.
 
 ## Riesgos pendientes
