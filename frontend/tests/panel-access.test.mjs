@@ -23,7 +23,8 @@ const PERMISOS = { GERENTE_GENERAL: ALL, COORDINADORA_INSTITUCIONAL: roleList('C
 const identity = { id: 7, nombre: 'Persona Ficticia', email: 'persona@example.test' }
 const session = (rol, modo = 'heredado', permisos = rol ? PERMISOS[rol] : []) => parseSession({ ok: true, user: { ...identity, rol, permisos }, acceso: { modo } }).access
 const legacyBackend = () => parseSession({ ok: true, user: identity }).access
-const WORK = PANEL_SECTIONS.filter(rule => rule.anyOf.length && rule.available !== false).map(rule => rule.key)
+// Secciones de trabajo disponibles en cualquier modo. «Roles y usuarios» (cuentas) exige además el modo por_roles y se prueba aparte.
+const WORK = PANEL_SECTIONS.filter(rule => rule.anyOf.length && rule.available !== false && !rule.requiresRolesMode).map(rule => rule.key)
 const visible = nav => PANEL_SECTIONS.map(rule => rule.key).filter(key => nav.canOpen(key))
 
 test('cursos y capacitaciones nunca ofrecen DELETE, independientemente del rol, modo o estado', () => {
@@ -134,11 +135,23 @@ test('sesión no validada o inválida: ninguna sección, ni siquiera Ajustes', (
   }
 })
 
-test('Cuentas y acceso no se habilita en E3.4.3: ni en heredado ni en por_roles, ni siquiera con cuentas:leer', () => {
+test('Roles y usuarios: solo en por_roles con cuentas:leer; nunca en heredado, sin rol ni para coordinadora o secretaria', () => {
   const rule = PANEL_SECTIONS.find(item => item.key === 'cuentas')
-  assert.equal(rule.available, false)
+  assert.equal(rule.available, undefined, 'habilitada')
   assert.equal(rule.requiresRolesMode, true)
-  for (const modo of ['heredado', 'por_roles']) assert.equal(panelNavigation(session('GERENTE_GENERAL', modo)).canOpen('cuentas'), false, modo)
+  assert.deepEqual(rule.anyOf, ['cuentas:leer'])
+  assert.equal(panelNavigation(session('GERENTE_GENERAL', 'por_roles')).canOpen('cuentas'), true)
+  // Sin AccessGuard (modo heredado) cualquier sesión podría cambiar roles: la sección no se ofrece ni al gerente.
+  assert.equal(panelNavigation(session('GERENTE_GENERAL', 'heredado')).canOpen('cuentas'), false)
+  for (const access of [legacyBackend(), session(null, 'heredado'), session(null, 'por_roles'), session('COORDINADORA_INSTITUCIONAL', 'por_roles'), session('SECRETARIA', 'por_roles'), null]) {
+    assert.equal(panelNavigation(access).canOpen('cuentas'), false, JSON.stringify(access))
+  }
+  // Leer cuentas no implica poder cambiar roles: cada operación tiene su permiso.
+  const readOnly = panelNavigation(session('COORDINADORA_INSTITUCIONAL', 'por_roles', ['cuentas:leer']))
+  assert.equal(readOnly.canOpen('cuentas'), true)
+  assert.equal(readOnly.can(PANEL_ACTIONS.asignarRol), false)
+  assert.equal(readOnly.can(PANEL_ACTIONS.editarCuenta), false)
+  assert.equal(panelNavigation(session('GERENTE_GENERAL', 'por_roles')).can(PANEL_ACTIONS.asignarRol), true)
 })
 
 test('secciones desconocidas o con forma rara no se abren; el nombre del rol no concede nada', () => {
@@ -204,6 +217,8 @@ test('las demás operaciones del panel coinciden con sus rutas', () => {
   assert.equal(routePermission('POST', 'admin/messages'), A.crearMensaje)
   assert.equal(routePermission('DELETE', 'admin/messages/:id'), A.eliminarMensaje)
   assert.equal(routePermission('PUT', 'admin/settings'), A.editarConfiguracion)
+  assert.equal(routePermission('PUT', 'admin/users/:id/rol'), A.asignarRol)
+  assert.equal(routePermission('PUT', 'admin/users/:id'), A.editarCuenta)
   // Seguimiento: la ruta es común y el permiso depende de :recurso; la bandeja solo usa «messages».
   for (const [method, route, operation] of [['GET', 'admin/seguimiento/:recurso/:id', 'leer'], ['PUT', 'admin/seguimiento/:recurso/:id', 'editar'], ['POST', 'admin/seguimiento/:recurso/:id/constancia', 'enviar'], ['POST', 'admin/seguimiento/:recurso/:id/correo', 'enviar']]) {
     assert.ok(inventory.includes("follow('" + method + "', '" + route + "', '" + operation + "')"), route)

@@ -1,7 +1,7 @@
 // Navegación del panel por permisos (H-BACK-01, E3.4.3, fase 1) con API simulada: nada real (ni cuentas, ni datos, ni correo). Edge por DevTools.
 // Cubre: menú e inicio de los tres roles en modo heredado y por_roles, backend antiguo, cuenta sin rol (heredado y por_roles), Biblioteca
-// solo con items:leer, enlaces directos a secciones sin permiso (aviso, sin redirección y sin solicitudes a la API), «Cuentas y acceso»
-// sin habilitar, 401 frente a 403 (también en el cambio de contraseña), direcciones y navegación atrás/adelante conservadas.
+// solo con items:leer, enlaces directos a secciones sin permiso (aviso, sin redirección y sin solicitudes a la API), «Roles y usuarios»
+// solo para el gerente en por_roles, 401 frente a 403 (también en el cambio de contraseña), direcciones y navegación atrás/adelante conservadas.
 // Las listas de permisos de cada rol se leen del código del backend (como hace el servidor real); el panel solo recibe la lista.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -93,9 +93,11 @@ const LEGACY_MENU = ['Resumen', 'Educación', 'Servicios tecnológicos', 'Galer�
       await clean(); await ctl('mode', mode);
       const p = await restore(token); const who = ACCOUNTS[token].rol + ' (' + mode + ')';
       ck((await p.evaluate('location.pathname')) === want.home && (await heading(p)).includes(want.h1), who + ': inicio en ' + (want.home.endsWith('messages') ? 'la Bandeja de mensajes' : 'el Resumen'), { path: await p.path(), h1: await heading(p) });
-      ck(same(await menu(p), want.menu), who + ': el menú muestra solo sus secciones', await menu(p));
+      // «Roles y usuarios» solo existe con AccessGuard (por_roles) y cuentas:leer: hoy, solo para el gerente.
+      const withRoles = mode === 'por_roles' && token === 'tk-gerente';
+      ck(same(await menu(p), withRoles ? [...want.menu, 'Roles y usuarios'] : want.menu), who + ': el menú muestra solo sus secciones', await menu(p));
       const extra = await bottom(p);
-      ck(extra.includes('Ajustes') && extra.some(t => t.includes('Cerrar sesión')) && !(await p.text('aside')).includes('Cuentas y acceso'), who + ': conserva Ajustes y Cerrar sesión; «Cuentas y acceso» no aparece', extra);
+      ck(extra.includes('Ajustes') && extra.some(t => t.includes('Cerrar sesión')) && (await p.text('aside')).includes('Roles y usuarios') === withRoles, who + ': conserva Ajustes y Cerrar sesión; «Roles y usuarios» ' + (withRoles ? 'aparece' : 'no aparece'), extra);
       const bad = await forbiddenCalls(token);
       ck(bad.length === 0, who + ': ninguna consulta a datos que no puede leer', bad);
     }
@@ -139,10 +141,12 @@ const LEGACY_MENU = ['Resumen', 'Educación', 'Servicios tecnológicos', 'Galer�
   }
   await clean();
   { const p = await restore('tk-gerente', '/admin/dashboard?section=cuentas');
-    ck((await heading(p)).includes('Hola') && (await calls('tk-gerente', 'users')).length === 0 && !(await p.text('body')).includes('Cuentas y acceso'), '?section=cuentas (gerente, heredado): sigue sin existir; abre su inicio y no consulta /admin/users'); }
+    await p.wait('document.querySelector("[data-panel-access]")', 'aviso');
+    ck((await notice(p)) === 'denegado' && (await calls('tk-gerente', 'users')).length === 0 && !(await p.text('aside')).includes('Roles y usuarios'), '?section=cuentas (gerente, heredado): sin AccessGuard no se ofrece «Roles y usuarios»; aviso y ninguna consulta a /admin/users'); }
   await clean(); await ctl('mode', 'por_roles');
   { const p = await restore('tk-gerente', '/admin/dashboard?section=cuentas');
-    ck((await heading(p)).includes('Hola') && (await calls('tk-gerente', 'users')).length === 0 && !(await p.text('body')).includes('Cuentas y acceso'), '?section=cuentas (gerente, por_roles): «Cuentas y acceso» todavía no se habilita'); }
+    await p.wait('document.querySelector("main h1")?.textContent === "Roles y usuarios"', 'Roles y usuarios'); await sleep(300);
+    ck(!(await notice(p)) && (await calls('tk-gerente', 'users')).length === 1, '?section=cuentas (gerente, por_roles): abre «Roles y usuarios» y consulta /admin/users una vez'); }
   await clean();
   { const p = await restore('tk-sec', '/admin/dashboard?section=desconocida');
     ck((await p.path()) === '/admin/messages' && (await calls('tk-sec', 'stats')).length === 0, 'secretaria con una sección desconocida: abre su inicio (la bandeja), nunca el Resumen'); }
@@ -151,7 +155,7 @@ const LEGACY_MENU = ['Resumen', 'Educación', 'Servicios tecnológicos', 'Galer�
   console.log('\n== BACKEND ANTIGUO Y CUENTAS SIN ROL');
   await clean(); await ctl('me', 'antiguo');
   { const p = await restore('tk-sec');
-    ck((await p.path()) === '/admin/dashboard' && same(await menu(p), LEGACY_MENU) && !(await p.text('aside')).includes('Cuentas y acceso'), 'backend antiguo: navegación heredada completa (no se inventan permisos) y sin «Cuentas y acceso»', await menu(p)); }
+    ck((await p.path()) === '/admin/dashboard' && same(await menu(p), LEGACY_MENU) && !(await p.text('aside')).includes('Roles y usuarios'), 'backend antiguo: navegación heredada completa (no se inventan permisos) y sin «Roles y usuarios»', await menu(p)); }
   await clean();
   { const p = await restore('tk-norol');
     ck((await p.path()) === '/admin/dashboard' && same(await menu(p), LEGACY_MENU) && (await heading(p)).includes('Hola'), 'cuenta sin rol en modo heredado: conserva la navegación heredada', await menu(p)); }

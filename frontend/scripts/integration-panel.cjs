@@ -46,7 +46,8 @@ const ACCOUNTS = {
   sinrol: { nombre: 'Cuenta Sinrol Ficticia', email: 'sinrol@horus-it.test', rol: null },
 };
 const LEGACY_MENU = ['Resumen', 'Educación', 'Servicios tecnológicos', 'Galería de proyectos', 'Preguntas frecuentes', 'Biblioteca de contenido', 'Convenios', 'Mensajes', 'Cotizaciones', 'Consultas del chatbot', 'Información de empresa'];
-const MENU = { gerente: LEGACY_MENU, coord: LEGACY_MENU.filter(item => item !== 'Biblioteca de contenido'), sec: ['Educación', 'Mensajes', 'Consultas del chatbot', 'Información de empresa'], sinrol: [] };
+// Con AccessGuard (por_roles) el gerente, único rol con cuentas:leer, ve además «Roles y usuarios».
+const MENU = { gerente: [...LEGACY_MENU, 'Roles y usuarios'], coord: LEGACY_MENU.filter(item => item !== 'Biblioteca de contenido'), sec: ['Educación', 'Mensajes', 'Consultas del chatbot', 'Información de empresa'], sinrol: [] };
 // Mensajes de AccessGuard (backend/dist, sin Prisma ni configuración).
 const { FORBIDDEN_MESSAGE, NO_ROLE_MESSAGE } = require(path.join(backend, 'dist/permissions/access.guard.js'));
 // Permiso de lectura de cada GET del panel (backend/src/permissions/route-inventory.ts): vigila que ninguna cuenta pida datos que no puede leer.
@@ -322,7 +323,7 @@ async function loginSlot() {
       ck(same(await menu(p), MENU[key]), key + ': menú esperado (' + MENU[key].length + ' secciones)', await menu(p));
       ck((await notice(p)) === null, key + ': sin aviso de acceso en el inicio');
     }
-    ck(!(await p.text('aside')).includes('Cuentas y acceso'), key + ': «Cuentas y acceso» no aparece');
+    ck((await p.text('aside')).includes('Roles y usuarios') === (key === 'gerente'), key + ': «Roles y usuarios» ' + (key === 'gerente' ? 'aparece (cuentas:leer)' : 'no aparece'));
     const bad = await forbiddenCalls(key);
     ck(bad.length === 0, key + ': ninguna consulta a datos que no puede leer', bad);
     const denied = await deniedResponses(key);
@@ -375,7 +376,10 @@ async function loginSlot() {
     ck((await notice(p)) === 'denegado' && (await calls('coord', 'items')).length === 0, 'coordinadora → Biblioteca: aviso y sin consultar /admin/items'); }
   await clean();
   { const p = await restore('gerente', '/admin/dashboard?section=cuentas');
-    ck((await heading(p)).includes('Hola') && (await calls('gerente', 'users')).length === 0 && !(await p.text('body')).includes('Cuentas y acceso'), 'gerente → ?section=cuentas: «Cuentas y acceso» sigue sin habilitar (abre su inicio y no consulta /admin/users)', { h1: await heading(p), users: await calls('gerente', 'users') }); }
+    await p.wait('document.querySelector("[data-accounts] tbody tr")', 'listado real de cuentas');
+    ck((await heading(p)) === 'Roles y usuarios' && (await calls('gerente', 'users')).length === 1, 'gerente → ?section=cuentas: abre «Roles y usuarios» con el listado real de /admin/users', { h1: await heading(p), users: await calls('gerente', 'users') }); }
+  { const p = await restore('coord', '/admin/dashboard?section=cuentas');
+    ck((await notice(p)) === 'denegado' && (await calls('coord', 'users')).length === 0, 'coordinadora → ?section=cuentas: aviso y sin consultar /admin/users'); }
 
   // ===== J. Errores temporales [SIMULADO sobre la API real] =====
   console.log('\n== J. ERRORES TEMPORALES Y REINTENTO [SIMULADO: fallo inyectado en el reenvío; el resto de respuestas es real]');

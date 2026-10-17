@@ -105,3 +105,24 @@
 @media(prefers-reduced-motion:reduce){.hp-chart g:hover>rect{opacity:1}}
 
 .hp-form .hp-form-grid{gap:0 20px}
+
+/* Roles y usuarios: diálogo de cambio de rol y tabla de cuentas */
+.hp-role-form{display:grid;gap:16px;padding:24px 28px 0}
+.hp-role-form>.hp-dialog-footer{margin:0 -28px}
+.hp-role-target{display:grid;gap:3px;margin:0;color:#64768b;font-size:13px}
+.hp-role-target strong{color:#263d59;font-size:15px}
+.hp-role-form fieldset{display:grid;gap:8px;margin:0;padding:0;border:0;min-width:0}
+.hp-role-form legend{margin-bottom:8px;color:#263d59;font-size:13px;font-weight:600}
+.hp-role-option{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:1px solid #dee5ef;border-radius:10px;background:#fff;cursor:pointer}
+.hp-role-option input{margin-top:3px;accent-color:#193950}
+.hp-role-option span{display:grid;gap:3px;min-width:0}
+.hp-role-option strong{color:#263d59;font-size:14px}
+.hp-role-option small{color:#64768b;font-size:12px;line-height:1.5}
+.hp-role-option.is-selected{border-color:#52758e;background:#f6f9fc}
+.hp-role-option:focus-within{box-shadow:0 0 0 3px #315f9a24}
+.hp-accounts-table .hp-row-actions{flex-wrap:wrap}
+@media(max-width:760px){
+  .hp-role-form{padding:20px 20px 0}
+  .hp-role-form>.hp-dialog-footer{margin:0 -20px}
+  .hp-role-form>.hp-dialog-footer .hp-btn{flex:1 1 140px}
+}

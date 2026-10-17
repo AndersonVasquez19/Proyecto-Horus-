@@ -37,7 +37,9 @@
     "smoke:panel-access": "npm run build && node scripts/smoke-panel-access.cjs",
     "smoke:panel-actions": "npm run build && node scripts/smoke-panel-actions.cjs",
     "test:signup-form": "node --experimental-strip-types --test tests/signup-form.test.mjs",
-    "smoke:signup": "npm run build && node scripts/smoke-signup.cjs"
+    "smoke:signup": "npm run build && node scripts/smoke-signup.cjs",
+    "test:account-roles": "node --experimental-strip-types --test tests/account-roles.test.mjs",
+    "smoke:roles": "npm run build && node scripts/smoke-roles.cjs"
   },
   "dependencies": {
     "@fontsource/inter": "5.3.0",

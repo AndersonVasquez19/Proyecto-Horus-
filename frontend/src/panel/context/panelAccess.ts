@@ -58,6 +58,8 @@ export const PANEL_ACTIONS = Object.freeze({
   crearMensaje: 'mensajes:crear', eliminarMensaje: 'mensajes:eliminar',
   leerSeguimiento: 'seguimiento_mensajes:leer', editarSeguimiento: 'seguimiento_mensajes:editar', enviarSeguimiento: 'seguimiento_mensajes:enviar',
   editarConfiguracion: 'configuracion:editar', // PUT /admin/settings
+  asignarRol: 'cuentas:asignar_rol', // PUT /admin/users/:id/rol (Roles y usuarios)
+  editarCuenta: 'cuentas:editar', // PUT /admin/users/:id (activar o desactivar)
 } as const);
 
 export const PANEL_SECTIONS: readonly PanelSectionRule[] = Object.freeze([
@@ -73,7 +75,7 @@ export const PANEL_SECTIONS: readonly PanelSectionRule[] = Object.freeze([
   { key: 'chatbot', group: 'atencion', anyOf: ['chatbot_consultas:leer'], target: '/admin/dashboard?section=chatbot' },
   { key: 'ajustes', group: 'atencion', anyOf: ['configuracion:leer'], target: '/admin/dashboard?section=ajustes', note: 'Información de empresa (GET /admin/settings)' },
   { key: 'configuracion', group: 'cuenta', anyOf: [], target: '/admin/dashboard?section=configuracion', note: 'Ajustes de la propia cuenta (cambio de contraseña): toda sesión válida' },
-  { key: 'cuentas', group: 'cuenta', anyOf: ['cuentas:leer'], target: '/admin/dashboard?section=cuentas', requiresRolesMode: true, available: false, note: 'Cuentas y acceso: solo con modo por_roles y cuentas:leer; sin habilitar en E3.4.3 (PanelAccounts no se monta)' },
+  { key: 'cuentas', group: 'cuenta', anyOf: ['cuentas:leer'], target: '/admin/dashboard?section=cuentas', requiresRolesMode: true, note: 'Roles y usuarios (GET /admin/users): solo con modo por_roles y cuentas:leer. Sin AccessGuard (modo heredado) no se ofrece: cualquier sesión podría cambiar roles' },
 ] satisfies PanelSectionRule[]);
 
 const RULES = new Map(PANEL_SECTIONS.map(rule => [rule.key, rule]));

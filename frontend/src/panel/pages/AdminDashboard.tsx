@@ -12,6 +12,7 @@ import MessageInbox from '../components/workspace/MessageInbox';
 import PanelPreferences from '../components/PanelPreferences';
 import PanelQuotes from '../components/PanelQuotes';
 import PanelChatbot from '../components/PanelChatbot';
+import PanelAccounts from '../components/PanelAccounts';
 import PanelConvenios from '../components/PanelConvenios';
 import PanelAccessNotice from '../components/PanelAccessNotice';
 import { PANEL_SECTIONS, panelNavigation } from '../context/panelAccess';
@@ -36,7 +37,7 @@ export default function AdminDashboard() {
   const asked = location.pathname === '/admin/messages' ? 'mensajes' : params.get('section');
   // 'cursos' is the resource behind the Education menu, so both addresses open the same section.
   const requested = asked === 'educacion' ? 'cursos' : asked;
-  const known = !!requested && (!!resources[requested] || ['resumen', 'mensajes', 'chatbot', 'ajustes', 'cotizaciones', 'configuracion', 'convenios'].includes(requested));
+  const known = !!requested && (!!resources[requested] || ['resumen', 'mensajes', 'chatbot', 'cuentas', 'ajustes', 'cotizaciones', 'configuracion', 'convenios'].includes(requested));
   // Sin sección (o una desconocida) se abre el inicio de la cuenta; 'inicio' es el aviso de una cuenta sin secciones disponibles.
   const section = known ? requested : navigation.home ?? 'inicio';
   // El inicio en la bandeja se abre en su dirección propia (/admin/messages), sin dejar la anterior en el historial.
@@ -81,7 +82,7 @@ export default function AdminDashboard() {
       trigger?.focus();
     };
   }, [menu, mobile]);
-  const title = !allowed ? (section === 'inicio' ? 'Inicio' : 'Acceso no autorizado') : section === 'cursos' ? 'Educación' : resources[section]?.label || (section === 'mensajes' ? 'Bandeja de mensajes' : section === 'chatbot' ? 'Consultas del chatbot' : section === 'convenios' ? 'Convenios' : section === 'configuracion' ? 'Ajustes' : section === 'cotizaciones' ? 'Cotizaciones' : section === 'ajustes' ? 'Empresa' : 'Resumen');
+  const title = !allowed ? (section === 'inicio' ? 'Inicio' : 'Acceso no autorizado') : section === 'cursos' ? 'Educación' : resources[section]?.label || (section === 'mensajes' ? 'Bandeja de mensajes' : section === 'chatbot' ? 'Consultas del chatbot' : section === 'cuentas' ? 'Roles y usuarios' : section === 'convenios' ? 'Convenios' : section === 'configuracion' ? 'Ajustes' : section === 'cotizaciones' ? 'Cotizaciones' : section === 'ajustes' ? 'Empresa' : 'Resumen');
   useEffect(() => { document.title = title + ' — Panel Horus'; window.scrollTo(0, 0); }, [title]);
   useEffect(() => {
     const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenuLocation(null); };
@@ -119,12 +120,13 @@ export default function AdminDashboard() {
       <div className="hp-workspace-label"><span className="hp-workspace-mark"><PanelIcon name="shield" size={18} /></span><div><strong>Panel de administración</strong><small>Tu espacio de trabajo</small></div></div>
       <nav aria-label="Navegación del panel">{navGroup('PRINCIPAL', [nav('resumen', 'Resumen', 'home')])}
         {navGroup('GESTIÓN DE CONTENIDO', [groupNav('educacion', 'Educación', resources.cursos.icon, educationSections), groupNav('servicios', resources.servicios.label, resources.servicios.icon, serviceSections), ...['galeria', 'faq', 'contenido'].map(key => nav(key, resources[key].label, resources[key].icon)), nav('convenios', 'Convenios', 'file')])}
-        {navGroup('ATENCIÓN Y EMPRESA', [nav('mensajes', 'Mensajes', 'mail'), nav('cotizaciones', 'Cotizaciones', 'file'), nav('chatbot', 'Consultas del chatbot', 'help'), nav('ajustes', 'Información de empresa', 'settings')])}</nav>
+        {navGroup('ATENCIÓN Y EMPRESA', [nav('mensajes', 'Mensajes', 'mail'), nav('cotizaciones', 'Cotizaciones', 'file'), nav('chatbot', 'Consultas del chatbot', 'help'), nav('ajustes', 'Información de empresa', 'settings')])}
+        {navGroup('ADMINISTRACIÓN', [nav('cuentas', 'Roles y usuarios', 'user')])}</nav>
       <div className="hp-sidebar-bottom">{navigation.canOpen('configuracion') && <button className={section === 'configuracion' ? 'is-active' : undefined} aria-current={section === 'configuracion' ? 'page' : undefined} onClick={() => go('configuracion')}><PanelIcon name="gear" />Ajustes</button>}<a href="/" target="_blank" rel="noreferrer"><PanelIcon name="arrow" />Visitar sitio web</a><button onClick={() => confirmLeave(() => { logout(); navigate('/admin/login'); })}><PanelIcon name="logout" />Cerrar sesión</button></div>
       <div className="hp-profile"><span className="hp-avatar">{user?.nombre?.charAt(0).toUpperCase()}</span><div><strong>{user?.nombre}</strong><small>{user?.email}</small></div></div>
     </aside>
     <div className="hp-body" inert={mobile && menu}><header className="hp-topbar"><div><button ref={menuButtonRef} className="hp-icon-btn hp-menu-toggle" aria-label={menu ? 'Cerrar menú' : 'Abrir menú'} aria-expanded={menu} aria-controls="panel-sidebar" onClick={() => setMenuLocation(menu ? null : location.key)}><PanelIcon name="menu" /></button><span className="hp-breadcrumb">Mi espacio <span>/</span> <strong>{title}</strong></span></div><div><span className="hp-date"><PanelIcon name="calendar" size={16} />{new Date().toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' })}</span><span className="hp-topbar-divider" /><span className="hp-avatar">{user?.nombre?.charAt(0).toUpperCase()}</span></div></header>
-      <main id="panel-content" className="hp-main" tabIndex={-1}>{!allowed ? <PanelAccessNotice kind={section === 'inicio' ? (navigation.kind === 'sin-rol' ? 'sin-rol' : 'sin-secciones') : 'denegado'} homeTarget={homeTarget} hasHome={!!navigation.home} /> : section === 'resumen' ? <PanelOverview go={go} /> : section === 'convenios' ? <PanelConvenios /> : section === 'configuracion' ? <PanelPreferences /> : section === 'cotizaciones' ? <PanelQuotes /> : section === 'ajustes' ? <PanelSettings /> : section === 'mensajes' ? <MessageInbox /> : section === 'chatbot' ? <PanelChatbot /> :
+      <main id="panel-content" className="hp-main" tabIndex={-1}>{!allowed ? <PanelAccessNotice kind={section === 'inicio' ? (navigation.kind === 'sin-rol' ? 'sin-rol' : 'sin-secciones') : 'denegado'} homeTarget={homeTarget} hasHome={!!navigation.home} /> : section === 'resumen' ? <PanelOverview go={go} /> : section === 'convenios' ? <PanelConvenios /> : section === 'configuracion' ? <PanelPreferences /> : section === 'cotizaciones' ? <PanelQuotes /> : section === 'ajustes' ? <PanelSettings /> : section === 'mensajes' ? <MessageInbox /> : section === 'chatbot' ? <PanelChatbot /> : section === 'cuentas' ? <PanelAccounts /> :
         <ResourceManager key={section + (params.get('crear') || '') + (params.get('estado') || '') + (params.get('vista') || '') + (activeScope ? activeScope.resource + activeScope.key : '')} resource={resources[resourceKey]} autoCreate={params.get('crear') === '1'} scope={activeScope} />}</main>
       <footer className="hp-footer"><span>© {new Date().getFullYear()} Horus Group SRL</span><span>Hecho para conectar tecnología y personas.</span></footer>
     </div>
