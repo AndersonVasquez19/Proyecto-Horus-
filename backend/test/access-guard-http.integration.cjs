@@ -419,10 +419,11 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
         passed(r, key + ' ' + route.label);
         statuses[r.status] = (statuses[r.status] ?? 0) + 1;
       }
-      // Totales independientes (E3.5): de 70 rutas admin no públicas (seguimiento ×2) pasan G 70, C 54, S 14, sin rol 2. Aquí se excluyen
-      // POST admin/register y POST admin/password (límite de frecuencia, probadas aparte) y se añade el recurso «cotizaciones» (denegado).
+      // A las 70 variantes admin no públicas de E3.5 (seguimiento ×2) se añadió PUT admin/users/:id/rol:
+      // exige cuentas:asignar_rol, exclusivo del gerente. Pasan G 71, C 54, S 14, sin rol 2. Aquí se excluyen POST admin/register
+      // y POST admin/password (límite de frecuencia, probadas aparte) y se añade el recurso «cotizaciones» (denegado).
       const count = key => plan.filter(item => item.key === key && item.route.sweep && item.expected === 'pasa').length;
-      assert.deepEqual(ROLE_KEYS.map(count), [68, 53, 13, 1]);
+      assert.deepEqual(ROLE_KEYS.map(count), [69, 53, 13, 1]);
       for (const key of ROLE_KEYS) {
         const own = plan.filter(item => item.key === key && item.route.path.startsWith('admin/seguimiento/cotizaciones/'));
         // Un requisito «denegada» se resuelve antes de mirar el rol: 403 genérico también para la cuenta sin rol.
