@@ -26,7 +26,7 @@ class MatriculasPorEstado extends Widget
 
     protected string $view = 'filament.widgets.matriculas-por-estado';
 
-    protected int | string | array $columnSpan = ['default' => 'full', 'xl' => 2];
+    protected int|string|array $columnSpan = ['default' => 'full', 'xl' => 2];
 
     /**
      * Modificador de color (horus-academic.css) por estado.

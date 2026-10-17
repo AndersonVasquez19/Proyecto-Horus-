@@ -4,6 +4,7 @@ namespace Tests\Feature\Panel;
 
 use App\Models\User;
 use Filament\Auth\Pages\Login;
+use Illuminate\Contracts\Auth\StatefulGuard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
@@ -44,7 +45,7 @@ class SeguridadHttpLivewireTest extends TestCase
     {
         $this->actingAs(User::factory()->administrador()->create());
         $snapshot = $this->snapshotDe('/gestion/estudiantes/create');
-        /** @var \Illuminate\Contracts\Auth\StatefulGuard $guard */
+        /** @var StatefulGuard $guard */
         $guard = auth()->guard('web');
         $guard->logout();
         $this->postJson(Livewire::getUpdateUri(), $this->payload($snapshot), ['X-Livewire' => 'true'])->assertUnauthorized();

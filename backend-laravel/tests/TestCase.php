@@ -2,7 +2,11 @@
 
 namespace Tests;
 
+use Illuminate\Contracts\Config\Repository;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Foundation\Bootstrap\LoadConfiguration;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
@@ -15,9 +19,21 @@ abstract class TestCase extends BaseTestCase
      */
     public function createApplication()
     {
-        $app = parent::createApplication();
+        // Mismo arranque que Laravel 13, con un entorno vacío antes del bootstrap.
+        $app = require __DIR__.'/../bootstrap/app.php';
+        $app->useEnvironmentPath(__DIR__)->loadEnvironmentFrom('.env.phpunit');
+        $this->traitsUsedByTest = class_uses_recursive(static::class);
+        $app->afterBootstrapping(LoadConfiguration::class, function ($app): void {
+            $this->assertIsolatedDatabase($app['config']);
+        });
+        $app->make(Kernel::class)->bootstrap();
+        Http::preventStrayRequests();
 
-        $config = $app['config'];
+        return $app;
+    }
+
+    private function assertIsolatedDatabase(Repository $config): void
+    {
         $conexion = $config->get('database.default');
         $driver = $config->get("database.connections.{$conexion}.driver");
         $base = $config->get("database.connections.{$conexion}.database");
@@ -28,6 +44,5 @@ abstract class TestCase extends BaseTestCase
             );
         }
 
-        return $app;
     }
 }

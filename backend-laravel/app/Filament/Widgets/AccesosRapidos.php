@@ -30,7 +30,7 @@ class AccesosRapidos extends Widget
 
     protected string $view = 'filament.widgets.accesos-rapidos';
 
-    protected int | string | array $columnSpan = ['default' => 'full', 'xl' => 1];
+    protected int|string|array $columnSpan = ['default' => 'full', 'xl' => 1];
 
     /**
      * @return array<string, mixed>

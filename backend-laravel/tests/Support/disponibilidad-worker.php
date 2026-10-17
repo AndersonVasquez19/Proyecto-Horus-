@@ -23,6 +23,7 @@ if (! is_file($base)) {
 }
 
 $app = require __DIR__.'/../../bootstrap/app.php';
+$app->useEnvironmentPath(__DIR__.'/..')->loadEnvironmentFrom('.env.phpunit');
 $app->afterBootstrapping(LoadConfiguration::class, function ($app) use ($base): void {
     $app['config']->set('database.default', 'sqlite');
     $app['config']->set('database.connections.sqlite.url', null);

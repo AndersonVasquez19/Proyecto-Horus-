@@ -36,7 +36,7 @@ class ResumenAcademico extends StatsOverviewWidget
     protected ?string $heading = 'Resumen académico';
 
     /** 1 columna en móvil, 2 en tablet y 4 en escritorio (consultas de contenedor de Filament). */
-    protected int | array | null $columns = ['@md' => 2, '@4xl' => 4, '!@md' => 2, '!@xl' => 4];
+    protected int|array|null $columns = ['@md' => 2, '@4xl' => 4, '!@md' => 2, '!@xl' => 4];
 
     protected function getStats(): array
     {
