@@ -3,6 +3,7 @@
 // Antes del autoload y del arranque de Laravel: nunca heredar destinos reales.
 $environment = [
     'APP_ENV' => 'testing',
+    'HORUS_PUBLIC_AUTH_ENABLED' => 'true',
     'APP_DEBUG' => 'false',
     'APP_KEY' => 'base64:'.base64_encode(random_bytes(32)),
     'APP_CONFIG_CACHE' => __DIR__.'/../storage/framework/testing/config-'.bin2hex(random_bytes(16)).'.php',

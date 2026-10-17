@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Schema;
 
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'remember_token'])]
@@ -32,7 +33,7 @@ class User extends Authenticatable implements FilamentUser
             return false;
         }
 
-        if (! SeguridadPanel::activa()) {
+        if (! SeguridadPanel::activa() && ! Schema::hasColumns($this->getTable(), ['rol', 'activo'])) {
             // Compatibilidad temporal del entorno local aún sin migrar.
             return true;
         }

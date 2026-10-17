@@ -20,6 +20,12 @@ return [
 
     'driver' => env('SESSION_DRIVER', 'database'),
 
+    // Al compartir sesión con React, también Filament/Livewire deben esperar:
+    // una respuesta tardía no puede recrear la sesión eliminada por logout.
+    'block' => env('HORUS_PUBLIC_AUTH_ENABLED', false),
+    'block_lock_seconds' => 120,
+    'block_wait_seconds' => 10,
+
     /*
     |--------------------------------------------------------------------------
     | Session Lifetime
