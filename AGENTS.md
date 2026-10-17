@@ -4,6 +4,8 @@
 
 Esta guía define cómo trabajar en el sitio público, el panel administrativo y la API de Horus Group SRL. Aplica a todo el repositorio; las instrucciones de un `AGENTS.md` más cercano al archivo pueden precisar las de su carpeta. Las instrucciones explícitas del usuario y las del entorno de ejecución tienen prioridad.
 
+Las reglas generales también se aplican a `backend-laravel/`; sus archivos `AGENTS.md` y `CLAUDE.md` las complementan para Laravel, cuyo ORM principal es Eloquent. Las indicaciones de NestJS/Prisma y React/npm corresponden a `backend/` y `frontend/`, respectivamente. No instales Laravel Boost ni herramientas automáticamente, ni modifiques proyectos vecinos fuera del alcance autorizado. Las migraciones y los cambios de datos requieren autorización explícita y comprobación del destino.
+
 El objetivo es entregar cambios completos, verificables y proporcionados a la tarea, conservando los datos y el comportamiento que no se haya solicitado modificar. Market queda fuera del alcance de este proyecto y no debe reintroducirse en el frontend público salvo decisión futura explícita. No añadas compras, pagos ni inscripciones automáticas sin una solicitud explícita.
 
 ## Forma de trabajo
@@ -43,13 +45,13 @@ El objetivo es entregar cambios completos, verificables y proporcionados a la ta
 | `.github/workflows/ci.yml` | CI (solo comprueba, no despliega): tipos, pruebas, lint y build de ambos paquetes, integración con MySQL efímero y smokes manuales. Detalle y límites en [docs/procedimientos/ci.md](docs/procedimientos/ci.md) |
 | `docker-compose.local.yml`, `.env.docker.example` | Entorno local (sitio, API, MySQL) con Docker Compose; no es producción. Guía: [docs/procedimientos/docker-local.md](docs/procedimientos/docker-local.md). `.env.docker` real no se versiona |
 
-Hay dos paquetes npm independientes, cada uno con su `package-lock.json`. No existe un paquete npm en la raíz. Ejecuta las comprobaciones con la configuración de cada paquete; el `tsconfig.json` de la raíz no comprueba el frontend.
+`backend/` y `frontend/` son dos paquetes npm independientes, cada uno con su `package-lock.json`. No existe un paquete npm en la raíz. `backend-laravel/` se reconstruye con Composer y su `composer.lock`; consulta su README para los recursos estáticos y el uso opcional de npm. Ejecuta las comprobaciones con la configuración de cada paquete; el `tsconfig.json` de la raíz no comprueba el frontend ni Laravel.
 
 El despliegue en Railway se documenta en [RAILWAY.md](RAILWAY.md). Cada paquete tiene su `Dockerfile` y `.dockerignore`; `frontend/Caddyfile` sirve React y redirige `/api` al backend privado mediante `BACKEND_UPSTREAM`. La inicialización de MySQL es explícita, fuera de la compilación y del arranque.
 
 ## Entorno y comandos
 
-Usa npm y respeta los lockfiles. Ambos paquetes declaran Node.js 22.x; verifica la versión y los requisitos de las dependencias antes de instalar. Ejecuta cada comando desde la carpeta indicada. No instales dependencias si las existentes permiten realizar la tarea.
+En `backend/` y `frontend/`, usa npm y respeta los lockfiles. Ambos paquetes declaran Node.js 22.x; verifica la versión y los requisitos de las dependencias antes de instalar. Ejecuta cada comando desde la carpeta indicada. No instales dependencias si las existentes permiten realizar la tarea.
 
 ### Desarrollo y comprobaciones
 

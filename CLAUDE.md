@@ -4,6 +4,8 @@ Responde siempre en español, incluidas las explicaciones, los resúmenes y los 
 
 `AGENTS.md` describe la arquitectura, las tecnologías, los comandos y las convenciones técnicas del repositorio: léelo antes de trabajar y no lo dupliques aquí. Este archivo fija **cómo trabajar**: método, seguridad operativa, pruebas, procesos, Git e informes. Si ambos se contradicen, aplica la regla más restrictiva en seguridad y avisa de la contradicción. Las instrucciones explícitas del usuario tienen prioridad sobre los dos.
 
+Estas reglas generales abarcan todo el proyecto. En `backend-laravel/`, sus `AGENTS.md` y `CLAUDE.md` las complementan: Eloquent es el ORM principal de Laravel; las instrucciones de Prisma/NestJS y React/npm se limitan a sus paquetes. No instales Laravel Boost ni herramientas automáticamente ni modifiques proyectos vecinos fuera del alcance autorizado. Tampoco ejecutes migraciones o cambios de datos sin autorización explícita y destino comprobado; los commits y pushes siguen requiriendo autorización explícita.
+
 ## 1. Comunicación
 
 - Sé claro, concreto y profesional; explica las decisiones que importan y evita mensajes de progreso repetitivos.
@@ -57,7 +59,7 @@ Aplica estas reglas donde corresponda, no a todos los módulos:
 
 ## 7. Dependencias y despliegue
 
-- No añadas bibliotecas sin justificar su necesidad ni actualices versiones en bloque. Respeta Node 22.x y los lockfiles.
+- No añadas bibliotecas sin justificar su necesidad ni actualices versiones en bloque. Respeta Node 22.x en `backend/` y `frontend/`, y los requisitos y lockfiles propios de cada paquete; Laravel usa Composer.
 - No modifiques Docker, Railway, Caddy ni variables de producción fuera del alcance, y no ejecutes despliegues reales sin autorización. Una prueba local no equivale a validar un despliegue.
 - Documenta las variables de entorno necesarias sin incluir secretos.
 
