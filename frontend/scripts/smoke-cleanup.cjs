@@ -17,6 +17,23 @@ function verifyProfile(profile, identity) {
   if (stat.isSymbolicLink() || stat.ino !== identity.ino || stat.dev !== identity.dev) throw new Error('El perfil temporal fue sustituido.');
 }
 
+// Windows deja el directorio «pendiente de eliminar» unos segundos tras cerrar Edge y responde
+// EPERM/EACCES; el rmSync nativo de Node 23+ no reintenta ese caso (Node 22 sí). Reintento
+// síncrono y acotado, solo sobre el perfil propio y verificando su identidad en cada intento.
+const RETRYABLE_REMOVE = new Set(['EPERM', 'EACCES', 'EBUSY', 'ENOTEMPTY']);
+function removeProfile(profile, identity, deadline = Date.now() + 15000) {
+  for (;;) {
+    verifyProfile(profile, identity);
+    try {
+      fs.rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+      return;
+    } catch (error) {
+      if (!RETRYABLE_REMOVE.has(error.code) || Date.now() >= deadline) throw error;
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+  }
+}
+
 // Síncrono deliberadamente: los smokes llaman process.exit(), también al fallar.
 // Un callback async de exit no podría esperar a procesos ni bloqueos de archivos.
 function registerSmokeCleanup(child, profile, server) {
@@ -68,8 +85,7 @@ function registerSmokeCleanup(child, profile, server) {
       } catch (error) { browserFailure = error; throw error; }
     }
     server?.close();
-    verifyProfile(profile, identity);
-    fs.rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    removeProfile(profile, identity);
     disposed = true;
     profiles.delete(profile);
     process.removeListener('exit', onExit);

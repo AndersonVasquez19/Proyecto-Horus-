@@ -69,6 +69,19 @@ parámetro desconocido o inválido → 400 `{ ok: false, mensaje: [...] }`; tabl
 503 neutro. La búsqueda es literal (`%`, `_` y `!` no actúan como comodines). Las fechas usan el
 formato de Prisma (`2026-11-02T00:00:00.000Z`). Ninguna otra ruta `/api` cambia.
 
+## React (preparado, no conectado)
+
+`frontend/src/contentSource.ts` decide el origen de cada lectura pública. Sin variables, todo va a
+NestJS como antes; con `VITE_CONTENT_PROVIDER=laravel` y `VITE_CONTENT_API_BASE_URL` (URL
+absoluta terminada en `/api/contenido`, HTTPS en Vercel), **solo los GET** de los seis recursos van
+a Laravel. Formularios, sesión, chatbot, panel e imágenes (`/api/uploads`, servidas por NestJS)
+no cambian. Una configuración incompleta detiene el build. No hay cambios visuales.
+
+Verificación local realizada: Laravel servido con una SQLite temporal y contenido ficticio, React
+compilado con `laravel` y Edge sin interfaz: Educación (cursos y capacitaciones), Preguntas
+frecuentes, Home (convenios) y los datos institucionales salieron de Laravel y los borradores
+no aparecieron.
+
 ## Activación futura (cada paso requiere autorización)
 
 1. Roles: aprobado (solo `administrador_general` activo). Confirmar qué cuenta concreta lo tendrá.
