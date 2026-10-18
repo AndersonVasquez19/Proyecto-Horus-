@@ -30,7 +30,7 @@ final class TrasladoSqliteMysql
     ];
 
     /** Bases que nunca son destino válido (NestJS y sistema). */
-    public const BASES_PROHIBIDAS = ['horus_db', 'mysql', 'sys', 'information_schema', 'performance_schema'];
+    public const BASES_PROHIBIDAS = ['horus_db', 'horus_local', 'mysql', 'sys', 'information_schema', 'performance_schema'];
 
     /** Tablas que delatan la base de NestJS (horus_db o una copia). */
     public const TABLAS_NESTJS = ['admin_users', 'horus_migrations', 'empresa_settings', 'contactos', 'attention_records'];
@@ -143,11 +143,19 @@ final class TrasladoSqliteMysql
             throw new TrasladoException("La base «{$base}» no puede ser destino del traslado.");
         }
 
+        if (! DestinoMysqlLaravel::nombrePermitido($base)) {
+            throw new TrasladoException('Use un nombre de base exclusivo de Laravel: horus_group o la base aislada horus_laravel_it_<hex>.');
+        }
+
         $tablas = $this->tablasDestino();
         $nest = array_values(array_intersect(self::TABLAS_NESTJS, array_keys($tablas)));
 
         if ($nest !== []) {
             throw new TrasladoException('El destino contiene tablas de NestJS ('.implode(', ', $nest).'). Use una base exclusiva para Laravel.');
+        }
+
+        if (DestinoMysqlLaravel::tablasAjenas(array_keys($tablas)) !== []) {
+            throw new TrasladoException('El destino contiene tablas ajenas a Laravel. Use una base exclusiva para Laravel.');
         }
 
         if (! isset($tablas['migrations'])) {
@@ -167,7 +175,7 @@ final class TrasladoSqliteMysql
     private function tablasDestino(): array
     {
         $filas = $this->destino->select(
-            "SELECT TABLE_NAME AS t, ENGINE AS e FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'"
+            'SELECT TABLE_NAME AS t, ENGINE AS e FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()'
         );
 
         return array_column(array_map(fn (object $f): array => ['t' => $f->t, 'e' => (string) $f->e], $filas), 'e', 't');

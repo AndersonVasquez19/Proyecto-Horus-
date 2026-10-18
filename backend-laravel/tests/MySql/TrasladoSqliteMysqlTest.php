@@ -149,6 +149,35 @@ class TrasladoSqliteMysqlTest extends MysqlTestCase
         $this->assertDestinoVacio();
     }
 
+    public function test_ensayo_opcional_de_una_copia_privada_previamente_verificada(): void
+    {
+        $copia = (string) getenv('HORUS_MYSQL_REHEARSAL_COPY');
+        if ($copia === '') {
+            $this->markTestSkipped('Ensayo de copia privada opcional; no se lee la SQLite habitual.');
+        }
+        $ruta = realpath($copia);
+        $habitual = realpath(database_path('database.sqlite'));
+        $this->assertNotFalse($ruta);
+        $this->assertNotSame($habitual, $ruta);
+        $this->assertSame((string) getenv('HORUS_MYSQL_REHEARSAL_SHA256'), hash_file('sha256', $ruta));
+        $this->origen = $ruta;
+        $huella = hash_file('sha256', $ruta);
+
+        [$codigo] = $this->trasladar();
+        $this->assertSame(0, $codigo, 'El simulacro de la copia privada falló; no imprimir datos del origen.');
+        $this->assertDestinoVacio();
+        [$codigo] = $this->trasladar(['--aplicar' => true, '--yes' => true, '--informe' => $this->directorio.'/privado.json']);
+        $this->assertSame(0, $codigo, 'El traslado temporal de la copia privada falló.');
+        $informe = json_decode(file_get_contents($this->directorio.'/privado.json'), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame([], $informe['avisos']);
+        foreach ($informe['tablas'] as $tabla => $datos) {
+            $this->assertSame($datos['filas'], DB::table($tabla)->count());
+        }
+        $this->assertSame($huella, hash_file('sha256', $ruta));
+        [$codigo] = $this->trasladar(['--aplicar' => true, '--yes' => true]);
+        $this->assertSame(1, $codigo, 'Una segunda aplicación debe rechazar el destino poblado.');
+    }
+
     public function test_aborta_y_revierte_si_mysql_considera_duplicados_dos_nombres_distintos_en_sqlite(): void
     {
         $this->enOrigen(function (): void {
@@ -192,6 +221,11 @@ class TrasladoSqliteMysqlTest extends MysqlTestCase
         $this->assertSame(1, $codigo);
         $this->assertStringContainsString('«horus_db» no puede ser destino', $salida);
 
+        config(['database.connections.ajena' => array_replace(config('database.connections.mysql'), ['database' => 'contabilidad'])]);
+        [$codigo, $salida] = $this->trasladar(['--destino' => 'ajena', '--aplicar' => true, '--yes' => true]);
+        $this->assertSame(1, $codigo);
+        $this->assertStringContainsString('nombre de base exclusivo de Laravel', $salida);
+
         DB::statement('CREATE TABLE admin_users (id int primary key)');
         [$codigo, $salida] = $this->trasladar(['--aplicar' => true, '--yes' => true]);
         $this->assertSame(1, $codigo);
@@ -209,6 +243,19 @@ class TrasladoSqliteMysqlTest extends MysqlTestCase
         $this->assertSame(1, $codigo);
         $this->assertStringContainsString('No se encontró la base SQLite', $salida);
         $this->assertDestinoVacio();
+    }
+
+    public function test_rechaza_tablas_ajenas_incluso_vacias(): void
+    {
+        DB::statement('CREATE TABLE contabilidad_externa (id int primary key) ENGINE=InnoDB');
+        try {
+            [$codigo, $salida] = $this->trasladar(['--aplicar' => true, '--yes' => true]);
+            $this->assertSame(1, $codigo, $salida);
+            $this->assertStringContainsString('tablas ajenas a Laravel', $salida);
+            $this->assertDestinoVacio();
+        } finally {
+            DB::statement('DROP TABLE contabilidad_externa');
+        }
     }
 
     /**

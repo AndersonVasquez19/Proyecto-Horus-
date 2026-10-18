@@ -1,36 +1,54 @@
 # Activación de Laravel: MySQL propio, traslado y contenido público
 
-Estado: **procedimiento preparado, nada ejecutado**. Cada bloque (A–E) requiere una
-autorización expresa y un destino comprobado. Complementa [mysql-traslado.md](mysql-traslado.md)
+Estado: **activación pendiente; respaldo y ensayo aislado ejecutados**. Los cambios sobre
+bases habituales de cada bloque (A–E) requieren autorización expresa y destino comprobado.
+Resultados y límites en [preparacion-mysql-resultados.md](preparacion-mysql-resultados.md).
+Complementa [mysql-traslado.md](mysql-traslado.md)
 y [contenido-publico.md](contenido-publico.md); no repite sus detalles.
 
 Reglas comunes a todos los pasos:
 
-- Nunca usar `horus_db` como destino ni modificar sus datos. NestJS sigue en servicio hasta el paso E.
+- El nombre definitivo es `horus_group`, base MySQL independiente para Laravel, Filament
+  y Eloquent ORM. En los ejemplos de configuración se usa `DB_DATABASE=horus_group`.
+- Nunca usar `horus_db` ni `horus_local` como destino de Laravel. NestJS sigue en servicio;
+  el paso E solo cambia la fuente de contenido de React, no retira NestJS ni sus demás API.
 - No mostrar contraseñas ni claves en consola, capturas o informes. Usar `php artisan config:clear`
   tras editar un `.env` y no cachear configuración durante la ventana de cambio.
 - Antes de cada paso: respaldo verificado. Después: comprobación y anotación del resultado.
 - Si una comprobación falla, detenerse y volver al estado anterior; no corregir datos a mano.
+- Traslado e importador admiten `horus_group` y conservan `horus_laravel_it_<16 hex>`
+  exclusivamente para pruebas desechables. Rechazan `horus_laravel` como base definitiva
+  y cualquier destino con tablas ajenas a Laravel, incluso vacías. Esta preparación no
+  crea ni conecta la base definitiva ni cambia el `.env` habitual.
 
 ## A. Base MySQL independiente para Laravel
 
-1. **Decidir el servidor** (autorización): local (contenedor `horus-local-mysql-1`, que también
-   aloja `horus_db`) o un servicio MySQL 8.4 nuevo en Railway. Recomendado: servicio propio en
+1. **Decidir el servidor** (autorización): local (confirmar bases existentes y UUID del
+   contenedor `horus-local-mysql-1`, sin asumir que aloja `horus_db`) o un servicio MySQL 8.4
+   nuevo en Railway. Recomendado: servicio propio en
    producción; en local, una base separada en el mismo servidor es aceptable.
-2. Crear la base y un usuario exclusivo, con permisos **solo** sobre ella:
+2. Tras autorización, un operador crea `horus_group` con `utf8mb4_unicode_ci` y cuentas
+   exclusivas. Antes comprueba host, puerto, `@@server_uuid`, versión 8.4, inexistencia del
+   destino y qué base usa NestJS. **No se incluye un bloque SQL ejecutable de creación.**
+   No reutilizar root ni la cuenta de NestJS y no conceder privilegios globales.
 
-   ```sql
-   CREATE DATABASE horus_laravel CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-   CREATE USER 'horus_laravel_app'@'%' IDENTIFIED BY '<definir en el destino>';
-   GRANT ALL PRIVILEGES ON horus_laravel.* TO 'horus_laravel_app'@'%';
-   ```
+   | Cuenta | Privilegios únicamente en `horus_group.*` | Uso |
+   | --- | --- | --- |
+   | Aplicación | SELECT, INSERT, UPDATE, DELETE | `.env` habitual tras activar |
+   | Operador de migración y traslado | Los anteriores más CREATE, ALTER, DROP, INDEX, REFERENCES | Ventana autorizada; credenciales privadas separadas de la aplicación |
 
-   Restringir el host (`'%'`) a la red privada del servicio en producción.
+   Restringir el host al cliente/red autorizados. No conceder GRANT OPTION, CREATE USER,
+   FILE ni permisos sobre `horus_db` o `horus_local`. El traslado puede necesitar ALTER
+   para conservar las secuencias; revisar que el informe no tenga avisos y retirar la
+   cuenta operadora de la configuración de ejecución al finalizar.
 3. Preparar el `.env` de Laravel según [mysql-traslado.md](mysql-traslado.md) (con `DB_TIMEZONE=+00:00`),
    **sin** activar todavía `HORUS_CONTENIDO_*`.
 4. Revisar el SQL sin ejecutarlo: `php artisan migrate --pretend`. Luego, con autorización:
    `php artisan migrate --force` y `php artisan migrate:status` (todas en `Ran`).
-5. Comprobar: `php artisan db:show` indica `horus_laravel`, MySQL 8.4 y tablas InnoDB.
+5. Comprobar conexión efectiva (incluido `DB_URL`, que debe estar ausente),
+   `SELECT DATABASE(), @@server_uuid, @@session.time_zone`, MySQL 8.4, InnoDB, restricciones,
+   migraciones y permisos. Exigir base `horus_group` y zona `+00:00` antes de escribir.
+   No volcar `.env`, `db:show` completo ni configuraciones con secretos a los informes.
 
 Vuelta atrás: restaurar el `.env` anterior (SQLite) y `config:clear`. La base vacía puede
 eliminarse solo con autorización.
@@ -38,10 +56,10 @@ eliminarse solo con autorización.
 ## B. Respaldo y traslado de los datos académicos desde SQLite
 
 1. Avisar a los usuarios y **detener Laravel** (panel `/gestion` y API) para que no haya escrituras.
-2. Respaldo: copiar `database/database.sqlite` y, si existen, `-wal` y `-shm` a una ruta fuera del
-   repositorio; anotar el SHA-256 (`Get-FileHash -Algorithm SHA256`). Abrir la copia con
-   `sqlite3 copia.sqlite "PRAGMA integrity_check;"` (debe responder `ok`). Cifrar la copia: contiene
-   datos personales y hashes.
+2. Crear un respaldo **nuevo** con `scripts/backup-sqlite.php`, según
+   [mysql-traslado.md](mysql-traslado.md). El respaldo de un ensayo anterior no reemplaza
+   la instantánea de la ventana definitiva. Verificar manifiesto, restauración e integridad;
+   guardar fuera del repositorio, restringir ACL y cifrar antes de transportarlo.
 3. Simulacro sobre la base de A (copia, verifica y revierte):
    `php artisan horus:trasladar-sqlite-mysql --origen=<copia.sqlite>`
 4. Aplicación (autorización expresa):
@@ -55,12 +73,16 @@ existen en SQLite: decidir antes de volver.
 
 ## C. Migración del contenido público desde NestJS
 
-No existe todavía un importador: debe diseñarse, probarse con fixtures y autorizarse aparte
-(comando propuesto `horus:importar-contenido-nestjs`, con el mismo patrón que el traslado).
+Existe un importador **offline**, probado solo con fixtures:
+`horus:importar-contenido-nestjs`. No se conecta a NestJS ni exporta datos de MySQL.
+Contrato, restricciones y uso en [importacion-contenido.md](importacion-contenido.md).
+Su ejecución con datos reales y la extracción del intercambio siguen pendientes de autorización.
 
 1. Respaldo de `horus_db` con el script de solo lectura `npm run db:backup` (en `backend/`).
 2. Usuario MySQL de **solo lectura** (`SELECT` únicamente sobre las tablas de contenido de `horus_db`).
-3. Congelar la edición de contenido en el panel React durante la ventana.
+3. Congelar la edición de contenido en el panel React durante la extracción/importación
+   y mantener esa congelación hasta decidir la fuente única de E. Antes de una carga final
+   tampoco debe haber editores Filament; no aceptar cambios en ambas bases en paralelo.
 4. Correspondencia (conservando ids, `slug`, `orden` y fechas para no romper enlaces):
 
    | NestJS (`horus_db`) | Laravel | Notas |
@@ -75,7 +97,8 @@ No existe todavía un importador: debe diseñarse, probarse con fixtures y autor
 5. **Imágenes**: conservar las URL tal cual. Las rutas `/api/uploads/<uuid>.<ext>` siguen sirviéndose
    desde `UPLOAD_DIR` de NestJS, así que no se copian archivos. El importador debe validar cada URL
    con `App\Rules\ImagenPublica`, comprobar (solo lectura) que el archivo existe y **detenerse** ante
-   cualquier URL rechazada o archivo ausente, sin importar nada.
+   cualquier URL rechazada o archivo ausente, sin importar nada. El importador actual rechaza
+   URL absolutas remotas: requieren una verificación posterior antes de ampliar su admisión.
 6. Ejecución en simulacro (escribe, verifica recuentos y firmas por tabla, revierte) y después con
    `--aplicar`, en una sola transacción.
 7. Verificación: recuentos por estado iguales en ambas bases y comparación de las respuestas de
@@ -112,12 +135,13 @@ Nunca dejar la web leyendo de Laravel y el chatbot de `horus_db` con ediciones a
 | 4 | Build de vista previa con `VITE_CONTENT_PROVIDER=laravel` y `VITE_CONTENT_API_BASE_URL` | Smokes (`smoke-home`, `smoke-ui`, `smoke-global-content`, `smoke:chatbot`) y revisión manual | Descartar la vista previa |
 | 5 | Chatbot alineado (D) | Respuestas basadas en Laravel | Revertir el despliegue del chatbot |
 | 6 | Build de producción con Laravel | Seguimiento de errores y tiempos | Build sin `VITE_CONTENT_PROVIDER` (vuelve a NestJS) |
-| 7 | Congelar la edición de contenido en el panel React | Una sola fuente editable | Reabrir la edición en NestJS |
+| 7 | Confirmar que continúa congelada la edición de contenido en el panel React desde C | Una sola fuente editable | Reabrirla solo tras decidir cómo conservar cambios hechos en Laravel |
 
 ## Autorizaciones pendientes
 
-1. Servidor y credenciales de la base `horus_laravel` (A) y su migración.
+1. Servidor y credenciales de la base `horus_group` (A) y su migración.
 2. Ventana de parada, respaldo y traslado real desde SQLite (B).
-3. Diseño e implementación del importador desde NestJS y su ejecución (C).
+3. Extracción autorizada del intercambio y verificación de imágenes; ejecución del importador
+   con contenido real (C). La implementación offline y las pruebas ficticias ya están autorizadas.
 4. Cambio del chatbot en `backend/` (D).
 5. Cada paso de E, incluida la cuenta concreta con `administrador_general`.

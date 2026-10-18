@@ -166,6 +166,13 @@ Grupo de menú **Gestión académica**:
 
 Grupo **Contenido web** (desactivado por defecto; ver [docs/contenido-publico.md](docs/contenido-publico.md)): catálogo de Educación, servicios, preguntas frecuentes, galería, convenios con fotos y datos institucionales, más la API pública de solo lectura `/api/contenido/*` para la web React.
 
+Preparación sin activación: `php scripts/backup-sqlite.php --origen=<SQLite> --directorio=<carpeta-privada-externa>`
+crea y verifica un respaldo nativo con restauración temporal; procedimiento en
+[docs/mysql-traslado.md](docs/mysql-traslado.md). El comando offline
+`horus:importar-contenido-nestjs` está probado con fixtures y exige destino MySQL confirmado;
+contrato y límites en [docs/importacion-contenido.md](docs/importacion-contenido.md).
+Ninguno autoriza el cambio de `.env`, migraciones habituales ni importación de datos reales.
+
 ## Pruebas
 
 La suite incluye `tests/Feature/Academico` (reglas de modelo y base de datos, historial, aislamiento y concurrencia), `tests/Feature/Panel` (acceso, roles, revocación HTTP/Livewire, formularios, acciones y tema), `tests/Feature/Contenido` (modelos, panel y API del contenido público) y `tests/Unit`. `tests/MySql` es opcional y solo se ejecuta contra un MySQL desechable con `scripts/test-mysql.ps1`. Ejecutar el comando aislado indicado arriba; los resultados históricos de los documentos no sustituyen una ejecución en el nuevo equipo.

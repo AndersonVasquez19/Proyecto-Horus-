@@ -9,7 +9,7 @@
  * - HORUS_MYSQL_IT_USER y HORUS_MYSQL_IT_PASSWORD_FILE (archivo con la contraseña; nunca se imprime)
  * - HORUS_MYSQL_IT_SERVER_UUID: @@server_uuid del contenedor creado para la prueba
  *
- * Se aborta si el servidor contiene horus_db. La ejecución crea su propia base
+ * Se aborta si el servidor contiene horus_db, horus_local o horus_group. La ejecución crea su propia base
  * horus_laravel_it_<hex> y la elimina al terminar; no toca ninguna otra.
  */
 
@@ -53,8 +53,8 @@ try {
         $fallar('el server_uuid no coincide: no es el servidor desechable indicado.');
     }
 
-    if ($pdo->query("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = 'horus_db'")->fetchColumn() > 0) {
-        $fallar('el servidor contiene horus_db (NestJS); use un servidor exclusivo para pruebas.');
+    if ($pdo->query("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME IN ('horus_db', 'horus_local', 'horus_group')")->fetchColumn() > 0) {
+        $fallar('el servidor contiene horus_db, horus_local o horus_group; use un servidor exclusivo para pruebas.');
     }
 
     $pdo->exec("CREATE DATABASE `{$base}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");

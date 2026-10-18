@@ -86,8 +86,9 @@ no aparecieron.
 
 1. Roles: aprobado (solo `administrador_general` activo). Confirmar qué cuenta concreta lo tendrá.
 2. Migrar la base de Laravel destino (preferiblemente ya en MySQL: [mysql-traslado.md](mysql-traslado.md)).
-3. Cargar el contenido real desde `/gestion` con `HORUS_CONTENIDO_PANEL=true` (no hay importador
-   desde `horus_db`; si se quiere, debe diseñarse y autorizarse aparte).
+3. Con autorización, cargar contenido real desde `/gestion` o mediante el
+   [importador offline](importacion-contenido.md), probado con fixtures. La extracción desde
+   NestJS y la aplicación real siguen pendientes; no activar `HORUS_CONTENIDO_PANEL` todavía.
 4. Exponer Laravel en HTTPS y activar `HORUS_CONTENIDO_API=true`.
 5. Compilar React con `VITE_CONTENT_PROVIDER=laravel` y la URL pública, y revisar el sitio.
 
