@@ -25,6 +25,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        RateLimiter::for('contenido-publico', fn (Request $request) => Limit::perMinute((int) config('contenido-publico.peticiones_por_minuto', 120))->by('contenido:'.$request->ip()));
         RateLimiter::for('public-register', fn (Request $request) => Limit::perMinute(5)->by('register:'.$request->ip()));
         RateLimiter::for('public-login', function (Request $request): array {
             $email = $request->input('email');

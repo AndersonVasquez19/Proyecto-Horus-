@@ -164,9 +164,11 @@ Grupo de menú **Gestión académica**:
 - **Matrículas**: alta, búsqueda, filtros por estado, curso y edición, y acción «Cambiar estado» (solo ofrece las transiciones permitidas).
 - **Escritorio**: totales reales de estudiantes, cursos activos, ediciones y matrículas, y matrículas por estado, con mensajes claros cuando no hay datos.
 
+Grupo **Contenido web** (desactivado por defecto; ver [docs/contenido-publico.md](docs/contenido-publico.md)): catálogo de Educación, servicios, preguntas frecuentes, galería, convenios con fotos y datos institucionales, más la API pública de solo lectura `/api/contenido/*` para la web React.
+
 ## Pruebas
 
-La suite incluye `tests/Feature/Academico` (reglas de modelo y base de datos, historial, aislamiento y concurrencia), `tests/Feature/Panel` (acceso, roles, revocación HTTP/Livewire, formularios, acciones y tema) y `tests/Unit`. `tests/MySql` es opcional y solo se ejecuta contra un MySQL desechable con `scripts/test-mysql.ps1`. Ejecutar el comando aislado indicado arriba; los resultados históricos de los documentos no sustituyen una ejecución en el nuevo equipo.
+La suite incluye `tests/Feature/Academico` (reglas de modelo y base de datos, historial, aislamiento y concurrencia), `tests/Feature/Panel` (acceso, roles, revocación HTTP/Livewire, formularios, acciones y tema), `tests/Feature/Contenido` (modelos, panel y API del contenido público) y `tests/Unit`. `tests/MySql` es opcional y solo se ejecuta contra un MySQL desechable con `scripts/test-mysql.ps1`. Ejecutar el comando aislado indicado arriba; los resultados históricos de los documentos no sustituyen una ejecución en el nuevo equipo.
 
 ## Pendiente (siguientes entregas)
 
@@ -176,4 +178,4 @@ La suite incluye `tests/Feature/Academico` (reglas de modelo y base de datos, hi
 - Emisión y verificación de certificados (usará el estado `Culminado`).
 - Administración de usuarios desde una interfaz específica; la seguridad por roles ya está implementada y el acceso requiere rol y estado autorizados cuando está activa.
 - Base MySQL definitiva y traslado real desde SQLite (preparado y probado en desechable; requiere autorización).
-- Integración con el frontend React, chatbot y Resend (siguen en `backend/`, sin cambios).
+- Activar el contenido público (panel, API y proveedor de React; gestión aprobada solo para `administrador_general`) y subir imágenes desde Laravel; chatbot y Resend siguen en `backend/`, sin cambios.

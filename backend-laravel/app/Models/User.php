@@ -49,6 +49,27 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * Gestión del contenido público de la web desde /gestion. Desactivada mientras
+     * no se habilite expresamente (config/contenido-publico.php) y limitada a la
+     * administración general (RolUsuario::gestionaContenidoPublico). Sin modo
+     * heredado: exige siempre rol y cuenta activa persistidos.
+     */
+    public function puedeGestionarContenidoPublico(): bool
+    {
+        if (config('contenido-publico.panel_habilitado') !== true || ! $this->exists
+            || ! Schema::hasColumns($this->getTable(), ['rol', 'activo'])) {
+            return false;
+        }
+
+        $actual = $this->newQuery()->whereKey($this->getKey())->first(['rol', 'activo']);
+        $rol = $actual?->getRawOriginal('rol');
+
+        return $actual?->activo === true
+            && is_string($rol)
+            && (RolUsuario::tryFrom($rol)?->gestionaContenidoPublico() ?? false);
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

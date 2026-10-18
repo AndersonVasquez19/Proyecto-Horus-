@@ -4,6 +4,10 @@ namespace Tests\MySql;
 
 use App\Enums\EstadoMatricula;
 use App\Enums\RolUsuario;
+use App\Models\AjustePublico;
+use App\Models\CatalogoCurso;
+use App\Models\Convenio;
+use App\Models\ConvenioFoto;
 use App\Models\Curso;
 use App\Models\Edicion;
 use App\Models\Estudiante;
@@ -75,7 +79,8 @@ class TrasladoSqliteMysqlTest extends MysqlTestCase
         $this->assertStringContainsString('Traslado aplicado y verificado', $salida);
         $this->assertSame($huella, hash_file('sha256', $this->origen), 'El origen no debe cambiar.');
 
-        foreach (['users' => 3, 'estudiantes' => 4, 'cursos' => 2, 'ediciones' => 2, 'matriculas' => 3, 'matricula_movimientos' => 5] as $tabla => $filas) {
+        foreach (['users' => 3, 'estudiantes' => 4, 'cursos' => 2, 'ediciones' => 2, 'matriculas' => 3, 'matricula_movimientos' => 5,
+            'catalogo_cursos' => 1, 'convenios' => 1, 'convenio_fotos' => 1, 'ajustes_publicos' => 1] as $tabla => $filas) {
             $this->assertSame($filas, DB::table($tabla)->count(), $tabla);
         }
         $this->assertSame(0, DB::table('sessions')->count(), 'Las sesiones no se trasladan.');
@@ -98,6 +103,10 @@ class TrasladoSqliteMysqlTest extends MysqlTestCase
         $this->assertSame(['CREACION', 'ANULACION', 'REACTIVACION'], $matricula->movimientos->sortBy('id')->pluck('tipo.value')->all());
         $this->assertSame($datos['admin'], $matricula->movimientos->first()->user_id);
         $this->assertSame(1, Estudiante::query()->whereNull('numero_documento')->count());
+        $ficha = CatalogoCurso::query()->sole();
+        $this->assertSame($matricula->edicion->curso_id, $ficha->curso_id);
+        $this->assertSame('2026-11-02', $ficha->fecha_inicio->toDateString());
+        $this->assertSame(1, Convenio::query()->sole()->fotos()->count());
 
         // AUTO_INCREMENT continúa tras el id más alto usado en SQLite, también el de una fila borrada.
         $nuevo = Estudiante::factory()->create();
@@ -260,6 +269,13 @@ class TrasladoSqliteMysqlTest extends MysqlTestCase
         Matricula::create(['estudiante_id' => $b->id, 'edicion_id' => $edicion->id]);
         Matricula::create(['estudiante_id' => $c->id, 'edicion_id' => $edicion->id]);
 
+        // Contenido público: también se traslada, con su enlace al curso académico.
+        CatalogoCurso::create(['curso_id' => $curso->id, 'titulo' => 'Programación básica', 'slug' => 'programacion-basica', 'descripcion' => 'Ficha pública',
+            'tipo' => 'curso', 'modalidad' => 'hibrida', 'duracion' => '40 horas', 'fecha_inicio' => '2026-11-02', 'estado' => 'publicado']);
+        $convenio = Convenio::create(['nombre' => 'Institución ficticia', 'descripcion_corta' => 'Convenio', 'visible' => true]);
+        ConvenioFoto::create(['convenio_id' => $convenio->id, 'imagen_url' => '/api/uploads/123e4567-e89b-12d3-a456-426614174000.jpg']);
+        AjustePublico::guardar(['email_contacto' => 'contacto@example.test']);
+
         DB::table('sessions')->insert(['id' => 'sesion-ficticia', 'payload' => 'x', 'last_activity' => 1]);
         DB::table('cache')->insert(['key' => 'clave', 'value' => 'x', 'expiration' => 1]);
 
@@ -268,7 +284,7 @@ class TrasladoSqliteMysqlTest extends MysqlTestCase
 
     private function assertDestinoVacio(): void
     {
-        foreach (['users', 'estudiantes', 'cursos', 'ediciones', 'matriculas', 'matricula_movimientos'] as $tabla) {
+        foreach (['users', 'estudiantes', 'cursos', 'ediciones', 'matriculas', 'matricula_movimientos', 'catalogo_cursos', 'convenios', 'convenio_fotos', 'ajustes_publicos'] as $tabla) {
             $this->assertSame(0, DB::table($tabla)->count(), "{$tabla} debía quedar vacía.");
         }
     }
