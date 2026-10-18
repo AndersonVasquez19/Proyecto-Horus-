@@ -119,7 +119,7 @@ cursos 1 ──< ediciones 1 ──< matriculas >── 1 estudiantes
 - Ninguna clave foránea borra en cascada: el historial académico no se pierde por accidente.
 - Los estados se guardan como `enum` (en SQLite, `CHECK ... IN (...)`).
 - `nombre_busqueda` es una clave derivada («apellidos nombres» en minúsculas y sin tildes) para buscar y detectar homónimos. La calcula el modelo; no se edita.
-- SQLite no admite `ALTER TABLE ... ADD CONSTRAINT`, así que las CHECK adicionales se crean como triggers (`app/Support/RestriccionesBd.php`). En MySQL/PostgreSQL se usan CHECK nativos. **Esa rama no se ha probado todavía**: verificarla antes de migrar de motor.
+- SQLite no admite `ALTER TABLE ... ADD CONSTRAINT`, así que las CHECK adicionales se crean como triggers (`app/Support/RestriccionesBd.php`). En MySQL/PostgreSQL se usan CHECK nativos. La rama MySQL está verificada contra un MySQL 8.4 desechable (suite opcional `phpunit.mysql.xml`), con la migración `2026_10_18_000000_endurece_restricciones_mysql` que la iguala a SQLite; PostgreSQL y MariaDB no se han probado. Traslado y diferencias: [docs/mysql-traslado.md](docs/mysql-traslado.md).
 
 ## Reglas de negocio
 
@@ -166,7 +166,7 @@ Grupo de menú **Gestión académica**:
 
 ## Pruebas
 
-La suite incluye `tests/Feature/Academico` (reglas de modelo y base de datos, historial, aislamiento y concurrencia), `tests/Feature/Panel` (acceso, roles, revocación HTTP/Livewire, formularios, acciones y tema) y `tests/Unit`. Ejecutar el comando aislado indicado arriba; los resultados históricos de los documentos no sustituyen una ejecución en el nuevo equipo.
+La suite incluye `tests/Feature/Academico` (reglas de modelo y base de datos, historial, aislamiento y concurrencia), `tests/Feature/Panel` (acceso, roles, revocación HTTP/Livewire, formularios, acciones y tema) y `tests/Unit`. `tests/MySql` es opcional y solo se ejecuta contra un MySQL desechable con `scripts/test-mysql.ps1`. Ejecutar el comando aislado indicado arriba; los resultados históricos de los documentos no sustituyen una ejecución en el nuevo equipo.
 
 ## Pendiente (siguientes entregas)
 
@@ -175,5 +175,5 @@ La suite incluye `tests/Feature/Academico` (reglas de modelo y base de datos, hi
   - El DNI está guardado como **número** (pueden haberse perdido ceros iniciales; hay al menos un valor de 7 dígitos): normalizar con revisión, no inventar.
 - Emisión y verificación de certificados (usará el estado `Culminado`).
 - Administración de usuarios desde una interfaz específica; la seguridad por roles ya está implementada y el acceso requiere rol y estado autorizados cuando está activa.
-- Verificar las CHECK en MySQL si se cambia de motor; control de cupo con bloqueo para concurrencia alta.
+- Base MySQL definitiva y traslado real desde SQLite (preparado y probado en desechable; requiere autorización).
 - Integración con el frontend React, chatbot y Resend (siguen en `backend/`, sin cambios).

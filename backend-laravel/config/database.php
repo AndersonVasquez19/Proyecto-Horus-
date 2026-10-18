@@ -59,6 +59,9 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // Zona de la sesión MySQL (p. ej. +00:00, igual que app.timezone=UTC). Sin valor
+            // se usa la del servidor; ver docs/mysql-traslado.md antes de cambiarla.
+            'timezone' => env('DB_TIMEZONE'),
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
