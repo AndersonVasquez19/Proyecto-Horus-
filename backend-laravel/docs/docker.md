@@ -1,5 +1,9 @@
 # Docker independiente para Laravel
 
+Para el MySQL 8.4 dedicado propuesto, consultar [mysql-docker.md](mysql-docker.md):
+combina este Compose base con `compose.mysql.yaml`, sin cambiar NestJS ni crear la base
+durante la preparación. El resto de este documento describe el Compose base por separado.
+
 Preparación local; no implica despliegue ni activación de MySQL definitivo. Ejecutar los
 comandos desde `backend-laravel/`. No utiliza el Compose, `.env.docker`, usuarios,
 redes o volúmenes de NestJS. No hay servicio MySQL en este Compose: nunca crea
