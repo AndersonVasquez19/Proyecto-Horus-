@@ -94,7 +94,11 @@ class PanelContenidoTest extends TestCase
 
     public static function denegadas(): array
     {
-        return array_filter(self::cuentas(), fn (array $cuenta): bool => ! $cuenta[2]);
+        // Solo rol y estado: la prueba no recibe la columna «permitido» (siempre falsa aquí).
+        return array_map(
+            fn (array $cuenta): array => [$cuenta[0], $cuenta[1]],
+            array_filter(self::cuentas(), fn (array $cuenta): bool => ! $cuenta[2]),
+        );
     }
 
     #[DataProvider('denegadas')]
