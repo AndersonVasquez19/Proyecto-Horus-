@@ -76,7 +76,7 @@ test('gerente: todas las secciones de trabajo actuales e inicio en Resumen', () 
 test('coordinadora: contenido, atención y Resumen; sin Biblioteca de contenido', () => {
   const nav = panelNavigation(session('COORDINADORA_INSTITUCIONAL'))
   assert.equal(nav.home, 'resumen')
-  assert.deepEqual(visible(nav), ['resumen', 'cursos', 'servicios', 'galeria', 'faq', 'convenios', 'mensajes', 'cotizaciones', 'chatbot', 'ajustes', 'configuracion'])
+  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'cursos', 'servicios', 'galeria', 'faq', 'convenios', 'mensajes', 'cotizaciones', 'chatbot', 'ajustes', 'configuracion'])
   assert.equal(nav.canOpenResource('contenido'), false)
 })
 
@@ -85,7 +85,7 @@ test('secretaria: inicia en la Bandeja, sin Resumen (no consulta estadísticas) 
     const nav = panelNavigation(session('SECRETARIA', modo))
     assert.equal(nav.home, 'mensajes')
     assert.equal(nav.canOpen('resumen'), false, 'GET /admin/stats exige estadisticas:leer')
-    assert.deepEqual(visible(nav), ['cursos', 'mensajes', 'chatbot', 'ajustes', 'configuracion'])
+    assert.deepEqual(visible(nav), ['estudiantes', 'cursos', 'mensajes', 'chatbot', 'ajustes', 'configuracion'])
     // Educación: puede leer cursos y capacitaciones, pero no Asesoramiento (que es un servicio).
     assert.equal(nav.canOpenResource('cursos'), true)
     assert.equal(nav.canOpenResource('servicios'), false)
@@ -156,14 +156,15 @@ test('Roles y usuarios: solo en por_roles con cuentas:leer; nunca en heredado, s
 
 test('secciones desconocidas o con forma rara no se abren; el nombre del rol no concede nada', () => {
   const nav = panelNavigation(session('GERENTE_GENERAL'))
-  for (const key of ['', 'admin', 'usuarios', 'estudiantes', 'matriculas', 'certificados', '__proto__', 'constructor', 'toString', undefined, null, 5, {}]) assert.equal(nav.canOpen(key), false, String(key))
+  for (const key of ['', 'admin', 'usuarios', 'matriculas', 'certificados', '__proto__', 'constructor', 'toString', undefined, null, 5, {}]) assert.equal(nav.canOpen(key), false, String(key))
   for (const resource of ['', 'items', 'mensajes', '__proto__', 'toString']) assert.equal(nav.canOpenResource(resource), false, resource)
   // Con el rol de gerente pero sin permisos, no se abre nada: lo que decide es la lista del backend.
   assert.deepEqual(visible(panelNavigation(session('GERENTE_GENERAL', 'por_roles', []))), ['configuracion'])
 })
 
-test('no hay enlaces a módulos académicos todavía', () => {
-  for (const rule of PANEL_SECTIONS) assert.ok(!/estudiantes|convocatorias|matriculas|certificados|asistencia|calificaciones|sesiones/.test(rule.key + rule.anyOf.join() + rule.target), rule.key)
+test('Estudiantes es el primer módulo académico; las fases posteriores siguen sin enlaces', () => {
+  assert.equal(PANEL_SECTIONS.find(rule => rule.key === 'estudiantes')?.anyOf[0], 'estudiantes:leer')
+  for (const rule of PANEL_SECTIONS) assert.ok(!/convocatorias|matriculas|certificados|asistencia|calificaciones|sesiones/.test(rule.key + rule.anyOf.join() + rule.target), rule.key)
 })
 
 // ---------- E3.4.3, fase 2: operaciones de escritura ----------
@@ -219,6 +220,9 @@ test('las demás operaciones del panel coinciden con sus rutas', () => {
   assert.equal(routePermission('PUT', 'admin/settings'), A.editarConfiguracion)
   assert.equal(routePermission('PUT', 'admin/users/:id/rol'), A.asignarRol)
   assert.equal(routePermission('PUT', 'admin/users/:id'), A.editarCuenta)
+  assert.equal(routePermission('POST', 'admin/estudiantes'), A.crearEstudiante)
+  assert.equal(routePermission('PUT', 'admin/estudiantes/:id'), A.editarEstudiante)
+  assert.equal(routePermission('PUT', 'admin/estudiantes/:id/archivo'), A.archivarEstudiante)
   // Seguimiento: la ruta es común y el permiso depende de :recurso; la bandeja solo usa «messages».
   for (const [method, route, operation] of [['GET', 'admin/seguimiento/:recurso/:id', 'leer'], ['PUT', 'admin/seguimiento/:recurso/:id', 'editar'], ['POST', 'admin/seguimiento/:recurso/:id/constancia', 'enviar'], ['POST', 'admin/seguimiento/:recurso/:id/correo', 'enviar']]) {
     assert.ok(inventory.includes("follow('" + method + "', '" + route + "', '" + operation + "')"), route)

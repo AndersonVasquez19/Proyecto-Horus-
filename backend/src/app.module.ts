@@ -6,6 +6,7 @@ import { CotizacionesModule } from './cotizaciones/cotizaciones.module';
 import { ChatbotModule } from './chatbot/chatbot.module';
 import { validateDeployment } from './deployment.config';
 import { CatalogoModule } from './catalogo/catalogo.module';
+import { EstudiantesModule } from './estudiantes/estudiantes.module';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { PublicRateLimitGuard } from './common/public-rate-limit.guard';
@@ -47,6 +48,7 @@ import { HealthController } from './health.controller';
     OriginalContentModule,
     ConveniosModule,
     CatalogoModule,
+    EstudiantesModule,
     ChatbotModule,
     MailModule,
     ContactoModule,

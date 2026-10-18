@@ -40,6 +40,8 @@
     "test:signup-form": "node --experimental-strip-types --test tests/signup-form.test.mjs",
     "smoke:signup": "npm run build && node scripts/smoke-signup.cjs",
     "test:account-roles": "node --experimental-strip-types --test tests/account-roles.test.mjs",
+    "test:students": "node --experimental-strip-types --test tests/students.test.mjs",
+    "smoke:students": "npm run build && node scripts/smoke-estudiantes.cjs",
     "smoke:roles": "npm run build && node scripts/smoke-roles.cjs"
   },
   "dependencies": {

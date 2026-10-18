@@ -7,7 +7,7 @@
 // El nombre del rol no se usa para decidir nada.
 import type { SessionAccess } from './sessionAccess';
 
-export type PanelGroup = 'principal' | 'contenido' | 'atencion' | 'cuenta';
+export type PanelGroup = 'principal' | 'academico' | 'contenido' | 'atencion' | 'cuenta';
 
 export interface PanelSectionRule {
   key: string; // valor de ?section= (mensajes también responde en /admin/messages)
@@ -50,6 +50,7 @@ export const RESOURCE_WRITE: Readonly<Record<string, ResourceWrite>> = Object.fr
 
 // Resto de operaciones del panel, con la ruta que las exige.
 export const PANEL_ACTIONS = Object.freeze({
+  crearEstudiante: 'estudiantes:crear', editarEstudiante: 'estudiantes:editar', archivarEstudiante: 'estudiantes:archivar',
   subirImagen: 'archivos:crear', // POST /admin/uploads
   leerContenidoOriginal: 'contenido_original:leer', // GET /admin/contenido-original (lo carga el diálogo de recuperación)
   restaurarContenidoOriginal: 'contenido_original:restaurar', // POST /admin/contenido-original/:section
@@ -64,6 +65,7 @@ export const PANEL_ACTIONS = Object.freeze({
 
 export const PANEL_SECTIONS: readonly PanelSectionRule[] = Object.freeze([
   { key: 'resumen', group: 'principal', anyOf: ['estadisticas:leer'], target: '/admin/dashboard?section=resumen', note: 'GET /admin/stats y /admin/stats/actividad' },
+  { key: 'estudiantes', group: 'academico', anyOf: ['estudiantes:leer'], target: '/admin/dashboard?section=estudiantes', note: 'GET /admin/estudiantes' },
   { key: 'cursos', group: 'contenido', anyOf: ['cursos:leer', 'servicios:leer'], target: '/admin/dashboard?section=educacion', note: 'Educación: Asesoramiento usa servicios; Capacitaciones y Cursos, cursos. Cada subsección se comprueba con RESOURCE_READ' },
   { key: 'servicios', group: 'contenido', anyOf: ['servicios:leer'], target: '/admin/dashboard?section=servicios' },
   { key: 'galeria', group: 'contenido', anyOf: ['galeria:leer'], target: '/admin/dashboard?section=galeria' },

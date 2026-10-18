@@ -61,10 +61,10 @@ const handler = async (req, res, { route, json, body }) => {
   return json({ ok: true, items: [], messages: [], settings: [], sections: [], pagination: { page: 1, total: 0, pages: 1, limit: 20 }, metrics: {} }) || true;
 };
 
-const LEGACY_MENU = ['Resumen', 'Educación', 'Servicios tecnológicos', 'Galería de proyectos', 'Preguntas frecuentes', 'Biblioteca de contenido', 'Convenios', 'Mensajes', 'Cotizaciones', 'Consultas del chatbot', 'Información de empresa'];
+const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Educación', 'Servicios tecnológicos', 'Galería de proyectos', 'Preguntas frecuentes', 'Biblioteca de contenido', 'Convenios', 'Mensajes', 'Cotizaciones', 'Consultas del chatbot', 'Información de empresa'];
 
 (async () => {
-  const k = await start({ prefix: 'permisos', handler });
+  const k = await start({ prefix: 'permisos', handler, browserArgs: ['--disable-extensions'] });
   const { ck, open, closePages, origin } = k;
   const ctl = (...parts) => fetch(origin + '/__s/' + parts.map(encodeURIComponent).join('/'));
   const requests = async () => (await fetch(origin + '/__log').then(r => r.json())).requests;
@@ -86,7 +86,7 @@ const LEGACY_MENU = ['Resumen', 'Educación', 'Servicios tecnológicos', 'Galer�
   const expected = {
     'tk-gerente': { home: '/admin/dashboard', h1: 'Hola', menu: LEGACY_MENU },
     'tk-coord': { home: '/admin/dashboard', h1: 'Hola', menu: LEGACY_MENU.filter(item => item !== 'Biblioteca de contenido') },
-    'tk-sec': { home: '/admin/messages', h1: 'Centro de consultas', menu: ['Educación', 'Mensajes', 'Consultas del chatbot', 'Información de empresa'] },
+    'tk-sec': { home: '/admin/messages', h1: 'Centro de consultas', menu: ['Estudiantes', 'Educación', 'Mensajes', 'Consultas del chatbot', 'Información de empresa'] },
   };
   for (const mode of ['heredado', 'por_roles']) {
     for (const [token, want] of Object.entries(expected)) {
@@ -213,5 +213,6 @@ const LEGACY_MENU = ['Resumen', 'Educación', 'Servicios tecnológicos', 'Galer�
     await p.evaluate('history.back(); 1'); await p.wait('location.search.includes("section=educacion")', 'atrás 2');
     ck((await notice(p)) === null, 'atrás/adelante recorre las secciones como antes'); }
 
+  await k.closePages();
   k.finish('Navegación del panel por permisos');
 })().catch(error => { console.error('FALLO DEL SMOKE:', error.message); process.exit(1); });

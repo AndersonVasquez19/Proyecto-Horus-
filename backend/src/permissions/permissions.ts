@@ -27,7 +27,7 @@ export const RESOURCE_OPERATIONS = {
   chatbot_consultas: ['leer'],
   estadisticas: ['leer'],
   items: ['leer', 'crear', 'editar', 'eliminar'],
-  // --- Recursos académicos futuros (los módulos aún no existen) ---
+  // --- Gestión académica ---
   estudiantes: ['leer', 'crear', 'editar', 'archivar', 'exportar'],
   convocatorias: ['leer', 'crear', 'editar', 'cerrar', 'archivar'],
   matriculas: ['leer', 'crear', 'editar', 'anular', 'confirmar'], // confirmar = declarar administrativamente que se completó o no la capacitación (no es una calificación)
@@ -45,7 +45,7 @@ export type Permission = { [R in Resource]: `${R}:${(typeof RESOURCE_OPERATIONS)
 
 // Recursos cuyos módulos todavía no existen: sus permisos están definidos pero ninguna ruta actual los exige.
 export const FUTURE_RESOURCES = [
-  'estudiantes', 'convocatorias', 'matriculas', 'sesiones', 'asistencia', 'calificaciones', 'certificados',
+  'convocatorias', 'matriculas', 'sesiones', 'asistencia', 'calificaciones', 'certificados',
   'importaciones', 'reportes_academicos', 'auditoria',
 ] as const satisfies readonly Resource[];
 

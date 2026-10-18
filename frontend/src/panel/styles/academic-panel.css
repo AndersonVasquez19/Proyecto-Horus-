@@ -1,0 +1,57 @@
+/* Base visual del panel. Se carga después de los estilos existentes y se limita a su shell y diálogos. */
+.hp-shell {
+  --ink: #182e50;
+  --muted: #5a6c85;
+  --line: #e2e9f3;
+  background: #f3f6fb;
+}
+.hp-shell .hp-sidebar { background: linear-gradient(165deg, #135acb 0%, #12469e 55%, #123b83 100%); }
+.hp-shell .hp-nav-label { color: #c9defe; font-size: 10px; letter-spacing: 1.4px; }
+.hp-shell .hp-nav-item { color: #e2edff; }
+.hp-shell .hp-nav-item:hover { background: #ffffff16; }
+.hp-shell .hp-nav-item.is-active { background: #ffffff1f; color: #fff; box-shadow: inset 3px 0 #67e2f9; }
+.hp-shell .hp-nav-item.is-active svg { color: #8aeaff; }
+.hp-shell .hp-nav-dot { background: #8aeaff; }
+.hp-shell .hp-nav-subitem { color: #d3e4ff; }
+.hp-shell .hp-nav-subitem.is-active { background: #ffffff1a; color: #fff; box-shadow: inset 3px 0 #67e2f9; }
+.hp-shell .hp-workspace-label { background: #ffffff0b; border-color: #ffffff25; }
+.hp-shell .hp-workspace-label small, .hp-shell .hp-profile small { color: #c9defe; }
+.hp-shell .hp-workspace-mark { background: #d4f5ff; color: #1453ad; }
+.hp-shell .hp-sidebar-bottom :is(a, button) { color: #e2edff; }
+.hp-shell .hp-sidebar-bottom button.is-active { color: #9eeeff; }
+.hp-shell .hp-avatar { background: #e4efff; color: #1958ac; }
+.hp-shell .hp-topbar { background: #fff; border-bottom-color: #e2e9f3; }
+.hp-shell .hp-card, .hp-shell .hp-metrics article, .hp-shell .hw-insights article { border-color: #e2e9f3; box-shadow: 0 4px 18px #21417006; border-radius: 15px; }
+.hp-shell .hp-kicker, .hp-dialog:has([data-student-form]) .hp-kicker { color: #2563bd; }
+.hp-shell .hp-btn-primary, .hp-dialog .hp-btn-primary { background: #175ccb; border-color: #175ccb; color: #fff; }
+.hp-shell .hp-btn-primary:hover, .hp-dialog .hp-btn-primary:hover { background: #104aa8; border-color: #104aa8; }
+.hp-shell :focus-visible, .hp-dialog :focus-visible { outline-color: #28a4d1; }
+.hp-shell .hp-hero { background: linear-gradient(120deg, #edf4ff, #f1fbff); border-color: #d6e6fc; color: #193e76; }
+.hp-shell .hp-hero h2 span { color: #1764bd; }
+.hp-shell .hp-hero .hp-kicker { color: #2563bd; }
+.hp-shell .hp-hero p:not(.hp-kicker), .hp-shell .hp-hero-link { color: #49627f; }
+.hp-shell .hp-shortcut-icon { background: #eaf2ff; color: #1b5dbb; }
+.hs-summary { display: flex; align-items: center; gap: 18px; padding: 22px 26px; margin-bottom: 24px; border: 1px solid #dce7f7; background: linear-gradient(110deg, #fff 55%, #edf8ff); border-radius: 15px; }
+.hs-summary-icon { display: grid; place-items: center; width: 54px; height: 54px; flex-shrink: 0; border-radius: 14px; background: #e8f1ff; color: #2064c4; }
+.hs-summary span { color: #5a6c85; font-size: 13px; }
+.hs-summary strong { display: block; font: 800 30px var(--panel-heading-font, Manrope, sans-serif); color: #193e76; font-variant-numeric: tabular-nums; }
+.hs-summary p { margin-left: auto; max-width: 330px; font-size: 13px; color: #5a6c85; line-height: 1.7; }
+.hs-table th[scope=row] { background: #fff; font-weight: 400; }
+.hs-table .hp-record strong { max-width: none; white-space: normal; overflow-wrap: anywhere; }
+.hs-table .hp-record { min-width: 190px; }
+.hs-initial { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: #eaf2ff; color: #2660ad; font-weight: 700; flex-shrink: 0; }
+.hs-contact { display: block; max-width: 250px; white-space: normal; overflow-wrap: anywhere; }
+.hs-contact small { display: block; color: #64768b; margin-top: 5px; }
+.hs-students .hp-row-actions { justify-content: flex-end; flex-wrap: wrap; }
+.hs-students .hp-actions { flex-wrap: wrap; }
+.hp-dialog .hs-field-error { color: #a0352b; }
+.hs-conflict { padding: 0 28px 20px; font-size: 13px; line-height: 1.7; }
+.hs-conflict .hp-details { padding: 10px 0; }
+.hp-dialog:has([data-student-form]) input[aria-invalid=true] { border-color: #b84236; }
+@media (max-width: 760px) {
+  .hs-summary { padding: 20px; flex-wrap: wrap; gap: 14px; }
+  .hs-summary p { margin: 0; max-width: none; flex-basis: 100%; }
+  .hs-students .hp-search { flex-basis: 65%; }
+  .hs-table { min-width: 690px; }
+  .hs-students .hp-heading .hp-actions { width: 100%; }
+}

@@ -98,7 +98,7 @@ async function bootstrap() {
   const routes = app.getHttpAdapter().getInstance()._router.stack
     .filter(layer => layer.route)
     .flatMap(layer => Object.keys(layer.route.methods).map(method => ({ method: method.toUpperCase(), path: layer.route.path })));
-  process.send({ ready: true, globalGuards, guardProviders, resolved, routes });
+  process.send({ ready: true, port: app.getHttpServer().address().port, globalGuards, guardProviders, resolved, routes });
 }
 
 bootstrap().catch(error => {
