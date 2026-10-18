@@ -162,6 +162,7 @@ Grupo de menú **Gestión académica**:
 - **Cursos**: alta y edición, activo/inactivo y ediciones del curso.
 - **Ediciones**: alta y edición, filtros por curso y estado, y estudiantes matriculados con la acción «Matricular estudiante».
 - **Matrículas**: alta, búsqueda, filtros por estado, curso y edición, y acción «Cambiar estado» (solo ofrece las transiciones permitidas).
+- **Importar desde Excel**: estudiantes y matrículas desde CSV o XLSX con vista previa sin escrituras, confirmación explícita e informe por fila. Requiere la migración `2026_10_18_200000_create_importaciones_academicas_tables`; ver [docs/importacion-academica.md](docs/importacion-academica.md).
 - **Escritorio**: totales reales de estudiantes, cursos activos, ediciones y matrículas, y matrículas por estado, con mensajes claros cuando no hay datos.
 
 Grupo **Contenido web** (desactivado por defecto; ver [docs/contenido-publico.md](docs/contenido-publico.md)): catálogo de Educación, servicios, preguntas frecuentes, galería, convenios con fotos y datos institucionales, más la API pública de solo lectura `/api/contenido/*` para la web React.

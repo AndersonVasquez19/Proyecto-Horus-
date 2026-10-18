@@ -11,6 +11,7 @@ final class DestinoMysqlLaravel
         'jobs', 'job_batches', 'failed_jobs', 'estudiantes', 'cursos', 'ediciones',
         'matriculas', 'matricula_movimientos', 'catalogo_cursos', 'catalogo_servicios',
         'preguntas_frecuentes', 'galeria_items', 'convenios', 'convenio_fotos', 'ajustes_publicos',
+        'importaciones_academicas', 'importacion_academica_filas',
     ];
 
     public static function nombrePermitido(string $base): bool
