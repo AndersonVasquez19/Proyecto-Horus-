@@ -389,7 +389,7 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
     });
 
     await t.test('I/K/L. barrido HTTP de TODAS las rutas administrativas por rol: 403 exacto donde la política deniega, guard superada donde concede', async () => {
-      // Esperado calculado con la política compilada (requirementFor + canAll) y contrastado con los totales independientes de E3.5.
+      // Esperado calculado con la política compilada (requirementFor + canAll) y contrastado con la matriz de Estudiantes y los totales independientes.
       const routes = [];
       for (const entry of ROUTE_INVENTORY) {
         if (!entry.path.startsWith('admin/') || entry.access.kind === 'publica' || RATE_LIMITED.has(entry.method + ' ' + entry.path)) continue;
@@ -407,8 +407,23 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
         if (!rol) return 'sinRol';
         return canAll(rol, route.requirement.permissions) ? 'pasa' : 'sinPermiso';
       };
+      // Contrato independiente de la política: exactamente cinco rutas; secretaría solo lee y crea; la cuenta básica no accede.
+      const students = routes.filter(route => /^admin\/estudiantes(?:\/|$)/.test(route.path));
+      assert.deepEqual(students.map(route => route.label), [
+        'GET admin/estudiantes', 'GET admin/estudiantes/999999', 'POST admin/estudiantes',
+        'PUT admin/estudiantes/999999', 'PUT admin/estudiantes/999999/archivo',
+      ]);
+      assert.deepEqual(ROLE_KEYS.map(key => students.map(route => expectation(key, route))), [
+        ['pasa', 'pasa', 'pasa', 'pasa', 'pasa'], // gerente
+        ['pasa', 'pasa', 'pasa', 'pasa', 'pasa'], // coordinación
+        ['pasa', 'pasa', 'pasa', 'sinPermiso', 'sinPermiso'], // secretaría
+        ['sinRol', 'sinRol', 'sinRol', 'sinRol', 'sinRol'], // cuenta básica
+      ]);
       const plan = ROLE_KEYS.flatMap(key => routes.map(route => ({ key, route, expected: expectation(key, route) })));
       const before = await businessSnapshot();
+      for (const route of students) {
+        assert.equal((await call(route.path, { method: route.method, body: route.body })).status, 401, 'sin sesión: ' + route.label);
+      }
       for (const { key, route, expected } of plan.filter(item => item.expected !== 'pasa')) {
         denied(await call(route.path, { method: route.method, token: tokens[key], body: route.body }), key + ' ' + route.label, expected === 'sinRol' ? NO_ROLE_MESSAGE : FORBIDDEN_MESSAGE);
       }
@@ -422,8 +437,10 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       // A las 70 variantes admin no públicas de E3.5 (seguimiento ×2) se añadió PUT admin/users/:id/rol:
       // exige cuentas:asignar_rol, exclusivo del gerente. Pasan G 71, C 54, S 14, sin rol 2. Aquí se excluyen POST admin/register
       // y POST admin/password (límite de frecuencia, probadas aparte) y se añade el recurso «cotizaciones» (denegado).
+      // Estudiantes añade cinco rutas: G +5, C +5, S +3 (lista, detalle y alta), sin rol +0. Los permisos existentes no cambian.
+      // Así, los totales del barrido pasan de [69, 53, 13, 1] a [74, 58, 16, 1] (sin las variantes con estado en el cuerpo).
       const count = key => plan.filter(item => item.key === key && item.route.sweep && item.expected === 'pasa').length;
-      assert.deepEqual(ROLE_KEYS.map(count), [69, 53, 13, 1]);
+      assert.deepEqual(ROLE_KEYS.map(count), [74, 58, 16, 1]);
       for (const key of ROLE_KEYS) {
         const own = plan.filter(item => item.key === key && item.route.path.startsWith('admin/seguimiento/cotizaciones/'));
         // Un requisito «denegada» se resuelve antes de mirar el rol: 403 genérico también para la cuenta sin rol.
