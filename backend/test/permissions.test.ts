@@ -26,6 +26,7 @@ import { CotizacionesController } from '../src/cotizaciones/cotizaciones.module'
 import { AdminGaleriaController } from '../src/galeria/admin-galeria.controller';
 import { GaleriaController } from '../src/galeria/galeria.controller';
 import { HealthController } from '../src/health.controller';
+import { ConvocatoriasController } from '../src/convocatorias/convocatorias.controller';
 import { EstudiantesController } from '../src/estudiantes/estudiantes.controller';
 import { AdminNewsletterController } from '../src/newsletter/admin-newsletter.controller';
 import { NewsletterController } from '../src/newsletter/newsletter.controller';
@@ -59,7 +60,7 @@ test('cada permiso tiene un identificador único con el formato recurso:operacio
 
 test('los permisos de recursos futuros están separados de los actuales', () => {
   for (const resource of FUTURE_RESOURCES) assert.ok(resource in RESOURCE_OPERATIONS);
-  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones', 'certificados', 'convocatorias', 'importaciones', 'matriculas', 'reportes_academicos', 'sesiones']);
+  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones', 'certificados', 'importaciones', 'matriculas', 'reportes_academicos', 'sesiones']);
 });
 
 test('no existe ningún permiso de eliminación física del historial académico', () => {
@@ -231,7 +232,7 @@ const CONTROLLERS: Function[] = [
   AttentionController, CursoController, AdminCursoController, ServicioController, AdminServicioController, PreguntaFrecuenteController,
   AdminPreguntaFrecuenteController, ChatbotController, ContactoController, OriginalContentController, ConveniosController, AdminConveniosController,
   CotizacionesController, AdminGaleriaController, GaleriaController, HealthController, AdminNewsletterController, NewsletterController,
-  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController,
+  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController,
 ];
 
 function normalize(...parts: string[]) { return parts.join('/').split('/').filter(Boolean).join('/'); }

@@ -45,7 +45,7 @@ export type Permission = { [R in Resource]: `${R}:${(typeof RESOURCE_OPERATIONS)
 
 // Recursos cuyos módulos todavía no existen: sus permisos están definidos pero ninguna ruta actual los exige.
 export const FUTURE_RESOURCES = [
-  'convocatorias', 'matriculas', 'sesiones', 'asistencia', 'calificaciones', 'certificados',
+  'matriculas', 'sesiones', 'asistencia', 'calificaciones', 'certificados',
   'importaciones', 'reportes_academicos', 'auditoria',
 ] as const satisfies readonly Resource[];
 

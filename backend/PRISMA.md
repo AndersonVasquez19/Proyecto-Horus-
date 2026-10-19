@@ -8,6 +8,8 @@ Respaldar y confirmar el destino. Ejecutar `npm ci`, `npm run build` y `npm run 
 
 Las versiones se registran en `scripts/migrate.cjs` y en `horus_migrations`; un bloqueo MySQL evita ejecutores simultáneos. No se reescriben migraciones anteriores.
 
+Ediciones (fase 2) añade `20261018-convocatorias-capacidad`: un único ALTER aditivo con `capacidad INT NULL` y CHECK positivo, sin completar datos anteriores. El cliente Prisma conserva `NULL` para capacidad desconocida. La migración es necesaria antes de activar el módulo; sus reglas, bloqueo por curso, revisión, historial y pruebas están en [Gestión de ediciones](../docs/procedimientos/gestion-ediciones.md). Si el ALTER termina pero no llega a registrarse en `horus_migrations`, comprobar columna/CHECK y registro antes de reintentar; no borrar ni recrear tablas.
+
 `20261002-complete-institutional` añade `activo` y `session_version` a administradores, `consent_at` a suscripciones, seguimiento con historial, cuotas compartidas y una clave foránea que impide borrar un contacto vinculado a una cotización. Las referencias huérfanas antiguas se vuelven `null`, conservando la propuesta.
 
 MySQL DDL no es transaccional. Si falla una migración parcialmente, revisar los cambios aplicados antes de reintentar; no borrar datos ni resetear el esquema.

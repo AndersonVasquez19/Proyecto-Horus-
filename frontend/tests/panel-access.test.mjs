@@ -76,7 +76,7 @@ test('gerente: todas las secciones de trabajo actuales e inicio en Resumen', () 
 test('coordinadora: contenido, atención y Resumen; sin Biblioteca de contenido', () => {
   const nav = panelNavigation(session('COORDINADORA_INSTITUCIONAL'))
   assert.equal(nav.home, 'resumen')
-  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'cursos', 'servicios', 'galeria', 'faq', 'convenios', 'mensajes', 'cotizaciones', 'chatbot', 'ajustes', 'configuracion'])
+  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'ediciones', 'cursos', 'servicios', 'galeria', 'faq', 'convenios', 'mensajes', 'cotizaciones', 'chatbot', 'ajustes', 'configuracion'])
   assert.equal(nav.canOpenResource('contenido'), false)
 })
 
@@ -85,7 +85,7 @@ test('secretaria: inicia en la Bandeja, sin Resumen (no consulta estadísticas) 
     const nav = panelNavigation(session('SECRETARIA', modo))
     assert.equal(nav.home, 'mensajes')
     assert.equal(nav.canOpen('resumen'), false, 'GET /admin/stats exige estadisticas:leer')
-    assert.deepEqual(visible(nav), ['estudiantes', 'cursos', 'mensajes', 'chatbot', 'ajustes', 'configuracion'])
+    assert.deepEqual(visible(nav), ['estudiantes', 'ediciones', 'cursos', 'mensajes', 'chatbot', 'ajustes', 'configuracion'])
     // Educación: puede leer cursos y capacitaciones, pero no Asesoramiento (que es un servicio).
     assert.equal(nav.canOpenResource('cursos'), true)
     assert.equal(nav.canOpenResource('servicios'), false)
@@ -162,9 +162,10 @@ test('secciones desconocidas o con forma rara no se abren; el nombre del rol no 
   assert.deepEqual(visible(panelNavigation(session('GERENTE_GENERAL', 'por_roles', []))), ['configuracion'])
 })
 
-test('Estudiantes es el primer módulo académico; las fases posteriores siguen sin enlaces', () => {
+test('Estudiantes y Ediciones disponibles; las fases posteriores siguen sin enlaces', () => {
   assert.equal(PANEL_SECTIONS.find(rule => rule.key === 'estudiantes')?.anyOf[0], 'estudiantes:leer')
-  for (const rule of PANEL_SECTIONS) assert.ok(!/convocatorias|matriculas|certificados|asistencia|calificaciones|sesiones/.test(rule.key + rule.anyOf.join() + rule.target), rule.key)
+  assert.equal(PANEL_SECTIONS.find(rule => rule.key === 'ediciones')?.anyOf[0], 'convocatorias:leer')
+  for (const rule of PANEL_SECTIONS) assert.ok(!/matriculas|certificados|asistencia|calificaciones|sesiones/.test(rule.key + rule.anyOf.join() + rule.target), rule.key)
 })
 
 // ---------- E3.4.3, fase 2: operaciones de escritura ----------
@@ -223,6 +224,11 @@ test('las demás operaciones del panel coinciden con sus rutas', () => {
   assert.equal(routePermission('POST', 'admin/estudiantes'), A.crearEstudiante)
   assert.equal(routePermission('PUT', 'admin/estudiantes/:id'), A.editarEstudiante)
   assert.equal(routePermission('PUT', 'admin/estudiantes/:id/archivo'), A.archivarEstudiante)
+  assert.equal(routePermission('POST', 'admin/convocatorias'), A.crearEdicion)
+  assert.equal(routePermission('PUT', 'admin/convocatorias/:id'), A.editarEdicion)
+  assert.equal(routePermission('PUT', 'admin/convocatorias/:id/apertura'), A.editarEdicion)
+  assert.equal(routePermission('PUT', 'admin/convocatorias/:id/cierre'), A.cerrarEdicion)
+  assert.equal(routePermission('PUT', 'admin/convocatorias/:id/archivo'), A.archivarEdicion)
   // Seguimiento: la ruta es común y el permiso depende de :recurso; la bandeja solo usa «messages».
   for (const [method, route, operation] of [['GET', 'admin/seguimiento/:recurso/:id', 'leer'], ['PUT', 'admin/seguimiento/:recurso/:id', 'editar'], ['POST', 'admin/seguimiento/:recurso/:id/constancia', 'enviar'], ['POST', 'admin/seguimiento/:recurso/:id/correo', 'enviar']]) {
     assert.ok(inventory.includes("follow('" + method + "', '" + route + "', '" + operation + "')"), route)

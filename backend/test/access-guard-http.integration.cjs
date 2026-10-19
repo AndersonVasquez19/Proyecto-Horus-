@@ -409,6 +409,14 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       };
       // Contrato independiente de la política: exactamente cinco rutas; secretaría solo lee y crea; la cuenta básica no accede.
       const students = routes.filter(route => /^admin\/estudiantes(?:\/|$)/.test(route.path));
+      const editions = routes.filter(route => /^admin\/convocatorias(?:\/|$)/.test(route.path));
+      assert.deepEqual(editions.map(route => route.label), [
+        'GET admin/convocatorias', 'GET admin/convocatorias/cursos', 'GET admin/convocatorias/999999', 'POST admin/convocatorias',
+        'PUT admin/convocatorias/999999', 'PUT admin/convocatorias/999999/apertura', 'PUT admin/convocatorias/999999/cierre', 'PUT admin/convocatorias/999999/archivo',
+      ]);
+      assert.deepEqual(ROLE_KEYS.map(key => editions.map(route => expectation(key, route))), [
+        Array(8).fill('pasa'), Array(8).fill('pasa'), [...Array(3).fill('pasa'), ...Array(5).fill('sinPermiso')], Array(8).fill('sinRol'),
+      ]);
       assert.deepEqual(students.map(route => route.label), [
         'GET admin/estudiantes', 'GET admin/estudiantes/999999', 'POST admin/estudiantes',
         'PUT admin/estudiantes/999999', 'PUT admin/estudiantes/999999/archivo',
@@ -421,7 +429,7 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       ]);
       const plan = ROLE_KEYS.flatMap(key => routes.map(route => ({ key, route, expected: expectation(key, route) })));
       const before = await businessSnapshot();
-      for (const route of students) {
+      for (const route of [...students, ...editions]) {
         assert.equal((await call(route.path, { method: route.method, body: route.body })).status, 401, 'sin sesión: ' + route.label);
       }
       for (const { key, route, expected } of plan.filter(item => item.expected !== 'pasa')) {
@@ -440,7 +448,8 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       // Estudiantes añade cinco rutas: G +5, C +5, S +3 (lista, detalle y alta), sin rol +0. Los permisos existentes no cambian.
       // Así, los totales del barrido pasan de [69, 53, 13, 1] a [74, 58, 16, 1] (sin las variantes con estado en el cuerpo).
       const count = key => plan.filter(item => item.key === key && item.route.sweep && item.expected === 'pasa').length;
-      assert.deepEqual(ROLE_KEYS.map(count), [74, 58, 16, 1]);
+      // Ediciones suma ocho rutas para gerente/coordinadora y tres lecturas para secretaría; cuenta básica sigue sin acceso.
+      assert.deepEqual(ROLE_KEYS.map(count), [82, 66, 19, 1]);
       for (const key of ROLE_KEYS) {
         const own = plan.filter(item => item.key === key && item.route.path.startsWith('admin/seguimiento/cotizaciones/'));
         // Un requisito «denegada» se resuelve antes de mirar el rol: 403 genérico también para la cuenta sin rol.

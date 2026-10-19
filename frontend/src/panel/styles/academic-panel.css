@@ -44,6 +44,15 @@
 .hs-contact small { display: block; color: #64768b; margin-top: 5px; }
 .hs-students .hp-row-actions { justify-content: flex-end; flex-wrap: wrap; }
 .hs-students .hp-actions { flex-wrap: wrap; }
+.he-editions .hp-toolbar { flex-wrap: wrap; }
+.he-editions .hp-row-actions { max-width: 330px; }
+.he-editions .hp-record small { white-space: normal; overflow-wrap: anywhere; }
+.he-course-filter { padding: 0 24px 20px; }
+.he-course-filter summary { cursor: pointer; color: #24538a; padding: 8px 0; }
+.he-course-picker { min-width: 0; display: grid; gap: 10px; grid-column: 1 / -1; }
+.he-course-picker .hp-actions { flex-wrap: wrap; }
+.he-course-picker input, .he-course-picker select { max-width: 100%; min-width: 0; min-height: 44px; border: 1px solid #dce3ee; border-radius: 7px; padding: 10px; color: #243e5d; background: #fff; }
+.he-course-picker select { display: block; width: 100%; }
 .hp-dialog .hs-field-error { color: #a0352b; }
 .hs-conflict { padding: 0 28px 20px; font-size: 13px; line-height: 1.7; }
 .hs-conflict .hp-details { padding: 10px 0; }

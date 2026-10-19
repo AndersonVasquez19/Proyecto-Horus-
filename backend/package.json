@@ -11,7 +11,7 @@
     "start:dev": "nest start --watch --path tsconfig.dev.json",
     "start:debug": "nest start --debug --watch --path tsconfig.dev.json",
     "start:prod": "node dist/main",
-    "test": "node --test -r ./test/isolate-env.cjs -r ts-node/register test/*.test.ts",
+    "test": "node --test --test-concurrency=1 -r ./test/isolate-env.cjs -r ts-node/register test/*.test.ts",
     "db:migrate": "node scripts/migrate.cjs",
     "admin:create": "node scripts/create-admin.cjs",
     "admin:assign-role": "node scripts/assign-role.cjs",

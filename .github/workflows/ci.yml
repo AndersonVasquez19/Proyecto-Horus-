@@ -74,6 +74,7 @@ jobs:
           npm run test:notify
           npm run test:session-access
           npm run test:panel-access
+          npm run test:editions
       - run: npm run build
 
   # MySQL efímero del propio runner: se crea y se destruye con el job, con una contraseña de un solo uso que no es un secreto.
@@ -175,6 +176,13 @@ jobs:
         run: node --test test/backup-collation.integration.cjs
         env:
           BACKUP_COLLATION_TEST_DB: 'true'
+      - name: Integración de Ediciones (HTTP, concurrencia y migración aditiva)
+        run: |
+          EDITIONS_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export EDITIONS_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/convocatorias.integration.cjs
+        env:
+          EDITIONS_TEST_DB: 'true'
       - name: Retirar MySQL
         if: always()
         working-directory: .

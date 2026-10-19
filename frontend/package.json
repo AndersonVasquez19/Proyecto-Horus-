@@ -41,6 +41,8 @@
     "smoke:signup": "npm run build && node scripts/smoke-signup.cjs",
     "test:account-roles": "node --experimental-strip-types --test tests/account-roles.test.mjs",
     "test:students": "node --experimental-strip-types --test tests/students.test.mjs",
+    "test:editions": "node --experimental-strip-types --test tests/editions.test.mjs",
+    "smoke:editions": "npm run build && node scripts/smoke-ediciones.cjs",
     "smoke:students": "npm run build && node scripts/smoke-estudiantes.cjs",
     "smoke:roles": "npm run build && node scripts/smoke-roles.cjs"
   },

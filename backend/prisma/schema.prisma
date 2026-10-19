@@ -416,6 +416,7 @@ enum ConvocatoriaEstado {
 // Curso.fecha_inicio ni Curso.estado. Fechas de calendario (DATE).
 model Convocatoria {
   id Int @id @default(autoincrement())
+  capacidad Int? // NULL conserva ediciones anteriores cuya capacidad aún no se ha definido.
   curso_id Int
   curso Curso @relation(fields: [curso_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "convocatorias_curso_fk")
   nombre String @db.VarChar(160)

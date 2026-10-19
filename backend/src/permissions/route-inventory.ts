@@ -70,6 +70,10 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
 
   // --- Gestión académica: estudiantes (sin borrado físico) ---
   perm('GET', 'admin/estudiantes', 'estudiantes:leer'), perm('GET', 'admin/estudiantes/:id', 'estudiantes:leer'),
+  perm('GET', 'admin/convocatorias', 'convocatorias:leer'), perm('GET', 'admin/convocatorias/cursos', 'convocatorias:leer'),
+  perm('GET', 'admin/convocatorias/:id', 'convocatorias:leer'), perm('POST', 'admin/convocatorias', 'convocatorias:crear'),
+  perm('PUT', 'admin/convocatorias/:id', 'convocatorias:editar'), perm('PUT', 'admin/convocatorias/:id/apertura', 'convocatorias:editar'),
+  perm('PUT', 'admin/convocatorias/:id/cierre', 'convocatorias:cerrar'), perm('PUT', 'admin/convocatorias/:id/archivo', 'convocatorias:archivar'),
   perm('POST', 'admin/estudiantes', 'estudiantes:crear'), perm('PUT', 'admin/estudiantes/:id', 'estudiantes:editar'),
   perm('PUT', 'admin/estudiantes/:id/archivo', 'estudiantes:archivar', 'Archivar y restaurar con revisión; nunca elimina al estudiante.'),
 

@@ -56,7 +56,7 @@ function expectedColumns() {
 // E4.3b (20261016-academico-solo-dni): el documento académico es solo DNI peruano; un esquema que aún admita CE o PASAPORTE se rechaza.
 const DOC = "ENUM('DNI')", CONFIRMADOR = "ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL')";
 // Migraciones que definen el esquema académico, en su orden de aplicación (el de `versions` en migrate.cjs).
-const ACADEMIC_MIGRATIONS = ['20261015-academico-estructura', '20261016-academico-solo-dni'];
+const ACADEMIC_MIGRATIONS = ['20261015-academico-estructura', '20261016-academico-solo-dni', '20261018-convocatorias-capacidad'];
 // Esquema efectivo tras aplicar en orden las migraciones académicas: cada CHECK o columna generada redefinida en una migración
 // posterior sustituye a la anterior, y un DROP CHECK sin redefinición en esa misma migración la elimina de lo esperado.
 function academicDefinitions() {
@@ -73,7 +73,7 @@ function academicDefinitions() {
 const ACADEMIC = {
   estudiantes: [['id','int',false],['nombres','varchar(120)',false],['apellidos','varchar(120)',false],['doc_pais','char(2)',true],['doc_tipo',DOC,true],
     ['doc_numero','varchar(20)',true],['email','varchar(254)',true],['telefono','varchar(30)',true],['archivado_at','datetime(3)',true],['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
-  convocatorias: [['id','int',false],['curso_id','int',false],['nombre','varchar(160)',false],['fecha_inicio','date',true],['fecha_fin','date',true],
+  convocatorias: [['capacidad','int',true],['id','int',false],['curso_id','int',false],['nombre','varchar(160)',false],['fecha_inicio','date',true],['fecha_fin','date',true],
     ['estado',"ENUM('planificada','abierta','cerrada','cancelada')",false],['archivado_at','datetime(3)',true],['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
   matriculas: [['id','int',false],['estudiante_id','int',false],['convocatoria_id','int',false],['estado',"ENUM('activa','anulada')",false],
     ['cumplimiento',"ENUM('pendiente','cumplido','no_cumplido')",false],['confirmado_por','int',true],['confirmado_rol',CONFIRMADOR,true],['confirmado_at','datetime(3)',true],
@@ -111,7 +111,7 @@ const ACADEMIC_FOREIGN_KEYS = [
 ];
 const ACADEMIC_CHECKS = {
   estudiantes: ['estudiantes_nombres_chk','estudiantes_documento_completo_chk','estudiantes_documento_formato_chk','estudiantes_revision_chk'],
-  convocatorias: ['convocatorias_nombre_chk','convocatorias_fechas_chk','convocatorias_revision_chk'],
+  convocatorias: ['convocatorias_nombre_chk','convocatorias_fechas_chk','convocatorias_revision_chk','convocatorias_capacidad_chk'],
   matriculas: ['matriculas_confirmacion_chk','matriculas_revision_chk'],
   certificados: ['certificados_codigo_chk','certificados_anulacion_chk','certificados_nombres_chk','certificados_documento_chk','certificados_fechas_chk'],
   academico_historial: ['academico_historial_origen_chk','academico_historial_campos_chk'],

@@ -80,7 +80,7 @@ En `backend/` y `frontend/`, usa npm y respeta los lockfiles. Ambos paquetes dec
 
 El backend separa las salidas de compilación: `npm start`, `start:dev` y `start:debug` usan `tsconfig.dev.json` y `dist-dev/`, incluida su caché incremental. `npm run build` y `start:prod` usan `dist/`. Mantén esta separación: una compilación limpia no debe borrar los módulos de un servidor de desarrollo en ejecución.
 
-Si la suite del backend agota recursos o tiempos por compilaciones simultáneas, verifica el fallo y usa `node --test --test-concurrency=1 -r ./test/isolate-env.cjs -r ts-node/register test/*.test.ts` desde `backend/`. Es el mismo comando que `npm test` con la concurrencia reducida: conserva la precarga `test/isolate-env.cjs`, que impide que `@prisma/client` cargue `backend/.env` (credenciales reales) en las pruebas. No la omitas ni ejecutes archivos de prueba sueltos sin ella salvo con un entorno explícitamente ficticio. No cambies expectativas o límites para ocultar un fallo de comportamiento.
+`npm test` ejecuta los archivos del backend en serie, igual que CI, para evitar que sus compilaciones de TypeScript compitan por recursos. El comando equivalente es `node --test --test-concurrency=1 -r ./test/isolate-env.cjs -r ts-node/register test/*.test.ts` desde `backend/`. Conserva la precarga `test/isolate-env.cjs`, que impide que `@prisma/client` cargue `backend/.env` (credenciales reales) en las pruebas. No la omitas ni ejecutes archivos de prueba sueltos sin ella salvo con un entorno explícitamente ficticio. No cambies expectativas o límites para ocultar un fallo de comportamiento.
 
 La API usa el prefijo `/api` y el puerto 3000 por defecto. Swagger se publica en `/api/docs` solo en desarrollo; en producción está apagado salvo `SWAGGER_ENABLED=true`, que además exige HTTPS y una cuenta de administrador activa (nunca credenciales en la URL). El healthcheck público es `/api/health`. Vite redirige las peticiones locales de `/api` al backend mediante `frontend/vite.config.js`. Para otra API, `VITE_API_BASE_URL` debe incluir `/api`; conserva su validación en `frontend/config/api-config.js`. Estas variables se incorporan al build del frontend.
 
@@ -105,6 +105,8 @@ Estos comandos se ejecutan desde `backend/` únicamente cuando la tarea cubra la
 No ejecutes inicialización, migraciones, importaciones ni creación de usuarios como parte de la instalación, compilación, arranque o revisión rutinaria de tipos. La instalación/build solo genera el cliente Prisma.
 
 ## Backend: convenciones y contratos
+
+Ediciones académicas (fase 2) usa `backend/src/convocatorias/` y `/api/admin/convocatorias`, con sección React `?section=ediciones`. Reutiliza los permisos `convocatorias:*` sin cambiar la matriz. Requiere `20261018-convocatorias-capacidad` antes del código: capacidad nullable conserva filas anteriores, pero altas/apertura exigen cupos positivos. El curso es inmutable; abrir, cerrar/cancelar y archivar son acciones con revisión e historial transaccional. No hay DELETE ni API de Matrículas. Contrato y pruebas aisladas: [Gestión de ediciones](docs/procedimientos/gestion-ediciones.md).
 
 - Mantén la organización por módulos: controladores para HTTP, DTOs para entradas y servicios para reglas de negocio. Reutiliza `PrismaService`; evita crear clientes por petición.
 - Usa `createValidationPipe()` de `backend/src/common/validation.ts`. La conversión implícita está desactivada: convierte explícitamente parámetros numéricos de query con `@Type(() => Number)` cuando corresponda.
