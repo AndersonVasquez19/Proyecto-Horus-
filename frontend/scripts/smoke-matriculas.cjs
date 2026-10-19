@@ -2,9 +2,10 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+// Se valida antes de cargar dependencias: el rechazo no depende de que exista backend/dist (job Frontend de CI).
+if (process.env.MATRICULAS_API_URL) throw new Error('API real solo por IPC de la integración aislada.');
 const { start } = require('./smoke-kit.cjs');
 const { permissionsOf } = require('../../backend/dist/permissions/policy.js');
-if (process.env.MATRICULAS_API_URL) throw new Error('API real solo por IPC de la integración aislada.');
 let role = 'GERENTE_GENERAL', live, kit, writes = 0, requests = 0, failList = false, failWrite = false, conflict = false;
 const tokens = {}, now = new Date().toISOString();
 const student = { id: 10, nombres: 'Persona 9', apellidos: 'Ficticia', doc_numero: '12345009', archivado_at: null };
