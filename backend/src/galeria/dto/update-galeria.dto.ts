@@ -8,7 +8,7 @@ export class UpdateGaleriaDto {
   @Transform(trimValue)
   @IsString()
   @ValidateIf((_, value) => value !== undefined)
-  @Length(2, 150)
+  @Length(1, 150)
   titulo?: string;
 
   @ApiPropertyOptional({ example: 'Taller práctico actualizado.' })
@@ -21,7 +21,7 @@ export class UpdateGaleriaDto {
   @Transform(trimValue)
   @IsString()
   @ValidateIf((_, value) => value !== undefined)
-  @Length(2, 50)
+  @Length(1, 50)
   categoria?: string;
 
   @ApiPropertyOptional({ example: '/galeria/capacitaciones/imagen-1.jpg' })
@@ -29,7 +29,7 @@ export class UpdateGaleriaDto {
   @IsString()
   @ValidateIf((_, value) => value !== undefined)
   @Matches(/^(?:https?:\/\/[^\s/]+(?:\/[^\s]*)?|\/(?!\/)[^\s\\\\]*)$/)
-  @Length(3, 500)
+  @Length(1, 500)
   imagen_url?: string;
 
   @ApiPropertyOptional({ example: 1 })

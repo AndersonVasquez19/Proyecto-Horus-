@@ -1,0 +1,121 @@
+/*
+ * Educación (cursos, capacitaciones, asesoramiento, detalle). Tokens, hero, section heading and buttons come from
+ * horus-theme.css; surfaces, states and links reuse the shared .tech-* pieces from tecnologias.css.
+ * Content is always the panel's: this sheet only presents it.
+ */
+
+/* ---------- Modality filters ---------- */
+.edu-filters { display: flex; flex-wrap: nowrap; gap: .5rem; margin: 0 auto 1.25rem; padding: .3rem .25rem .6rem; overflow-x: auto; justify-content: safe center; scrollbar-width: thin; scrollbar-color: #c9a96166 transparent; }
+.edu-chip {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: .55rem; min-height: 44px; padding: .6rem 1rem; white-space: nowrap;
+  border: 1px solid var(--horus-line); border-radius: 999px; background: #fff; color: var(--horus-navy); font-size: .9rem; font-weight: 700;
+}
+.edu-chip:hover { border-color: var(--horus-gold); }
+.edu-chip[aria-pressed="true"] { background: var(--horus-gold); border-color: var(--horus-gold); color: var(--horus-navy-deep); box-shadow: var(--horus-shadow-button); }
+.edu-chip-count { min-width: 1.5rem; padding: .05rem .45rem; border-radius: 999px; background: #0a254012; font-size: .75rem; text-align: center; }
+.edu-chip[aria-pressed="true"] .edu-chip-count { background: #071b2e22; }
+.edu-count { margin: 0 0 1.5rem; text-align: center; color: var(--horus-muted); font-size: .9rem; }
+
+/* ---------- Card grid ---------- */
+.edu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1.5rem; align-items: stretch; }
+.edu-card {
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: #fff; border: 1px solid var(--horus-line);
+  border-top: 3px solid var(--horus-gold); border-radius: var(--horus-radius-lg); box-shadow: 0 10px 30px #0a254012;
+}
+.edu-card-media { aspect-ratio: 16 / 10; flex-shrink: 0; }
+.edu-card-kind { position: absolute; left: .8rem; bottom: .8rem; z-index: 1; }
+.edu-card-icon { position: absolute; left: .8rem; bottom: .8rem; z-index: 1; border: 1px solid #c9a96150; }
+.edu-card-body { display: flex; flex-direction: column; flex: 1; gap: .9rem; min-width: 0; padding: 1.4rem 1.4rem 1.5rem; }
+.edu-card h3 { margin: 0; font-family: var(--horus-font-display); font-size: 1.15rem; font-weight: 800; line-height: 1.3; color: var(--horus-navy); overflow-wrap: anywhere; text-wrap: balance; }
+.edu-card-desc { display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.edu-card .tech-actions { padding-top: 1rem; border-top: 1px solid var(--horus-line); }
+
+/* Facts: label + value pairs, never blank. */
+.edu-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .65rem .9rem; margin: 0; }
+.edu-facts > div { min-width: 0; }
+.edu-facts dt { display: flex; align-items: center; gap: .4rem; color: var(--horus-muted); font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.edu-facts dt i { color: var(--horus-gold); font-size: .72rem; }
+.edu-facts dd { margin: .15rem 0 0; color: var(--horus-navy); font-size: .92rem; font-weight: 700; overflow-wrap: anywhere; }
+.edu-facts .is-pending dd { color: var(--horus-muted); font-weight: 600; font-style: italic; }
+.edu-more { display: flex; justify-content: center; margin-top: 2rem; }
+.edu-more-btn { color: var(--horus-navy); border-color: var(--horus-navy); }
+.edu-more-btn:hover { background: #0a254010; }
+
+/* ---------- Empty state ---------- */
+.edu-empty {
+  display: grid; justify-items: center; gap: 1rem; max-width: 40rem; margin: 0 auto; padding: clamp(1.75rem, 4vw, 2.75rem) clamp(1.25rem, 4vw, 2.5rem); text-align: center;
+  background: #fff; border: 1px solid var(--horus-line); border-top: 3px solid var(--horus-gold); border-radius: var(--horus-radius-lg); box-shadow: 0 10px 30px #0a254012;
+}
+.edu-empty-icon { width: 3.25rem; height: 3.25rem; border-radius: 50%; font-size: 1.2rem; }
+.edu-empty h3 { margin: 0; font-family: var(--horus-font-display); font-size: clamp(1.25rem, 2.4vw, 1.6rem); font-weight: 800; color: var(--horus-navy); text-wrap: balance; }
+.edu-empty p { margin: 0; max-width: 52ch; color: var(--horus-muted); line-height: 1.7; }
+.edu-empty .tech-actions { justify-content: center; margin-top: 0; }
+
+/* "Avísame" form */
+.edu-notify { display: grid; gap: .8rem; width: 100%; max-width: 26rem; margin-top: .75rem; padding-top: 1.5rem; border-top: 1px solid var(--horus-line); text-align: left; }
+.edu-notify h3 { font-size: 1.05rem; text-align: center; }
+.edu-notify fieldset { display: grid; gap: .55rem; margin: 0; padding: 0; border: 0; min-width: 0; }
+.edu-notify label { color: var(--horus-ink); font-size: .85rem; font-weight: 600; }
+.edu-notify input[type="email"] { width: 100%; min-height: 46px; padding: .65rem .85rem; border: 1px solid #9fb0c2; border-radius: var(--horus-radius-sm); background: #fff; color: var(--horus-ink); font: inherit; }
+.edu-notify input[aria-invalid="true"] { border-color: #b42318; }
+.edu-notify-ok:focus, .edu-notify-error:focus { outline: none; }
+.edu-notify input:focus-visible { outline: 3px solid var(--horus-gold); outline-offset: 2px; }
+.edu-notify-consent { display: flex; align-items: flex-start; gap: .6rem; font-weight: 500 !important; line-height: 1.5; }
+.edu-notify-consent input { flex-shrink: 0; width: 1.1rem; height: 1.1rem; margin-top: .15rem; accent-color: var(--horus-navy); }
+.edu-notify-consent a { color: var(--horus-blue); text-decoration: underline; text-underline-offset: 3px; }
+.edu-notify button { justify-self: center; }
+.edu-notify button:disabled { opacity: .6; cursor: default; }
+.edu-notify-ok, .edu-notify-error { margin: 0; padding: .6rem .8rem; border-radius: var(--horus-radius-sm); font-size: .86rem; line-height: 1.5; text-align: center; }
+.edu-notify-ok { background: #e7f4ec; color: #14532d; border: 1px solid #9bd2ae; }
+.edu-notify-error { background: #fdecea; color: #7f1d1d; border: 1px solid #f1a7a1; }
+
+/* ---------- Loading ---------- */
+.edu-skeleton { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1.5rem; }
+.edu-skeleton > span:not(.tech-sr) { display: block; height: 22rem; border: 1px solid var(--horus-line); border-radius: var(--horus-radius-lg); background: linear-gradient(90deg, #eef2f7, #fff, #eef2f7); background-size: 200% 100%; }
+.edu-skeleton-detail > span:not(.tech-sr) { height: 18rem; }
+
+/* ---------- Detail ---------- */
+.edu-back { margin-bottom: 1.25rem; }
+.edu-back i { font-size: .65rem; }
+.edu-detail { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(1.25rem, 3vw, 2.5rem); align-items: start; }
+.edu-detail-media { aspect-ratio: 4 / 3; border: 1px solid var(--horus-line); border-radius: var(--horus-radius-lg); box-shadow: var(--horus-shadow-card); }
+.edu-detail-info { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; padding: clamp(1.25rem, 3vw, 2rem); background: #fff; border: 1px solid var(--horus-line); border-top: 3px solid var(--horus-gold); border-radius: var(--horus-radius-lg); box-shadow: 0 10px 30px #0a254012; }
+.edu-detail-desc { font-size: 1rem; white-space: pre-line; }
+.edu-detail-syllabus { grid-column: 1 / -1; padding: clamp(1.25rem, 3vw, 2rem); background: #fff; border: 1px solid var(--horus-line); border-radius: var(--horus-radius-lg); }
+.edu-detail-syllabus h2 { margin: 0 0 1rem; font-family: var(--horus-font-display); font-size: 1.25rem; font-weight: 800; color: var(--horus-navy); }
+.edu-detail-syllabus h2::after { content: ''; display: block; width: 3rem; height: 3px; margin-top: .6rem; border-radius: 3px; background: var(--horus-gold); }
+.edu-detail-syllabus .tech-list li, .edu-detail-syllabus .tech-chips li { font-size: .95rem; }
+
+/* ---------- Asesoramiento benefits ---------- */
+.edu-benefits { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 1.25rem; margin: 0; padding: 0; }
+.edu-benefit { position: relative; display: grid; align-content: start; gap: .7rem; padding: 1.5rem; border: 1px solid #c9a96135; border-radius: var(--horus-radius-lg); background: #ffffff08; }
+.edu-benefit-num { position: absolute; top: 1rem; right: 1.1rem; color: var(--horus-gold); font-size: .8rem; font-weight: 800; letter-spacing: .08em; opacity: .8; }
+.edu-benefit h3 { margin: 0; font-family: var(--horus-font-display); font-size: 1.05rem; font-weight: 800; color: #fff; }
+.edu-benefit p { margin: 0; color: #d5e0eb; font-size: .9rem; line-height: 1.7; }
+
+/* Stagger */
+.edu-grid > :nth-child(3n + 2), .edu-benefits > :nth-child(3n + 2) { --reveal-delay: 80ms; }
+.edu-grid > :nth-child(3n + 3), .edu-benefits > :nth-child(3n + 3) { --reveal-delay: 160ms; }
+
+@media (max-width: 860px) {
+  .edu-detail { grid-template-columns: minmax(0, 1fr); }
+  .edu-detail-media { aspect-ratio: 16 / 10; }
+}
+@media (max-width: 480px) {
+  .edu-card-body { padding: 1.2rem 1.1rem 1.3rem; }
+  .edu-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---------- Motion ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .edu-skeleton > span:not(.tech-sr) { animation: tech-shimmer 1.4s linear infinite; }
+  .edu-chip { transition: background .2s ease, border-color .2s ease, box-shadow .2s ease; }
+  .edu-grid { animation: edu-swap .35s var(--horus-ease); }
+  .edu-card, .edu-benefit { transition: border-color .25s ease, box-shadow .25s ease; }
+  .edu-card-media > img { transition: transform .7s var(--horus-ease); }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .edu-card:hover .edu-card-media > img { transform: scale(1.05); }
+  .site-layout .edu-card.visible:hover { transform: translateY(-4px); border-color: var(--horus-gold); box-shadow: var(--horus-shadow-card); }
+}
+@keyframes edu-swap { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

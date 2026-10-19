@@ -12,12 +12,12 @@ Sitio institucional y panel de Horus Group SRL. Frontend React/TypeScript/Vite; 
 - Cotizaciones con importes calculados en el backend, borradores, seguimiento de estados, correo e impresión para guardar PDF.
 - Newsletter con consentimiento y enlace firmado de baja.
 - Carga administrativa de imágenes PNG/JPEG/WebP, hasta 5 MB.
-- Registro administrativo abierto, login, recuperación/cambio de contraseña, desactivación de cuentas y revocación de sesiones.
+- Login, recuperación/cambio de contraseña, desactivación de cuentas y revocación de sesiones. Registro público en `/admin/register` (`POST /api/admin/signup`): la cuenta nace sin rol, puede iniciar sesión de inmediato y entra en «Mi espacio» (sus datos y su contraseña), sin permisos administrativos. El gerente asigna, cambia o retira roles desde «Roles y usuarios» (o con `npm run admin:assign-role`); el backend sigue autorizando con JWT, AccessGuard y RBAC. El alta hecha por un administrador exige sesión y `cuentas:crear`; el primero se crea con `npm run admin:create`.
 - Chatbot basado en contenido publicado y ajustes públicos conocidos, con IA opcional y cuotas compartidas en MySQL.
 
 Las secciones de cableado, cámaras, soporte, asesoramiento y capacitaciones conservan sus diseños originales con datos editables desde el panel. La galería utiliza fotos activas en sus franjas animadas y filtros. Guardar contenido actualiza una web abierta en otra pestaña del mismo navegador; otros visitantes ven los cambios en su siguiente consulta.
 
-Market permanece como próxima etapa: no incluye compras, pagos ni inscripciones automáticas. La biblioteca de contenido es interna al panel.
+Market no forma parte de este proyecto: la ruta antigua /market redirige al inicio y no hay compras, pagos ni inscripciones automáticas. La biblioteca de contenido es interna al panel.
 
 ## Preparación
 
@@ -31,15 +31,15 @@ La migración `20261002-original-design` añade los campos de presentación de s
 
 En las secciones **Servicios**, **Cursos y capacitaciones** y **Galería** del panel, **Recuperar contenido original** muestra una vista previa y permite publicar o guardar sin publicar. Solo importa contenido que existía en la revisión `fb2880b`; conserva registros existentes, ediciones y estados, incluidos archivados. No modifica los ajustes institucionales. En MySQL local de desarrollo, `npm run content:restore` es la alternativa explícita, después del build y las migraciones. No se ejecuta al arrancar ni al consultar la web.
 
-Configurar `MAIL_USER` y `MAIL_PASS` para correos. En producción, montar un volumen persistente y configurar `UPLOAD_DIR`. Sin almacenamiento persistente configurado, la carga de imágenes en producción responde con un error explícito.
+Configurar el correo con `MAIL_PROVIDER` (`resend` o `gmail`) según `backend/MAIL.md`. En producción, montar un volumen persistente y configurar `UPLOAD_DIR`. Sin almacenamiento persistente configurado, la carga de imágenes en producción responde con un error explícito.
 
 ## Desarrollo
 
-Desde `backend/`: `npm run start:dev`. API en `http://localhost:3000/api`; Swagger en `/api/docs`.
+Desde `backend/`: `npm run start:dev`. API en `http://localhost:3000/api`; Swagger en `/api/docs` solo en desarrollo (en producción está apagado salvo `SWAGGER_ENABLED=true`, con HTTPS y cuenta de administrador). El healthcheck es `/api/health`.
 
 Desde `frontend/`: `npm ci` y `npm run dev`. Vite redirige `/api` al backend. `VITE_API_BASE_URL` permite utilizar otra URL de API.
 
-El panel está en `/admin/dashboard`. Login y registro son pantallas separadas; el visitante vuelve al login tras registrarse. Todos los administradores conservan los permisos del panel.
+El panel está en `/admin/dashboard`. El acceso es por `/admin/login`; `/admin/register` es el registro público: la cuenta creada inicia sesión y usa «Mi espacio», pero no obtiene funciones administrativas sin un rol asignado. Cada cuenta con rol ve las secciones y operaciones de su rol.
 
 ## Verificación
 
@@ -58,3 +58,15 @@ Antes de presentar: confirmar los datos institucionales con la empresa, revisar/
 ## Equipo
 
 Proyecto académico de Ingeniería de Software: Anderson Vásquez, Cristopher Pulache y Carlos Castope.
+
+### Contenido compartido entre administradores y visitantes
+
+Todos los administradores consultan el mismo backend y las mismas tablas MySQL. Crear una cuenta no crea un catálogo ni una base independientes. Para compartir contenido entre equipos, accede a la URL pública del mismo frontend; todas las instancias del backend deben usar el mismo destino `DB_*`. El proxy `/api` y la alternativa `VITE_API_BASE_URL` se describen en [Railway](RAILWAY.md).
+
+Guarda el contenido y marca cursos, servicios y preguntas como **publicado**, galerías como **activo** y convenios como **visible**. Los borradores son compartidos entre administradores, pero no se muestran a visitantes. Consultas, reclamaciones, suscripciones y cotizaciones permanecen protegidas.
+
+`localStorage` conserva únicamente el token de sesión y un marcador de cambios para refrescar otras pestañas. No almacena el contenido del panel. Cada carga consulta la API; los cambios desde otro equipo se ven al entrar o actualizar la sección. Si el navegador bloquea el almacenamiento, la página pública funciona y la sesión iniciada se mantiene solo durante la navegación actual.
+
+Los uploads del proxy se guardan como `/api/uploads/<archivo>`, evitando enlaces dependientes de `localhost`. Las respuestas de contenido resuelven las rutas de uploads contra la API configurada y los antiguos enlaces de uploads de loopback, sin modificar MySQL ni los enlaces externos. El backend necesita un `UPLOAD_DIR` persistente, compartido si tiene varias instancias.
+
+Verificación adicional: desde `frontend/`, después de compilar, ejecuta `node scripts/smoke-global-content.cjs`. Revisa dos sesiones de navegador aisladas y un visitante con storage bloqueado mediante fixtures HTTP. La prueba de persistencia real entre administradores y tras reiniciar la API forma parte de `backend/test/prisma.integration.cjs` y utiliza una base temporal local.

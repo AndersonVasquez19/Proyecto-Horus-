@@ -1,8 +1,0 @@
-import { useState, type SubmitEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { publicRequest } from '../api';
-export default function NewsletterForm(){
- const [email,setEmail]=useState(''),[consent,setConsent]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
- const submit=async(e:SubmitEvent<HTMLFormElement>)=>{e.preventDefault();if(busy)return;setBusy(true);setError('');setNotice('');try{const r=await publicRequest<{correo_enviado:boolean}>('newsletter',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,interes:'market',consentimiento:consent})});setNotice(r.correo_enviado?'Suscripción registrada. Revisa tu correo; incluye el enlace para darte de baja.':'Suscripción registrada. El correo de confirmación no pudo enviarse. Puedes solicitar la baja desde Contactos.');setEmail('');setConsent(false);}catch(e){setError(e instanceof Error?e.message:'No se pudo registrar la suscripción.');}finally{setBusy(false)}};
- return <form className="public-catalog-toolbar" onSubmit={submit}><fieldset disabled={busy} style={{border:0,padding:0}}><label>Correo para recibir novedades<input type="email" autoComplete="email" required maxLength={254} value={email} onChange={e=>setEmail(e.target.value)}/></label><label><input type="checkbox" required checked={consent} onChange={e=>setConsent(e.target.checked)}/>Autorizo recibir novedades de Market y he leído la <Link to="/politicas/privacidad">política de privacidad</Link>.</label></fieldset><button disabled={busy}>{busy?'Registrando…':'Notificarme cuando esté listo'}</button>{notice&&<p role="status">{notice}</p>}{error&&<p role="alert">{error}</p>}</form>;
-}

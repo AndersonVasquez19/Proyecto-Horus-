@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { SettingsService } from './settings.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RequirePermission } from '../permissions/access.decorators';
 
 @ApiTags('Admin - Configuración')
 @ApiBearerAuth()
@@ -12,6 +13,7 @@ export class AdminSettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
   @Get()
+  @RequirePermission('configuracion:leer')
   @ApiOperation({ summary: 'Obtener todos los parámetros institucionales para el panel' })
   @ApiResponse({ status: 200, description: 'Listado completo de parámetros y ajustes' })
   async getAll() {
@@ -19,6 +21,7 @@ export class AdminSettingsController {
   }
 
   @Put()
+  @RequirePermission('configuracion:editar')
   @ApiOperation({ summary: 'Actualizar configuración corporativa de la empresa' })
   @ApiResponse({ status: 200, description: 'Ajustes actualizados exitosamente' })
   async update(@Body() dto: UpdateSettingsDto) {

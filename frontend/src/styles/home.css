@@ -1022,7 +1022,7 @@
 
 .ix-social-fb { background: #1877f2; color: #fff; }
 .ix-social-wa { background: #25d366; color: #fff; }
-.ix-social-yt { background: #ff0000; color: #fff; }
+.ix-social-ig { background: linear-gradient(45deg, #f9a03f, #e4405f 50%, #833ab4); color: #fff; }
 
 @media (max-width: 1024px) {
   .ix-footer-top {

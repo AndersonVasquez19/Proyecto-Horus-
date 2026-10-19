@@ -1,5 +1,5 @@
 import slide0 from '../../assets/images/galeria/capacitaciones/imagen 1.jpg'
-import slide1 from '../../assets/images/galeria/nuestro servicio tecnico/imagen 1.jpg'
+import slide1 from '../../assets/images/galeria/nuestro servicio tecnico/servicio-instalacion.jpg'
 import slide2 from '../../assets/images/galeria/colegio de enfermeros/imagen 1.jpg'
 import slide3 from '../../assets/images/galeria/practicas de primeros auxilios/imagen 1.jpg'
 
@@ -8,10 +8,10 @@ export { default as imgCableado } from '../../assets/images/tecnologias/cableado
 export const imgCapacitaciones = slide2
 
 export const SLIDES = [
-  { src: slide0, alt: 'Capacitaciones de Horus Group' },
-  { src: slide1, alt: 'Instalación de cámaras y servicio técnico' },
-  { src: slide2, alt: 'Actividades con el Colegio de Enfermeros' },
-  { src: slide3, alt: 'Prácticas de primeros auxilios' },
+  { src: slide0, alt: 'Capacitaciones de Horus Group', label: 'Capacitación', position: '50% 45%' },
+  { src: slide1, alt: 'Instalación de cámaras y servicio técnico', label: 'Servicio técnico', position: '32% 40%' },
+  { src: slide2, alt: 'Actividades con el Colegio de Enfermeros', label: 'Formación profesional', position: '50% 50%' },
+  { src: slide3, alt: 'Prácticas de primeros auxilios', label: 'Primeros auxilios', position: '50% 55%' },
 ]
 
 export const WHY_CARDS = [

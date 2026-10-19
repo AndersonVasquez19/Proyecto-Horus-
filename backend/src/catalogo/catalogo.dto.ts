@@ -2,13 +2,15 @@ import { Transform, Type } from 'class-transformer';
 import { IsArray, ArrayUnique, IsString, Length, IsIn, IsInt, Min, Max, IsISO8601, Matches, ValidateIf, ValidateBy, isURL } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
+import { isManagedUploadPath } from '../common/image-path';
+
 const trim = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value;
 
 const PublicImageUrl=()=>ValidateBy({
   name:'publicImageUrl',
   validator:{
-    validate:(value:unknown)=>typeof value==='string'&&(/^\/site-original\/[a-zA-Z0-9_-]+\.(?:jpg|jpeg|png|webp)$/.test(value)||isURL(value,{protocols:['https','http'],require_protocol:true})),
-    defaultMessage:()=> 'imagen_url debe ser una URL HTTP/HTTPS válida o una imagen de /site-original/.',
+    validate:(value:unknown)=>typeof value==='string'&&(isManagedUploadPath(value)||/^\/site-original\/[a-zA-Z0-9_-]+\.(?:jpg|jpeg|png|webp)$/.test(value)||isURL(value,{protocols:['https','http'],require_protocol:true})),
+    defaultMessage:()=> 'imagen_url debe ser una URL HTTP/HTTPS válida o una imagen de /api/uploads/ o /site-original/.',
   },
 });
 
@@ -63,17 +65,17 @@ export class CreateCursoDto extends VisualContentDto {
   @ApiPropertyOptional() @ValidateIf((_,v)=>v!==undefined) @Transform(trim) @IsString() @Length(1,150) certificacion?:string;
   @ApiProperty()
   @Transform(trim)
-  @IsString() @Length(2, 160)
+  @IsString() @Length(1, 160)
   titulo: string;
 
   @ApiProperty()
   @Transform(trim)
-  @IsString() @Length(2, 180) @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  @IsString() @Length(1, 180) @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   slug: string;
 
   @ApiProperty()
   @Transform(trim)
-  @IsString() @Length(3, 20000)
+  @IsString() @Length(1, 20000)
   descripcion: string;
 
   @ApiProperty({ enum: ["curso","capacitacion"] })
@@ -90,13 +92,13 @@ export class CreateCursoDto extends VisualContentDto {
   @ApiPropertyOptional()
   @ValidateIf((o,v)=>o.tipo!=='capacitacion'||v!==undefined)
   @Transform(trim)
-  @IsString() @Length(2, 120)
+  @IsString() @Length(1, 120)
   duracion?: string;
 
   @ApiPropertyOptional()
   @ValidateIf((_, value) => value !== undefined)
   @Transform(trim)
-  @IsString() @Length(2, 20000)
+  @IsString() @Length(1, 20000)
   temario?: string;
 
   @ApiPropertyOptional()
@@ -133,28 +135,28 @@ export class CreateServicioDto extends VisualContentDto {
   @ApiPropertyOptional() @ValidateIf((_,v)=>v!==undefined) @Transform(trim) @IsString() @Length(1,2000) etiquetas?:string;
   @ApiProperty()
   @Transform(trim)
-  @IsString() @Length(2, 160)
+  @IsString() @Length(1, 160)
   titulo: string;
 
   @ApiProperty()
   @Transform(trim)
-  @IsString() @Length(2, 180) @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  @IsString() @Length(1, 180) @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   slug: string;
 
   @ApiProperty()
   @Transform(trim)
-  @IsString() @Length(3, 20000)
+  @IsString() @Length(1, 20000)
   descripcion: string;
 
-  @ApiProperty({ enum: ["cableado","camaras","soporte","asesoramiento","otros"] })
+  @ApiProperty({ enum: ["cableado","camaras","soporte","asesoramiento"] })
   @Transform(trim)
-  @IsIn(["cableado","camaras","soporte","asesoramiento","otros"])
+  @IsIn(["cableado","camaras","soporte","asesoramiento"])
   categoria: string;
 
   @ApiPropertyOptional()
   @ValidateIf((_, value) => value !== undefined)
   @Transform(trim)
-  @IsString() @Length(2, 20000)
+  @IsString() @Length(1, 20000)
   alcance?: string;
 
   @ApiPropertyOptional()
@@ -179,17 +181,17 @@ export class UpdateServicioDto extends PartialType(CreateServicioDto, { skipNull
 export class CreatePreguntaFrecuenteDto {
   @ApiProperty()
   @Transform(trim)
-  @IsString() @Length(2, 300)
+  @IsString() @Length(1, 300)
   pregunta: string;
 
   @ApiProperty()
   @Transform(trim)
-  @IsString() @Length(3, 12000)
+  @IsString() @Length(1, 12000)
   respuesta: string;
 
   @ApiProperty()
   @Transform(trim)
-  @IsString() @Length(2, 100)
+  @IsString() @Length(1, 100)
   categoria: string;
 
   @ApiPropertyOptional({ minimum: 0 })

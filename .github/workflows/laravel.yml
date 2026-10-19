@@ -1,0 +1,136 @@
+name: Laravel CI
+
+on:
+  push:
+    branches: [anderson]
+    paths:
+      - 'backend-laravel/**'
+      - '.github/workflows/laravel.yml'
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '.gitattributes'
+      - '.gitignore'
+  pull_request:
+    branches: [anderson]
+    paths:
+      - 'backend-laravel/**'
+      - '.github/workflows/laravel.yml'
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '.gitattributes'
+      - '.gitignore'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: laravel-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  laravel:
+    name: PHP 8.4 - PHPUnit y Pint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend-laravel
+        shell: bash
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      APP_CONFIG_CACHE: storage/framework/testing/ci-config.php
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      DB_URL: ''
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      QUEUE_CONNECTION: sync
+      BROADCAST_CONNECTION: 'null'
+      LOG_CHANNEL: '"null"'
+      APP_MAINTENANCE_DRIVER: file
+      BCRYPT_ROUNDS: '4'
+
+    steps:
+      - name: Obtener el código sin conservar credenciales
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Configurar PHP 8.4 y Composer 2
+        uses: shivammathur/setup-php@d52fc211a0436f8839a587b3b5b8efddab4744ea # v2
+        with:
+          php-version: '8.4'
+          extensions: ctype, curl, dom, fileinfo, filter, hash, iconv, intl, json, libxml, mbstring, openssl, pcre, pdo, pdo_sqlite, phar, session, simplexml, sqlite3, tokenizer, xml, xmlreader, xmlwriter, zip
+          tools: composer:v2
+          coverage: none
+        env:
+          fail-fast: 'true'
+
+      - name: Preparar entorno efímero y APP_KEY sin mostrarlos
+        run: |
+          php -r '
+            if (file_exists(".env") || file_exists("database/database.sqlite")) {
+                fwrite(STDERR, "El runner contiene un entorno o una base inesperados.\n");
+                exit(1);
+            }
+            $env = "APP_NAME=HorusCI\nAPP_ENV=testing\nAPP_DEBUG=false\nAPP_LOCALE=es\n";
+            $env .= "APP_KEY=base64:".base64_encode(random_bytes(32))."\n";
+            $env .= "DB_CONNECTION=sqlite\nDB_DATABASE=:memory:\nDB_URL=\n";
+            $env .= "CACHE_STORE=array\nSESSION_DRIVER=array\nMAIL_MAILER=array\nQUEUE_CONNECTION=sync\nLOG_CHANNEL=null\n";
+            if (file_put_contents(".env", $env) === false) { exit(1); }
+          '
+
+      - name: Validar Composer y requisitos del lockfile
+        run: |
+          composer validate --strict --no-check-publish --no-interaction
+          composer check-platform-reqs --lock --no-interaction
+
+      - name: Instalar las versiones fijadas (incluye recursos Filament)
+        id: dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Comprobar migraciones únicamente en SQLite en memoria
+        run: php artisan migrate --force --no-interaction
+
+      - name: Ejecutar toda la suite, incluida concurrencia real
+        id: phpunit
+        run: |
+          mkdir -p test-results
+          php vendor/phpunit/phpunit/phpunit --no-progress --colors=never --log-junit test-results/phpunit.xml
+
+      - name: Verificar formato sin modificar archivos
+        id: pint
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: php vendor/bin/pint --test
+
+      - name: Resumen de resultados
+        if: ${{ !cancelled() }}
+        env:
+          PHPUNIT_OUTCOME: ${{ steps.phpunit.outcome }}
+          PINT_OUTCOME: ${{ steps.pint.outcome }}
+        run: |
+          {
+            echo '## Laravel - PHP 8.4'
+            printf '\n| Comprobación | Resultado |\n| --- | --- |\n'
+            printf '| PHPUnit | %s |\n' "$PHPUNIT_OUTCOME"
+            printf '| Pint | %s |\n' "$PINT_OUTCOME"
+            php -r '
+              if (is_file("test-results/phpunit.xml")) {
+                  $report = simplexml_load_file("test-results/phpunit.xml", options: LIBXML_NONET);
+                  if ($report === false) { exit(1); }
+                  $suite = $report->testsuite[0];
+                  printf("\nPruebas: %d; aserciones: %d; fallos: %d; errores: %d; omitidas: %d.\n", (int) $suite["tests"], (int) $suite["assertions"], (int) $suite["failures"], (int) $suite["errors"], (int) $suite["skipped"]);
+              }
+            '
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Conservar solo el informe JUnit durante siete días
+        if: ${{ !cancelled() && steps.phpunit.outcome != 'skipped' && steps.phpunit.outcome != '' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: laravel-phpunit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: backend-laravel/test-results/phpunit.xml
+          if-no-files-found: warn
+          retention-days: 7

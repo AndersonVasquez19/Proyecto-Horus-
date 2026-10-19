@@ -67,3 +67,22 @@
 @media(max-width:480px){.hw-insights{grid-template-columns:1fr}.hw-insights>article,.hw-insights>button{flex-direction:row;align-items:center;justify-content:space-between}.hw-resource footer{flex-wrap:wrap}.hw-inbox-meta{flex-wrap:wrap}}
 
 .hw-record-value{white-space:pre-wrap;overflow-wrap:anywhere}
+.hw-inbox.is-table{grid-template-columns:1fr}.hw-inbox.is-table .hw-inbox-list{max-height:none;border-right:0;border-bottom:1px solid #e5ebf3}
+.hw-inbox-table td small{display:block;color:#8193a7;font-size:12px}.hw-inbox-table tr.is-selected{background:#edf4fc;box-shadow:inset 3px 0 #6289b7}
+.hw-record-actions{margin-top:24px;padding-top:18px;border-top:1px dashed #d5deea}.hw-record-actions>strong{font-size:14px}.hw-record-actions>p{font-size:13px;color:#7a8da3;margin:8px 0 12px}
+.hp-btn-quiet{background:transparent;color:#9b3b3b;border-color:#e3c9c9}.hp-btn-quiet:hover:not(:disabled){background:#fbf3f3}
+@media(max-width:760px){.hw-inbox-table .hw-col-wide{display:none}}
+/* D6.4 · Centro de atención: cuatro indicadores en una fila (2×2 en pantallas medianas y móviles) y navegación lista → detalle en móvil. */
+.hw-insights.hw-insights-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.hw-back{display:none}
+@media(max-width:1200px){.hw-insights.hw-insights-4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){
+.hw-insights.hw-insights-4{gap:8px}
+.hw-insights.hw-insights-4>button{flex-direction:column;align-items:flex-start;gap:6px;padding:12px}
+.hw-insights.hw-insights-4>button>span:last-child{display:none}
+.hw-tabs{flex-wrap:nowrap}
+.hw-inbox-list{max-height:none}
+.hw-inbox.has-detail .hw-inbox-list{display:none}
+.hw-inbox:not(.has-detail) .hw-inbox-detail{display:none}
+.hw-back{display:inline-flex;margin-bottom:14px}
+}

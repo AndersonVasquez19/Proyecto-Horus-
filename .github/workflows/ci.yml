@@ -1,0 +1,228 @@
+# Integración continua de Horus. Solo comprueba: NO despliega, no usa secretos ni bases de producción ni servicios externos (correo, IA).
+# Los comandos son los de AGENTS.md / los scripts reales de cada package.json. Guía y límites: docs/procedimientos/ci.md
+name: CI
+
+on:
+  push:
+    branches: [main, anderson]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      smokes:
+        description: 'Ejecutar también los smokes con navegador (manual, sin verificar en este runner)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (tipos, pruebas, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Instalar dependencias (genera el cliente Prisma, sin conectar a MySQL)
+        run: npm ci
+      - name: Comprobar tipos (incluye los tests)
+        run: node node_modules/typescript/bin/tsc --noEmit --incremental false
+      # En serie y con la precarga que impide que @prisma/client cargue un backend/.env real (AGENTS.md / CLAUDE.md §3).
+      - name: Pruebas del backend (aisladas, sin MySQL ni red)
+        run: node --test --test-concurrency=1 -r ./test/isolate-env.cjs -r ts-node/register test/*.test.ts
+      - name: Compilar
+        run: npm run build
+
+  frontend:
+    name: Frontend (tipos, lint, pruebas, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run lint
+      - name: Pruebas unitarias (módulos puros, sin navegador)
+        run: |
+          npm run test:deploy
+          npm run test:errors
+          npm run test:return-path
+          npm run test:list-records
+          npm run test:attention-merge
+          npm run test:mail-outcome
+          npm run test:message-export
+          npm run test:notify
+          npm run test:session-access
+          npm run test:panel-access
+          npm run test:editions
+      - run: npm run build
+
+  # MySQL efímero del propio runner: se crea y se destruye con el job, con una contraseña de un solo uso que no es un secreto.
+  # test:integration crea y elimina solo una base horus_prisma_test_<UUID>, aplica init + migraciones (dos veces), db:check y las pruebas de módulos.
+  # backup-collation.integration.cjs solo usa este servidor (DB_HOST local; exige BACKUP_COLLATION_TEST_DB=true): crea y elimina únicamente horus_collation_src_<hex> y horus_restore_col_<hex>.
+  # Se lanza con `docker run` (y no como service) porque necesita argumentos del servidor: mysql_native_password, como en docker-compose.local.yml.
+  integration:
+    name: Integración (MySQL efímero)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [backend]
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: horus_ci
+      DB_USER: root
+      DB_PASS: ci-only-throwaway-password
+      DB_SSL: 'false'
+      # Clave ficticia exclusiva de pruebas (no es un secreto): JwtStrategy exige >= 32 caracteres al inicializar AppModule.
+      JWT_SECRET: ci-only-jwt-secret-not-for-production-use-0000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Iniciar MySQL efímero (solo 127.0.0.1)
+        working-directory: .
+        run: |
+          docker run -d --name mysql-ci -p 127.0.0.1:3306:3306 -e MYSQL_ROOT_PASSWORD="$DB_PASS" -e MYSQL_DATABASE="$DB_NAME" \
+            mysql:8.4 --mysql-native-password=ON --authentication-policy=mysql_native_password --character-set-server=utf8mb4
+          for i in $(seq 1 60); do
+            if docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysqladmin ping -h 127.0.0.1 -uroot --silent; then exit 0; fi
+            sleep 2
+          done
+          docker logs mysql-ci | tail -20
+          exit 1
+      - run: npm ci
+      - name: Integración con MySQL
+        run: npm run test:integration
+      # M-3 (H-BACK-01 E3.2): procesos reales de admin:create y admin:assign-role. La prueba solo actúa si el server_uuid de su conexión
+      # coincide con el leído aquí DENTRO del contenedor de este job (docker exec, otra vía), si el servidor es recién creado y no tiene datos.
+      # Crea y elimina únicamente horus_scripts_test_<hex>.
+      - name: Integración de admin:create y admin:assign-role (M-3)
+        run: |
+          ADMIN_SCRIPTS_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ADMIN_SCRIPTS_TEST_SERVER_UUID
+          node --test test/admin-scripts.integration.cjs
+        env:
+          ADMIN_SCRIPTS_TEST_DB: 'true'
+      # H-BACK-01 E3.5 y E3.6 (desde E3.6, AccessGuard está registrada en el AppModule normal y ACCESS_MODE = por_roles). Mismas barreras que M-3, todas antes de
+      # crear nada: activación explícita, DB_HOST de bucle local, server_uuid de la conexión = el leído aquí con docker exec dentro del contenedor
+      # de este job, servidor con Uptime < 1 h y sin tablas en ninguna base ajena a las del sistema. Van en serie y después de M-3 y de
+      # test:integration porque cada una elimina su propia base: si un paso previo dejara tablas, estas pruebas FALLAN (no se debilitan las
+      # barreras). Requieren backend/dist, que compila `npm run test:integration`. Crean y eliminan solo horus_e35_<hex> y horus_e36_<hex>.
+      # Si GitHub cancela el runner de forma forzosa no hay limpieza interna posible: el contenedor y los temporales desaparecen con el runner.
+      - name: Comprobar la identidad del MySQL efímero (E3.5 y E3.6)
+        working-directory: .
+        run: |
+          set -eu
+          test "$(docker inspect -f '{{.Name}}' mysql-ci)" = "/mysql-ci"
+          test "$(docker inspect -f '{{.Config.Image}}' mysql-ci)" = "mysql:8.4"
+          test "$(docker inspect -f '{{.State.Running}}' mysql-ci)" = "true"
+          # Único puerto publicado: 3306 en 127.0.0.1 (nunca en 0.0.0.0).
+          test "$(docker inspect -f '{{range $p, $b := .NetworkSettings.Ports}}{{range $b}}{{.HostIp}}:{{.HostPort}}>{{$p}};{{end}}{{end}}' mysql-ci)" = "127.0.0.1:3306>3306/tcp;"
+          test -f backend/dist/main.js
+          UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          echo "$UUID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          echo "MySQL efímero identificado (mysql-ci, mysql:8.4, solo 127.0.0.1)."
+      - name: Integración de la preparación de cuentas para AccessGuard (E3.5)
+        run: |
+          ACCESS_READINESS_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ACCESS_READINESS_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/admin-access-readiness.integration.cjs
+        env:
+          ACCESS_READINESS_TEST_DB: 'true'
+      - name: Integración de AccessGuard con HTTP real (E3.6, AppModule normal)
+        run: |
+          ACCESS_GUARD_HTTP_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ACCESS_GUARD_HTTP_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/access-guard-http.integration.cjs
+        env:
+          ACCESS_GUARD_HTTP_TEST_DB: 'true'
+      # H-BACK-01 E4.2: estructura académica (instalación, actualización desde E4.1, migración parcial, restricciones y Prisma).
+      # Mismas barreras que E3.5 y E3.6, todas antes de crear nada; va después de ellas porque exige un servidor sin tablas ajenas.
+      # Solo crea y elimina horus_e42_<hex> y horus_restore_e42_<hex> (restauración real con db:restore).
+      - name: Integración de la estructura académica (E4.2)
+        run: |
+          ACADEMICO_SCHEMA_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ACADEMICO_SCHEMA_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/academico-schema.integration.cjs
+        env:
+          ACADEMICO_SCHEMA_TEST_DB: 'true'
+      - name: Integración de la colación en db:backup y db:restore
+        run: node --test test/backup-collation.integration.cjs
+        env:
+          BACKUP_COLLATION_TEST_DB: 'true'
+      - name: Integración de Ediciones (HTTP, concurrencia y migración aditiva)
+        run: |
+          EDITIONS_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export EDITIONS_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/convocatorias.integration.cjs
+        env:
+          EDITIONS_TEST_DB: 'true'
+      - name: Retirar MySQL
+        if: always()
+        working-directory: .
+        run: docker rm -f mysql-ci || true
+
+  # Solo a demanda: los smokes necesitan Chrome/Chromium y no se han ejecutado en un runner Linux de GitHub. Se lanzan en serie
+  # (CLAUDE.md §10) con la API simulada y bloqueo de peticiones externas, sin MySQL ni correo.
+  smokes:
+    name: Smokes con navegador (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.smokes
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    needs: [frontend]
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      SMOKE_BROWSER: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+      - run: npm ci
+      - name: Instalar y compilar el backend (algunos smokes lo usan)
+        working-directory: backend
+        run: |
+          npm ci
+          npm run build
+      - run: npm run build
+      - name: Smokes en serie
+        run: |
+          set -e
+          for name in smoke:auth smoke:unsaved smoke:panel-sections smoke:panel-toasts smoke:quote-origin smoke:chatbot; do
+            echo "::group::$name"; npm run "$name"; echo "::endgroup::"
+          done
+          node scripts/smoke-home.cjs
+          node scripts/smoke-global-content.cjs
+          node scripts/smoke-ui.cjs

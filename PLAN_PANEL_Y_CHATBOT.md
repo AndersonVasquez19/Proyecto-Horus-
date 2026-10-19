@@ -24,7 +24,7 @@ Este inventario corresponde al código revisado y al alcance conversado. Algunas
 | Preguntas frecuentes | Existe CRUD; la página pública tiene sus propias preguntas. | Consumir `/api/preguntas-frecuentes` y respetar categoría y orden. |
 | Información de empresa | El panel guarda ajustes; contacto y pie de página mantienen datos propios. | Consumir `/api/settings` en la web y reutilizar los datos aprobados en correos. |
 | Inicio | Presentación mayormente estática. | Conectar los bloques que deban cambiar: cursos destacados, servicios o proyectos. |
-| Newsletter / Market | Existe backend de suscripciones; “Notificarme” lleva a contacto. | Crear un formulario de suscripción real y su confirmación. |
+| Newsletter | Existe suscripción con consentimiento y baja firmada; “Notificarme” (Educación) se suscribe con interés `cursos` y el interés por defecto es `novedades`. Market no existe como producto. | Sin trabajo pendiente en este punto; los suscriptores antiguos con interés `market` son datos históricos y se conservan. |
 | Biblioteca de contenido | Guarda elementos administrativos genéricos. | Definir su propósito: noticias, anuncios o biblioteca interna. Actualmente no tiene una publicación pública concreta. |
 
 Para cada conexión también se necesitan estados de carga, error, ausencia de registros y actualización de contenido. Si falla el servidor, la página debe indicarlo; no debe sustituir silenciosamente los datos por contenido ficticio.

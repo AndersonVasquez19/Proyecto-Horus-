@@ -114,6 +114,11 @@
 .admin-auth__password-toggle:hover:not(:disabled) { background: #edf2f7; color: #18334c; }
 .admin-auth__hint { color: var(--auth-muted); font-size: 11px; line-height: 1.6; }
 .admin-auth__error { padding: 12px 14px; color: #972b25; background: #fff1ef; border: 1px solid #efc7c3; border-radius: 10px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.admin-auth__success { padding: 12px 14px; color: #1d5b3a; background: #eef8f1; border: 1px solid #b9dcc6; border-radius: 10px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.admin-auth__notice { margin: 0 0 14px; padding: 12px 14px; color: #5f4600; background: #fff8e1; border: 1px solid #e6cf8a; border-radius: 10px; font-size: 13px; line-height: 1.6; }
+.admin-auth__error:focus, .admin-auth__success:focus { outline: none; }
+.admin-auth__field input[aria-invalid="true"], .admin-recovery-fields input[aria-invalid="true"] { border-color: #b3382f; }
+a.admin-auth__submit { text-decoration: none; }
 .admin-auth__submit {
   display: flex; justify-content: center; align-items: center; gap: 12px; min-height: 52px;
   width: 100%; margin-top: 4px; padding: 13px 16px; color: #fff; background: #193950;
@@ -122,6 +127,10 @@
 }
 .admin-auth__submit:hover:not(:disabled) { background: #244d67; transform: translateY(-1px); }
 .admin-auth__submit:disabled { opacity: .65; cursor: wait; }
+.admin-auth__forgot { margin-top: 18px; text-align: center; font-size: 13px; line-height: 1.6; }
+.admin-auth__forgot a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 8px; color: #214d72; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; border-radius: 6px; }
+.admin-auth__forgot a:hover { color: #193950; background: #eef2f6; }
+.admin-auth__forgot + .admin-auth__switch { margin-top: 6px; }
 .admin-auth__switch { margin-top: 24px; color: var(--auth-muted); text-align: center; font-size: 12px; line-height: 1.8; }
 .admin-auth__switch a, .admin-auth__note a { color: #214d72; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .admin-auth__note { margin-top: 22px; padding-top: 20px; border-top: 1px solid #e8ebef; color: var(--auth-muted); text-align: center; font-size: 11px; line-height: 1.8; }

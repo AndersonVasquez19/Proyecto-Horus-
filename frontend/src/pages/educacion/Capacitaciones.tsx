@@ -1,41 +1,25 @@
-import CatalogoCursos from '../../components/CatalogoCursos'
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import useFadeUp from '../../hooks/useFadeUp'
+import PageHero from '../../components/PageHero'
+import CourseCatalog, { type CatalogCopy } from '../../components/edu/CourseCatalog'
 
-import imgCap from '../../assets/images/capacitaciones/capacitaciones.jpg'
-
-
+const copy: CatalogCopy = {
+  eyebrow: 'Oferta educativa', title: 'Capacitaciones disponibles',
+  intro: 'Revisa cada capacitación, su detalle y consulta la que te interesa.',
+  plural: 'capacitaciones',
+  emptyTitle: 'Estamos preparando nuevas capacitaciones',
+  emptyText: 'Por ahora no hay capacitaciones publicadas. Escríbenos y te contaremos qué programas se están organizando.',
+  consultLabel: 'Consultar capacitaciones', consultSubject: 'Consulta sobre capacitaciones',
+}
 
 export default function Capacitaciones() {
-  useFadeUp()
   useEffect(() => { document.title = 'Capacitaciones — Horus Group SRL' }, [])
-
-  return (
-    <>
-      <section className="ed-hero ed-hero-capacitaciones">
-        <div className="container ed-hero-inner">
-          <div className="ed-hero-text fade-up">
-            <div className="ed-hero-tag"><i className="fas fa-chalkboard-teacher" /> Educación</div>
-            <h1>Formo<br />profesionales<br /><span>de verdad</span></h1>
-            <p>Soy las capacitaciones. No solo te doy un certificado, te doy conocimiento real que puedes aplicar desde el primer día.</p>
-            <div className="ed-hero-btns">
-              <Link to="/contactos?asunto=Capacitaciones" className="btn-coral"><i className="fas fa-graduation-cap" /> Consultar capacitaciones</Link>
-              <a href="#ed-detail" className="ed-ghost"><i className="fas fa-arrow-down" /> Ver programas</a>
-            </div>
-          </div>
-          <div className="ed-hero-visual fade-up">
-            <div className="ed-hero-img"><img src={imgCap} alt="Capacitaciones" /></div>
-            <div className="ed-hero-card">
-              <i className="fas fa-certificate" />
-              <p>"Certificación oficial avalada por colegios profesionales reconocidos a nivel nacional."</p>
-              <span>— Horus Group SRL</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <CatalogoCursos tipo="capacitacion" />
-    </>
-  )
+  return <>
+    <PageHero eyebrow="Educación" title="Capacitaciones" actions={
+      <Link to="/contactos?asunto=Consulta%20sobre%20capacitaciones" className="home-button"><i className="fas fa-comments" aria-hidden="true" /> Consultar capacitaciones</Link>
+    }>
+      Programas de capacitación publicados por Horus Group SRL, con el detalle de cada uno.
+    </PageHero>
+    <CourseCatalog tipo="capacitacion" copy={copy} />
+  </>
 }

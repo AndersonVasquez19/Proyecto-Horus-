@@ -39,15 +39,16 @@ test('proxy configuration requires explicit addresses, not wildcard or hop count
   }
 });
 
-test('public registration validates input while current account still requires a valid JWT', async () => {
+test('admin registration requires a valid session, validates input and never hands out a token', async () => {
   let writes = 0;
   @Module({
     imports: [PassportModule.register({ defaultStrategy: 'jwt' })],
     controllers: [AuthController],
     providers: [JwtStrategy,
       { provide: ConfigService, useValue: { get: (key: string) => key === 'JWT_SECRET' ? secret : undefined } },
-      { provide: PrismaService, useValue: { adminUser: { findUnique: async ({where}: {where: {id: number}}) => where.id === 1 ? {id:1,nombre:'Test',email:'admin@example.test'} : null } } },
-      { provide: AuthService, useValue: { register: async () => { writes++; return {ok:true}; } } },
+      { provide: PrismaService, useValue: { adminUser: { findUnique: async ({where}: {where: {id: number}}) => where.id === 1 ? {id:1,nombre:'Test',email:'admin@example.test',activo:true,session_version:1} : where.id === 3 ? {id:3,nombre:'Off',email:'off@example.test',activo:false,session_version:1} : null } } },
+      // The service stub issues a token on purpose: the controller must not pass it to the caller.
+      { provide: AuthService, useValue: { register: async () => { writes++; return {ok:true, token:'must-not-leak'}; } } },
     ],
   })
   class RegistrationTestModule {}
@@ -57,19 +58,29 @@ test('public registration validates input while current account still requires a
   const jwt = new JwtService({ secret, signOptions: { issuer: 'horus-api', audience: 'horus-panel' } });
   const url = await app.getUrl();
   const valid = { nombre: 'Nuevo Admin', email: 'new@example.test', password: 'Password-for-test-123' };
-  const post = (body: object) => fetch(url + '/admin/register', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+  const post = (body: object, token?: string) => fetch(url + '/admin/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
     body: JSON.stringify(body),
   });
   const me = (token?: string) => fetch(url + '/admin/me', {
     headers: token ? { Authorization: 'Bearer ' + token } : {},
   });
   try {
-    for (const body of [{}, { ...valid, nombre: ' ' }, { ...valid, email: 'invalid' }, { ...valid, password: 'short' }, { ...valid, role: 'admin' }]) {
-      assert.equal((await post(body)).status, 400);
+    // Without a valid session nothing is written, whatever the body says.
+    const forged = { id: 1, version: 1 };
+    for (const token of [undefined, 'invalid', jwt.sign({id:1},{expiresIn:-1}), jwt.sign({id:2}), jwt.sign({id:3}), jwt.sign({...forged, version: 7}),
+      new JwtService({ secret: 'another-secret-with-at-least-32-characters', signOptions: { issuer: 'horus-api', audience: 'horus-panel' } }).sign({id:1}),
+      new JwtService({ secret, signOptions: { issuer: 'horus-api', audience: 'other-audience' } }).sign({id:1})]) {
+      assert.equal((await post(valid, token)).status, 401);
     }
     assert.equal(writes, 0);
-    const registered = await post(valid);
+    // With a valid session, input is still validated and extra fields (role, active flag...) are rejected.
+    const session = jwt.sign({id:1, version: 1});
+    for (const body of [{}, { ...valid, nombre: ' ' }, { ...valid, email: 'invalid' }, { ...valid, password: 'short' }, { ...valid, role: 'admin' }, { ...valid, rol: 'super' }, { ...valid, activo: true }, { ...valid, id: 99 }, { ...valid, session_version: 5 }]) {
+      assert.equal((await post(body, session)).status, 400);
+    }
+    assert.equal(writes, 0);
+    const registered = await post(valid, session);
     assert.equal(registered.status, 201);
     assert.deepEqual(await registered.json(), { ok: true });
     assert.equal(writes, 1);

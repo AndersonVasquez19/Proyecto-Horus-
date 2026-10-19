@@ -2,12 +2,13 @@ import { Transform, Type } from 'class-transformer';
 import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsString, Length, Max, Min, ValidateIf, ValidateNested, ValidateBy, isURL } from 'class-validator';
 import { PartialType } from '@nestjs/swagger';
 import { trimValue } from '../common/validation';
+import { isManagedUploadPath } from '../common/image-path';
 
 const ImageUrl = (allowEmpty = false) => ValidateBy({
   name: 'convenioImageUrl',
-  validator: { validate: (value: unknown) => typeof value === 'string' && ((allowEmpty && value === '') ||
+  validator: { validate: (value: unknown) => typeof value === 'string' && ((allowEmpty && value === '') || isManagedUploadPath(value) ||
     isURL(value, { protocols: ['http', 'https'], require_protocol: true, require_tld: false })),
-    defaultMessage: () => 'La imagen debe tener una URL HTTP/HTTPS válida.' },
+    defaultMessage: () => 'La imagen debe tener una URL HTTP/HTTPS válida o una ruta de imagen subida.' },
 });
 
 export class ConveniosQueryDto {
@@ -19,10 +20,10 @@ export class ConveniosQueryDto {
 }
 
 export class CreateConvenioDto {
-  @Transform(trimValue) @IsString() @Length(2, 160) nombre: string;
+  @Transform(trimValue) @IsString() @Length(1, 160) nombre: string;
   @ValidateIf((_, v) => v !== undefined) @Transform(trimValue) @IsString() @Length(0, 50) sigla?: string;
   @ValidateIf((_, v) => v !== undefined) @Transform(trimValue) @ImageUrl(true) @Length(0, 2048) logo_url?: string;
-  @Transform(trimValue) @IsString() @Length(3, 2000) descripcion_corta: string;
+  @Transform(trimValue) @IsString() @Length(1, 2000) descripcion_corta: string;
   @ValidateIf((_, v) => v !== undefined) @Transform(trimValue) @IsString() @Length(0, 20000) descripcion_completa?: string;
   @ValidateIf((_, v) => v !== undefined) @Transform(trimValue) @IsString() @Length(0, 20000) informacion_adicional?: string;
   @ValidateIf((_, v) => v !== undefined) @IsInt() @Min(0) @Max(1000000) orden?: number;

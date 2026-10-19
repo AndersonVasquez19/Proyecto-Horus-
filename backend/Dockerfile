@@ -22,6 +22,11 @@ COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json package-lock.json ./
 COPY --chown=node:node scripts ./scripts
 COPY --chown=node:node migrations ./migrations
-USER node
+# Punto de montaje de las imágenes subidas (UPLOAD_DIR=/data/uploads). Un volumen nombrado nuevo de Docker hereda este propietario.
+# No contiene archivos: nada se copia a la imagen.
+RUN mkdir -p /data/uploads && chown -R node:node /data
 EXPOSE 3000
-CMD ["node", "dist/main.js"]
+# Un volumen de Railway se monta como root. Si el contenedor arranca como root, solo se corrige el propietario de UPLOAD_DIR (únicamente
+# bajo /data/) y la API se ejecuta como "node" (setpriv: sin root, sin grupos extra). Si ya arranca sin privilegios (p. ej. "user:" en
+# Compose), no cambia nada y la API corre con ese usuario.
+CMD ["sh", "-c", "if [ \"$(id -u)\" = 0 ]; then d=\"${UPLOAD_DIR:-/data/uploads}\"; case \"$d\" in /data/*) mkdir -p \"$d\" && chown -R node:node \"$d\";; esac; exec setpriv --reuid=node --regid=node --init-groups node dist/main.js; fi; exec node dist/main.js"]

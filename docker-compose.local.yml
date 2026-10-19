@@ -1,0 +1,93 @@
+# Entorno LOCAL de Horus (sitio público + panel + API + MySQL). No es la configuración de producción: Railway usa los
+# Dockerfiles de cada paquete (ver RAILWAY.md). Guía completa: docs/procedimientos/docker-local.md
+#
+# Uso (desde la raíz del repositorio, con .env.docker creado a partir de .env.docker.example):
+#   docker compose --env-file .env.docker -f docker-compose.local.yml up -d --build
+#
+# Arrancar NO inicializa, migra ni importa datos: la base nace vacía y se prepara con comandos explícitos.
+name: horus-local
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    # Sin "ports": MySQL solo es accesible desde la red interna del proyecto (backend y comandos "docker compose run").
+    # La autenticación nativa evita la recuperación de la clave RSA que exige caching_sha2_password sin TLS (ver AGENTS.md);
+    # es aceptable porque la red es privada y local. No se aplica a producción.
+    command:
+      - --mysql-native-password=ON
+      - --authentication-policy=mysql_native_password
+      - --character-set-server=utf8mb4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Define MYSQL_ROOT_PASSWORD en .env.docker}
+      MYSQL_DATABASE: ${DB_NAME:-horus_local}
+      MYSQL_USER: ${DB_USER:-horus}
+      MYSQL_PASSWORD: ${DB_PASS:?Define DB_PASS en .env.docker}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+    image: horus-local-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    # Sin "ports": solo el frontend (Caddy) llega a la API, igual que en Railway.
+    environment:
+      # "development" permite orígenes HTTP locales (producción exige HTTPS). Sin credenciales reales ni servicios externos.
+      NODE_ENV: development
+      PORT: "3000"
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: ${DB_NAME:-horus_local}
+      DB_USER: ${DB_USER:-horus}
+      DB_PASS: ${DB_PASS:?Define DB_PASS en .env.docker}
+      DB_SYNC: "false"
+      DB_SSL: "false"
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET (mínimo 32 caracteres) en .env.docker}
+      CORS_ORIGINS: http://localhost:${HORUS_WEB_PORT:-8081},http://127.0.0.1:${HORUS_WEB_PORT:-8081}
+      UPLOAD_DIR: /data/uploads
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      # Sin MAIL_USER/MAIL_PASS el correo no se envía (el formulario guarda el mensaje y avisa "correo_enviado: false").
+      MAIL_PROVIDER: gmail
+      CHATBOT_AI_ENABLED: "false"
+    volumes:
+      - uploads_data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+    image: horus-local-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      BACKEND_UPSTREAM: backend:3000
+    ports:
+      # Solo la propia máquina; para abrirlo a la red local hay que cambiar "127.0.0.1" a propósito.
+      - "127.0.0.1:${HORUS_WEB_PORT:-8081}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+volumes:
+  mysql_data:
+  uploads_data:

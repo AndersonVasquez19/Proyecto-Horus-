@@ -1,0 +1,101 @@
+name: horus-laravel
+
+services:
+  app:
+    image: horus-laravel-php:local
+    build:
+      context: .
+      target: app
+    restart: unless-stopped
+    init: true
+    mem_limit: 768m
+    cpus: 1.0
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      APP_NAME: Horus Group
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${HORUS_LARAVEL_APP_KEY:?Defina una APP_KEY propia en un archivo privado externo}
+      APP_URL: ${HORUS_LARAVEL_APP_URL:-http://127.0.0.1:8082}
+      APP_LOCALE: es
+      DB_CONNECTION: mysql
+      DB_URL: ""
+      DB_HOST: ${HORUS_LARAVEL_DB_HOST:-host.docker.internal}
+      DB_PORT: ${HORUS_LARAVEL_DB_PORT:-3306}
+      DB_DATABASE: ${HORUS_LARAVEL_DB_DATABASE:-horus_group}
+      DB_USERNAME: ${HORUS_LARAVEL_DB_USERNAME:?Defina la cuenta exclusiva de Laravel}
+      DB_PASSWORD: ${HORUS_LARAVEL_DB_PASSWORD:?Defina la clave exclusiva de Laravel}
+      DB_TIMEZONE: "+00:00"
+      DB_CHARSET: utf8mb4
+      DB_COLLATION: utf8mb4_unicode_ci
+      CACHE_STORE: file
+      SESSION_DRIVER: file
+      SESSION_COOKIE: horus_laravel_session
+      SESSION_SECURE_COOKIE: ${HORUS_LARAVEL_SECURE_COOKIE:-false}
+      QUEUE_CONNECTION: sync
+      LOG_CHANNEL: stderr
+      LOG_LEVEL: warning
+      MAIL_MAILER: array
+      BROADCAST_CONNECTION: "null"
+      HORUS_PUBLIC_AUTH_ENABLED: "false"
+      HORUS_CONTENIDO_PANEL: "false"
+      HORUS_CONTENIDO_API: "false"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - archivos:/var/www/html/storage/app
+      - sesiones:/var/www/html/storage/framework/sessions
+    networks:
+      - laravel
+    healthcheck:
+      test: ["CMD-SHELL", "SCRIPT_NAME=/fpm-ping SCRIPT_FILENAME=/fpm-ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q pong"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  web:
+    image: horus-laravel-nginx:local
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    init: true
+    mem_limit: 64m
+    cpus: 0.25
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${HORUS_LARAVEL_HTTP_PORT:-8082}:8080"
+    volumes:
+      - archivos:/var/www/html/storage/app:ro
+    networks:
+      - laravel
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/up"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  laravel:
+    driver: bridge
+
+volumes:
+  archivos:
+  sesiones:

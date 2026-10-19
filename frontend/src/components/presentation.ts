@@ -1,8 +1,1 @@
-import type { CSSProperties } from 'react'
-const palettes:Record<string,[string,string,string]>={indigo:['#4F46E5','#EEF2FF','#3730a3'],coral:['#FF6B47','#FFF1EE','#c2410c'],verde:['#059669','#ECFDF5','#047857'],violeta:['#7C3AED','#F5F3FF','#6d28d9'],oscuro:['#1e293b','#f1f5f9','#0f172a']}
-export const contentLines=(value?:string|null)=>value?.split('\n').map(x=>x.trim()).filter(Boolean)||[]
 export const contentIcon=(key?:string|null)=>({heart:'fa-heartbeat',legal:'fa-balance-scale',finance:'fa-chart-pie',technology:'fa-laptop',education:'fa-graduation-cap',business:'fa-briefcase',network:'fa-network-wired',camera:'fa-video',bell:'fa-bell',cloud:'fa-cloud',mobile:'fa-mobile-alt',tools:'fa-tools',software:'fa-laptop-code',emergency:'fa-bolt',star:'fa-star',users:'fa-user-check',target:'fa-puzzle-piece',handshake:'fa-handshake'} as Record<string,string>)[key||'']||'fa-layer-group'
-export function presentationStyle(key?:string):CSSProperties{
- const [color,background,dark]=palettes[key||'']||palettes.indigo
- return {['--c' as string]:color,['--cb' as string]:background,['--tc' as string]:color,['--tcb' as string]:background,['--pc' as string]:color,['--pcb' as string]:background,['--pcd' as string]:dark}
-}

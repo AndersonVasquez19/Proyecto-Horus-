@@ -8,7 +8,7 @@ export class CreateGaleriaDto {
   @Transform(trimValue)
   @IsString()
   @IsNotEmpty()
-  @Length(2, 150)
+  @Length(1, 150)
   titulo: string;
 
   @ApiPropertyOptional({ example: 'Taller práctico realizado con el personal.' })
@@ -21,7 +21,7 @@ export class CreateGaleriaDto {
   @Transform(trimValue)
   @IsString()
   @IsNotEmpty()
-  @Length(2, 50)
+  @Length(1, 50)
   categoria: string;
 
   @ApiProperty({ example: '/galeria/capacitaciones/imagen-1.jpg' })
@@ -29,7 +29,7 @@ export class CreateGaleriaDto {
   @IsString()
   @IsNotEmpty()
   @Matches(/^(?:https?:\/\/[^\s/]+(?:\/[^\s]*)?|\/(?!\/)[^\s\\\\]*)$/)
-  @Length(3, 500)
+  @Length(1, 500)
   imagen_url: string;
 
   @ApiPropertyOptional({ example: 1 })

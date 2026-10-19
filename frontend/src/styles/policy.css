@@ -1,0 +1,121 @@
+/*
+ * Páginas legales (Privacidad, Cookies y Devolución). Tokens, hero (PageHero) y enlaces de sección vienen de horus-theme.css
+ * y tecnologias.css; aquí solo está la lectura: columna cómoda (~70 caracteres), títulos en Manrope, texto en Inter,
+ * índice y navegación relacionada. El texto legal es el de cada página; esta hoja no añade ni quita palabras.
+ */
+
+.policy-page { padding: clamp(2rem, 5vw, 3.5rem) 0 clamp(2.5rem, 6vw, 4rem); background: #fff; }
+.policy-layout { display: grid; grid-template-columns: minmax(0, 40rem); justify-content: center; gap: 2rem; }
+.policy-layout.has-index { grid-template-columns: 14.5rem minmax(0, 40rem); gap: clamp(2rem, 4vw, 3.5rem); }
+.policy-column { min-width: 0; }
+
+/* ---------- Índice ---------- */
+.policy-index { position: sticky; top: calc(var(--nav-h) + 1.5rem); align-self: start; max-height: calc(100dvh - var(--nav-h) - 3rem); overflow-y: auto; }
+.policy-index-title { margin: 0 0 .75rem; color: var(--horus-navy); font-family: var(--horus-font-display); font-size: .75rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.policy-index ol, .policy-toc ol { list-style: none; margin: 0; padding: 0; }
+.policy-index ol { border-left: 2px solid var(--horus-line); }
+.policy-index a, .policy-toc a {
+  display: block; padding: .5rem .9rem; color: var(--horus-muted); font-size: .92rem; font-weight: 500; line-height: 1.4; text-decoration: none; overflow-wrap: anywhere;
+}
+.policy-index a { margin-left: -2px; border-left: 2px solid transparent; }
+.policy-index a:hover, .policy-toc a:hover { color: var(--horus-navy); }
+.policy-index a[aria-current="location"] { color: var(--horus-navy); font-weight: 700; border-left-color: var(--horus-gold); }
+.policy-index a:focus-visible, .policy-toc a:focus-visible, .policy-toc summary:focus-visible { outline: 3px solid var(--horus-navy); outline-offset: 2px; }
+/* En tableta y móvil el índice es un bloque plegable. */
+.policy-toc { display: none; margin-bottom: 1.75rem; border: 1px solid var(--horus-line); border-radius: var(--horus-radius-md); background: var(--horus-soft); }
+.policy-toc summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 48px; padding: .75rem 1rem; cursor: pointer; list-style: none;
+  color: var(--horus-navy); font-family: var(--horus-font-display); font-weight: 800;
+}
+.policy-toc summary::-webkit-details-marker { display: none; }
+.policy-toc summary::after { content: ''; flex-shrink: 0; width: .55rem; height: .55rem; border-right: 2px solid var(--horus-gold); border-bottom: 2px solid var(--horus-gold); transform: rotate(45deg) translateY(-2px); }
+.policy-toc[open] summary::after { transform: rotate(-135deg) translateY(-2px); }
+.policy-toc nav { padding: 0 .5rem .6rem; border-top: 1px solid var(--horus-line); }
+.policy-toc a { border-radius: var(--horus-radius-sm); }
+.policy-toc a[aria-current="location"] { color: var(--horus-navy); font-weight: 700; background: #c9a96122; }
+@media (max-width: 1024px) {
+  .policy-layout.has-index { grid-template-columns: minmax(0, 40rem); }
+  .policy-index { display: none; }
+  .policy-toc { display: block; }
+}
+
+/* ---------- Lectura ---------- */
+.policy-body { color: var(--horus-ink); font-size: 1.0625rem; line-height: 1.75; }
+.policy-body p { margin: 0 0 1rem; }
+.policy-body strong { color: var(--horus-navy); }
+.policy-body a { color: var(--horus-blue); font-weight: 600; text-decoration: underline; text-decoration-color: #c9a96199; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.policy-body a:hover { color: var(--horus-navy); text-decoration-color: var(--horus-gold); }
+.policy-body a:focus-visible { outline: 3px solid var(--horus-navy); outline-offset: 2px; border-radius: 2px; }
+.policy-body ul, .policy-body ol { margin: 0 0 1rem; padding-left: 1.3rem; list-style: disc; }
+.policy-body ol { list-style: decimal; }
+.policy-body li { margin: 0 0 .5rem; padding-left: .2rem; overflow-wrap: anywhere; }
+.policy-body li::marker { color: var(--horus-gold); }
+.policy-body li > ul { margin: .5rem 0 0; }
+
+.policy-section { margin-bottom: 2.5rem; padding-bottom: 2.5rem; border-bottom: 1px solid var(--horus-line); scroll-margin-top: calc(var(--nav-h) + 1.25rem); }
+.policy-section:last-of-type { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+/* Destino de un enlace del índice: la sección no dibuja un marco enorme; el foco se ve en el título o en la introducción. */
+.policy-body [tabindex="-1"]:focus { outline: none; }
+.policy-body h3[tabindex="-1"]:focus-visible, .policy-lead[tabindex="-1"]:focus-visible { outline: 2px solid var(--horus-gold); outline-offset: 4px; border-radius: 2px; }
+.policy-section > h2 {
+  margin: 0 0 1.1rem; color: var(--horus-navy); font-family: var(--horus-font-display); font-size: clamp(1.35rem, 2.5vw, 1.65rem); font-weight: 800; line-height: 1.25; letter-spacing: -.02em; text-wrap: balance;
+}
+.policy-section > h2::after { content: ''; display: block; width: 2.5rem; height: 3px; margin-top: .7rem; border-radius: 3px; background: var(--horus-gold); }
+.policy-body h3 { scroll-margin-top: calc(var(--nav-h) + 1.25rem); margin: 1.9rem 0 .7rem; color: var(--horus-navy); font-family: var(--horus-font-display); font-size: 1.18rem; font-weight: 800; line-height: 1.35; text-wrap: balance; }
+.policy-body h4 { margin: 1.3rem 0 .35rem; color: var(--horus-navy); font-family: var(--horus-font-display); font-size: 1.02rem; font-weight: 800; line-height: 1.4; }
+.policy-num { display: inline-block; min-width: 1.6rem; margin-right: .15rem; color: var(--horus-blue); font-weight: 800; }
+
+/* Introducción y avisos: una línea lateral dorada, sin tarjetas. */
+.policy-lead { margin-bottom: 2.5rem; padding-left: 1.1rem; border-left: 3px solid var(--horus-gold); scroll-margin-top: calc(var(--nav-h) + 1.25rem); }
+.policy-lead p:last-child { margin-bottom: 0; }
+.policy-note { margin: 1.25rem 0; padding: .8rem 1rem; border-left: 3px solid var(--horus-gold); background: var(--horus-soft); border-radius: 0 var(--horus-radius-sm) var(--horus-radius-sm) 0; }
+.policy-note > :last-child { margin-bottom: 0; }
+.policy-note ul { margin-top: .5rem; }
+
+/* Pares término / descripción, bloques con título y datos de contacto. */
+.policy-defs { display: grid; gap: .9rem; margin: 0 0 1rem; }
+.policy-defs > div { padding-left: 1rem; border-left: 2px solid var(--horus-line); }
+.policy-defs dt { color: var(--horus-navy); font-family: var(--horus-font-display); font-weight: 800; }
+.policy-defs dd { margin: .15rem 0 0; }
+.policy-item { margin: 0 0 1rem; padding-left: 1rem; border-left: 2px solid var(--horus-line); }
+.policy-item h3, .policy-item h4 { margin-top: 0; }
+.policy-item p:last-child, .policy-item ul:last-child { margin-bottom: 0; }
+.policy-badge { display: inline-block; margin: 0 0 .6rem; padding: .1rem .65rem; border: 1px solid #0a254030; border-radius: 999px; background: #0a254010; color: var(--horus-blue); font-size: .8rem; font-weight: 700; }
+.policy-mail { margin: 0 0 1.25rem; font-weight: 600; overflow-wrap: anywhere; }
+.policy-signature { display: flex; align-items: center; gap: .9rem; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--horus-line); }
+.policy-signature img { flex-shrink: 0; width: auto; height: 2.5rem; }
+.policy-signature p { margin: 0; }
+.policy-signature > div { min-width: 0; overflow-wrap: anywhere; }
+
+/* Pasos numerados (los números forman parte del texto de la página). */
+.policy-body ul.policy-steps { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .9rem; }
+.policy-steps > li { display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: .75rem; margin: 0; padding: 0; }
+.policy-steps > li > span:first-child { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; background: var(--horus-navy); color: var(--horus-gold-light); font-size: .85rem; font-weight: 800; }
+.policy-steps h4 { margin-top: .2rem; }
+.policy-steps li > div > :last-child { margin-bottom: 0; }
+.policy-steps li ul { margin-top: .5rem; padding-left: 1.3rem; list-style: disc; }
+.policy-steps li li { margin-bottom: .35rem; padding: 0; display: list-item; }
+
+/* ---------- Navegación relacionada ---------- */
+.policy-related { padding-block: clamp(2.25rem, 5vw, 3.25rem); }
+.policy-related .container { display: grid; justify-items: center; gap: 1rem; max-width: 52rem; text-align: center; }
+.policy-related h2 { margin: 0; color: #fff; font-family: var(--horus-font-display); font-size: clamp(1.35rem, 3vw, 1.85rem); font-weight: 800; line-height: 1.3; text-wrap: balance; }
+.policy-related p { margin: 0; max-width: 56ch; color: var(--horus-gold-light); line-height: 1.7; }
+.policy-related ul { display: flex; flex-wrap: wrap; justify-content: center; gap: .65rem; margin: .4rem 0 0; padding: 0; list-style: none; }
+.policy-related a {
+  display: inline-flex; align-items: center; min-height: 44px; padding: .5rem 1.1rem; border: 1px solid #c9a96175; border-radius: 999px;
+  color: var(--horus-gold-light); font-weight: 700; text-decoration: none;
+}
+.policy-related a:hover { background: #c9a96118; border-color: var(--horus-gold); color: #fff; }
+.policy-related a:focus-visible { outline: 3px solid var(--horus-gold); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .policy-toc summary::after { transition: transform .2s ease; }
+  .policy-index a, .policy-toc a, .policy-related a { transition: color .2s ease, background .2s ease, border-color .2s ease; }
+}
+
+@media (max-width: 480px) {
+  .policy-body { font-size: 1rem; }
+  .policy-section { margin-bottom: 2rem; padding-bottom: 2rem; }
+  .policy-signature { align-items: flex-start; }
+}

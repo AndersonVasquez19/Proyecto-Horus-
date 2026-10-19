@@ -4,7 +4,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { CreateAdminMessageDto } from './dto/create-message.dto';
 import { UpdateMessageStatusDto } from './dto/update-message-status.dto';
 
-import { ListQueryDto, pageArgs, pageResult } from '../../common/list-query.dto';
+import { ListQueryDto, pageResult } from '../../common/list-query.dto';
+import { countMessages, lockMessage, messageTotals, readMessages } from '../../attention/message-state';
 @Injectable()
 export class MessagesService {
   constructor(
@@ -12,15 +13,15 @@ export class MessagesService {
   ) {}
 
   async findAll(q: ListQueryDto = {}) {
-    const where = { ...(q.estado ? {estado:q.estado} : {}), ...(q.search ? {OR:['nombre','email','asunto','mensaje'].map(field=>({[field]:{contains:q.search}}))} : {}), ...(q.channel==='chatbot'?{asunto:{startsWith:'[Chatbot]'}}:q.channel==='other'?{NOT:{asunto:{startsWith:'[Chatbot]'}}}:{}) };
-    const messages = await this.prisma.contacto.findMany({where,...pageArgs(q),orderBy:[{createdAt:'desc'},{id:'desc'}]});
+    const messages = await readMessages(this.prisma,q);
     if(q.page===undefined)return{ok:true,messages};
-    const [total,nuevo,en_proceso,atendido]=await Promise.all([this.prisma.contacto.count({where}),...['nuevo','en_proceso','atendido'].map(estado=>this.prisma.contacto.count({where:{estado}}))]);
-    return{ok:true,messages,...pageResult(q,total),metrics:{nuevo,en_proceso,atendido}};
+    const [total,counts]=await Promise.all([countMessages(this.prisma,q),messageTotals(this.prisma)]);
+    const {nuevo,en_proceso,atendido,archivado}=counts;
+    return{ok:true,messages,...pageResult(q,total),metrics:{nuevo,en_proceso,atendido,archivado}};
   }
 
   async findOne(id: number) {
-    let message = await this.prisma.contacto.findUnique({ where: { id } });
+    const [message] = await readMessages(this.prisma,{},id);
     if (!message) {
       throw new NotFoundException({ ok: false, mensaje: 'Mensaje no encontrado.' });
     }
@@ -32,18 +33,20 @@ export class MessagesService {
       ...dto,
       telefono: dto.telefono ?? '',
       estado: 'nuevo',
+      origen: 'manual',
     } });
     return { ok: true, mensaje: 'Mensaje creado correctamente.', message };
   }
 
   async updateStatus(id: number, dto: UpdateMessageStatusDto) {
-    let message = await this.prisma.contacto.findUnique({ where: { id } });
-    if (!message) {
-      throw new NotFoundException({ ok: false, mensaje: 'Mensaje no encontrado.' });
-    }
-    if (await this.prisma.attentionRecord.findUnique({where:{recurso_registro_id:{recurso:'messages',registro_id:id}}})) throw new ConflictException('Actualiza este caso desde Seguimiento para conservar su historial.');
-    message = await this.prisma.contacto.update({ where: { id }, data: { estado: dto.estado } });
-    return { ok: true, mensaje: 'Estado del mensaje actualizado.', message };
+    return this.prisma.$transaction(async tx => {
+      if (!(await lockMessage(tx,id)).length) {
+        throw new NotFoundException({ ok: false, mensaje: 'Mensaje no encontrado.' });
+      }
+      if (await tx.attentionRecord.findUnique({where:{recurso_registro_id:{recurso:'messages',registro_id:id}}})) throw new ConflictException('Actualiza este caso desde Seguimiento para conservar su historial.');
+      const message = await tx.contacto.update({ where: { id }, data: { estado: dto.estado } });
+      return { ok: true, mensaje: 'Estado del mensaje actualizado.', message };
+    });
   }
 
   async remove(id: number) {

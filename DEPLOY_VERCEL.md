@@ -23,12 +23,13 @@ Para una base remota **vacía**, desde backend y con sus variables configuradas 
 npm ci
 npm run db:init
 npm run db:migrate
-npm run admin:create
+npm run admin:assign-role -- --listar
+npm run admin:create -- --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>
 ```
 
 `db:init` compila y crea las tablas sin datos de ejemplo; rechaza bases que ya contienen tablas. No usa force ni alter. No es una migración de un esquema existente. Si falla parcialmente, revisar el esquema antes de continuar.
 
-Para una base existente, aplicar solo las migraciones pertinentes. El comando `admin:create` necesita la variable temporal `ADMIN_INITIAL_PASSWORD` y pide nombre y correo. No poner la contraseña en argumentos ni subirla al repositorio.
+Para una base existente, aplicar solo las migraciones pertinentes. El comando `admin:create` necesita la variable temporal `ADMIN_INITIAL_PASSWORD`, confirmar el destino configurado (`--destino`) y la identidad del servidor conectado (`--servidor`, el `server_uuid` que muestra `admin:assign-role -- --listar` en solo lectura; compruébelo con la identidad conocida del servidor) y declarar operador y motivo (quedan en `admin_auditoria`); pide nombre y correo y crea la cuenta sin rol. No poner la contraseña en argumentos ni subirla al repositorio.
 
 Los scripts de base admiten `DB_SSL=true` y `DB_SSL_CA`. No se inicializa ni migra la base automáticamente durante builds o peticiones.
 
@@ -55,8 +56,10 @@ Vercel detecta `src/main.ts` de NestJS. No hace falta convertir la API en un fro
 | DB_SSL_CA | Certificado CA del proveedor, cuando sea necesario; admite saltos como `\n` |
 | JWT_SECRET | Secreto aleatorio de al menos 32 caracteres |
 | CORS_ORIGINS | Origen exacto del frontend, por ejemplo https://horus-web.vercel.app |
-| MAIL_USER | Cuenta Gmail remitente |
-| MAIL_PASS | Contraseña de aplicación de Gmail |
+| MAIL_PROVIDER | `resend` o `gmail` (sin valor, gmail); ver backend/MAIL.md |
+| RESEND_API_KEY / RESEND_FROM | Solo con Resend: clave y remitente (dominio verificado) |
+| MAIL_USER | Solo con Gmail: cuenta remitente |
+| MAIL_PASS | Solo con Gmail: contraseña de aplicación |
 
 Para varios orígenes CORS, separarlos por comas sin barra final. Autorizar explícitamente las URLs de previews que deban usar la API; no usar un comodín para todos los proyectos de vercel.app. Puedes reservar/configurar los nombres de ambos proyectos antes del primer despliegue para conocer las URLs.
 
@@ -64,7 +67,7 @@ Si la protección de despliegue de Vercel impide acceder públicamente a la API,
 
 Comprobar:
 
-- `https://TU-BACKEND.vercel.app/api/docs`
+- `https://TU-BACKEND.vercel.app/api/health` (Swagger está apagado en producción salvo `SWAGGER_ENABLED=true`, con HTTPS y cuenta de administrador)
 - `https://TU-BACKEND.vercel.app/api/cursos`
 
 Si MySQL no conecta, la aplicación no podrá arrancar. Revisar logs, host, TLS y restricciones de red del proveedor.

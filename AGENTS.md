@@ -4,18 +4,20 @@
 
 Esta guía define cómo trabajar en el sitio público, el panel administrativo y la API de Horus Group SRL. Aplica a todo el repositorio; las instrucciones de un `AGENTS.md` más cercano al archivo pueden precisar las de su carpeta. Las instrucciones explícitas del usuario y las del entorno de ejecución tienen prioridad.
 
-El objetivo es entregar cambios completos, verificables y proporcionados a la tarea, conservando los datos y el comportamiento que no se haya solicitado modificar.
+Las reglas generales también se aplican a `backend-laravel/`; sus archivos `AGENTS.md` y `CLAUDE.md` las complementan para Laravel, cuyo ORM principal es Eloquent. Las indicaciones de NestJS/Prisma y React/npm corresponden a `backend/` y `frontend/`, respectivamente. No instales Laravel Boost ni herramientas automáticamente, ni modifiques proyectos vecinos fuera del alcance autorizado. Las migraciones y los cambios de datos requieren autorización explícita y comprobación del destino.
+
+El objetivo es entregar cambios completos, verificables y proporcionados a la tarea, conservando los datos y el comportamiento que no se haya solicitado modificar. Market queda fuera del alcance de este proyecto y no debe reintroducirse en el frontend público salvo decisión futura explícita. No añadas compras, pagos ni inscripciones automáticas sin una solicitud explícita.
 
 ## Forma de trabajo
 
 - Comunícate en español, con explicaciones concretas. Indica qué cambiaste, cómo lo verificaste y qué limitaciones quedan.
-- Antes de editar, revisa `git status --short`, las instrucciones aplicables y el flujo completo afectado. Conserva los cambios previos del usuario.
+- Antes de editar, revisa `git status --short`, las instrucciones aplicables y el flujo completo afectado: entrada, validación, servicio, persistencia, consumidores y pruebas. Conserva los cambios previos del usuario, incluidos archivos sin seguimiento; no los reviertas, sobrescribas ni incluyas como trabajo propio.
 - Investiga la causa de los errores. No los ocultes desactivando validaciones, reglas de lint o pruebas, ni añadiendo `@ts-ignore` o conversiones a `any` sin necesidad.
 - Haz el cambio mínimo que resuelva el problema de forma completa. Evita refactorizaciones, formateos masivos y actualizaciones de dependencias ajenas al alcance.
 - Continúa con lecturas, cambios reversibles y comprobaciones autorizadas. Pide aclaración solo si falta una decisión relevante que no pueda deducirse del código o de la conversación.
-- Para acciones destructivas, cambios en sistemas compartidos o despliegues, comprueba el destino y la autorización existente. Solicita permiso si esa acción no está cubierta.
+- Para acciones destructivas, cambios en sistemas compartidos o despliegues, comprueba el destino y la autorización existente. Solicita permiso si esa acción no está cubierta. Una revisión de código o documentación no autoriza mantenimiento de MySQL, importaciones ni creación de cuentas.
 - No hagas commits, pushes ni despliegues salvo que formen parte de lo solicitado.
-- Usa `rg` para localizar código. Adapta los comandos al shell disponible; en PowerShell, evita instrucciones que dependan de Bash.
+- Usa `rg` para localizar código. Adapta los comandos al shell disponible; en PowerShell, evita instrucciones que dependan de Bash y lee texto con `Get-Content -Encoding utf8`.
 - Mantén UTF-8 y conserva tildes y caracteres del contenido. Evita cambios de finales de línea en archivos completos.
 
 ## Mapa del repositorio
@@ -23,25 +25,35 @@ El objetivo es entregar cambios completos, verificables y proporcionados a la ta
 | Ruta | Responsabilidad |
 | --- | --- |
 | `backend/src/` | API NestJS organizada por módulos de negocio |
-| `backend/src/common/` | Validación compartida, guards y decoradores |
-| `backend/src/database/` | Cliente Prisma compartido y serialización |
+| `backend/src/common/` | Validación compartida, guards, paginación, rutas de imágenes y proxies confiables |
+| `backend/src/database/` | Cliente Prisma compartido, seguridad de conexión y serialización |
+| `backend/src/attention/`, `backend/src/cotizaciones/` | Seguimiento e historial de atención y cotizaciones |
+| `backend/src/convenios/`, `backend/src/content-original/` | Convenios y recuperación explícita de contenido original |
+| `backend/src/uploads/` | Validación y almacenamiento de imágenes |
 | `backend/prisma/schema.prisma` | Modelos Prisma y correspondencia con MySQL |
 | `backend/migrations/` | Migraciones SQL versionadas |
-| `backend/scripts/` | Generación del cliente, comprobación del esquema e inicialización |
+| `backend/scripts/` | Generación del cliente, comprobación del esquema y mantenimiento explícito |
 | `backend/test/` | Pruebas con Node Test Runner e integración MySQL |
-| `frontend/src/pages/` | Páginas públicas |
-| `frontend/src/components/` | Componentes públicos y chatbot |
+| `frontend/src/pages/`, `frontend/src/components/` | Páginas públicas, componentes, Home y chatbot |
 | `frontend/src/panel/` | Páginas, componentes, servicios, contexto y tipos del panel |
+| `frontend/src/hooks/`, `frontend/src/context/` | Cargas públicas, accesibilidad y ajustes institucionales |
+| `frontend/src/api.ts`, `frontend/src/apiBase.ts` | Cliente público y URL base de la API |
+| `frontend/src/contentImages.ts`, `frontend/src/contentUpdates.ts` | Resolución de imágenes y avisos para refrescar contenido |
 | `frontend/src/assets/`, `frontend/src/styles/` | Recursos visuales y estilos |
+| `frontend/config/`, `frontend/tests/`, `frontend/scripts/` | Configuración de API, pruebas de despliegue y revisión con navegador |
 | `tsconfig.json` | Configuración de TypeScript de la raíz para el backend y sus tests |
+| `.github/workflows/ci.yml` | CI (solo comprueba, no despliega): tipos, pruebas, lint y build de ambos paquetes, integración con MySQL efímero y smokes manuales. Detalle y límites en [docs/procedimientos/ci.md](docs/procedimientos/ci.md) |
+| `docker-compose.local.yml`, `.env.docker.example` | Entorno local (sitio, API, MySQL) con Docker Compose; no es producción. Guía: [docs/procedimientos/docker-local.md](docs/procedimientos/docker-local.md). `.env.docker` real no se versiona |
 
-Hay dos paquetes npm independientes, cada uno con su `package-lock.json`. No existe un paquete npm en la raíz.
+`backend/` y `frontend/` son dos paquetes npm independientes, cada uno con su `package-lock.json`. No existe un paquete npm en la raíz. `backend-laravel/` se reconstruye con Composer y su `composer.lock`; consulta su README para los recursos estáticos y el uso opcional de npm. Ejecuta las comprobaciones con la configuración de cada paquete; el `tsconfig.json` de la raíz no comprueba el frontend ni Laravel.
 
-El despliegue en Railway se documenta en `RAILWAY.md`. Cada paquete tiene su `Dockerfile` y `.dockerignore`; `frontend/Caddyfile` sirve React y redirige `/api` al backend privado mediante `BACKEND_UPSTREAM`. La inicialización de MySQL es explícita, fuera de la compilación y del arranque.
+El despliegue en Railway se documenta en [RAILWAY.md](RAILWAY.md). Cada paquete tiene su `Dockerfile` y `.dockerignore`; `frontend/Caddyfile` sirve React y redirige `/api` al backend privado mediante `BACKEND_UPSTREAM`. La inicialización de MySQL es explícita, fuera de la compilación y del arranque.
 
 ## Entorno y comandos
 
-Usa npm y respeta los lockfiles. El backend declara Node.js 22.x; verifica la versión y los requisitos de las dependencias antes de instalar. Ejecuta cada comando desde la carpeta indicada.
+En `backend/` y `frontend/`, usa npm y respeta los lockfiles. Ambos paquetes declaran Node.js 22.x; verifica la versión y los requisitos de las dependencias antes de instalar. Ejecuta cada comando desde la carpeta indicada. No instales dependencias si las existentes permiten realizar la tarea.
+
+### Desarrollo y comprobaciones
 
 | Carpeta | Comando | Uso |
 | --- | --- | --- |
@@ -50,76 +62,139 @@ Usa npm y respeta los lockfiles. El backend declara Node.js 22.x; verifica la ve
 | `backend/` | `node node_modules/typescript/bin/tsc --noEmit --incremental false` | Revisar tipos, incluidos los tests, sin generar archivos |
 | `backend/` | `npm test` | Pruebas aisladas, sin requerir MySQL |
 | `backend/` | `npm run build` | Generar Prisma y compilar NestJS |
-| `backend/` | `npm run prisma:generate` | Regenerar el cliente Prisma |
+| `backend/` | `npm run prisma:generate` | Regenerar el cliente Prisma sin conexión a MySQL |
 | `backend/` | `npm run db:check` | Comparar el esquema MySQL mediante consultas de lectura |
-| `backend/` | `npm run test:integration` | Compilar y probar con una base MySQL temporal |
+| `backend/` | `npm run test:integration` | Compilar y probar creando/eliminando una base MySQL temporal; revisar el destino antes |
+| `backend/` | `node --test -r ./test/isolate-env.cjs test/admin-access-readiness.integration.cjs` | Preparación de cuentas para AccessGuard (E3.5): scripts reales y NestJS compilado (con la guard activa desde E3.6) contra un MySQL 8.4 desechable en Docker, sin navegador. Exige `ACCESS_READINESS_TEST_DB=true` y el `server_uuid` del contenedor; la CI la ejecuta en el job `integration`. Procedimiento y lista de verificación: [docs/procedimientos/preparacion-accessguard.md](docs/procedimientos/preparacion-accessguard.md) |
+| `backend/` | `node --test -r ./test/isolate-env.cjs test/access-guard-http.integration.cjs` | Autorización HTTP real de AccessGuard en el AppModule normal (E3.6) contra un MySQL 8.4 desechable. Exige `ACCESS_GUARD_HTTP_TEST_DB=true`, el `server_uuid` del contenedor y `backend/dist`; la CI la ejecuta en el job `integration`. Ver [docs/procedimientos/activacion-accessguard.md](docs/procedimientos/activacion-accessguard.md) |
+| `backend/` | `node --test -r ./test/isolate-env.cjs test/academico-schema.integration.cjs` | Estructura académica (E4.2, `20261015-academico-estructura`, y solo DNI de E4.3b, `20261016-academico-solo-dni`) contra un MySQL 8.4 desechable: instalación desde cero, actualización desde E4.1 con datos y desde E4.2 con y sin datos DNI, detención sin cambios ante CE/PASAPORTE en modo estricto y no estricto (cambia y restaura `@@GLOBAL.sql_mode` de ese servidor), recuperación de migraciones parciales, cada restricción `UNIQUE`/`CHECK`/clave foránea, columna generada de certificados, Prisma 6.19.3 con su adaptador, `db:check` frente a estructuras incorrectas con nombres correctos y `db:backup` → `db:restore` reales con certificados vigentes y anulados. Exige `ACADEMICO_SCHEMA_TEST_DB=true` y el `server_uuid` del contenedor; no necesita `dist`; solo crea y elimina `horus_e42_<hex>` y `horus_restore_e42_<hex>`; la CI la ejecuta en el job `integration`. Ver [backend/PRISMA.md](backend/PRISMA.md) |
+| `frontend/` | `node scripts/integration-panel.cjs` | Integración real del panel (React ↔ NestJS ↔ MySQL 8.4 desechable en Docker, Edge). Exige `PANEL_IT_DB=true` y el `server_uuid` del contenedor; no forma parte de la CI. Procedimiento, casos cubiertos y pendientes: [docs/procedimientos/integracion-panel.md](docs/procedimientos/integracion-panel.md) |
 | `frontend/` | `npm ci` | Instalación reproducible |
 | `frontend/` | `npm run dev` | Desarrollo con Vite |
 | `frontend/` | `npm run check` | Comprobar TypeScript |
-| `frontend/` | `npm run lint` | Comprobar ESLint, TypeScript y reglas de React |
+| `frontend/` | `npm run lint` | Comprobar ESLint y reglas de React/TypeScript; no sustituye la revisión de tipos |
 | `frontend/` | `npm run build` | Comprobar tipos y generar el frontend |
 | `frontend/` | `npm run preview` | Revisar el frontend compilado |
+| `frontend/` | `npm run test:deploy` | Probar la URL de API y las reescrituras de rutas de despliegue |
+| `frontend/` | `npm run test:errors`, `test:return-path`, `test:list-records`, `test:attention-merge`, `test:mail-outcome`, `test:message-export`, `test:notify`, `test:session-access`, `test:panel-access`, `test:signup-form`, `test:account-roles`, `test:content-source` | Pruebas unitarias de módulos puros, sin navegador: mensajes de error públicos, ruta de retorno tras iniciar sesión, lectura de listas y CSV, fusión del seguimiento de atención, contrato de sesión (rol, permisos y modo de acceso), navegación y operaciones del panel por permisos, reglas del formulario de registro público y de «Roles y usuarios», y origen del contenido público (NestJS por defecto o Laravel con `VITE_CONTENT_PROVIDER`; ver [backend-laravel/docs/contenido-publico.md](backend-laravel/docs/contenido-publico.md)) |
 
 El backend separa las salidas de compilación: `npm start`, `start:dev` y `start:debug` usan `tsconfig.dev.json` y `dist-dev/`, incluida su caché incremental. `npm run build` y `start:prod` usan `dist/`. Mantén esta separación: una compilación limpia no debe borrar los módulos de un servidor de desarrollo en ejecución.
 
-La API usa el prefijo `/api` y el puerto 3000 por defecto. Swagger se publica en `/api/docs`. Vite redirige las peticiones locales de `/api` al backend mediante `frontend/vite.config.js`.
+`npm test` ejecuta los archivos del backend en serie, igual que CI, para evitar que sus compilaciones de TypeScript compitan por recursos. El comando equivalente es `node --test --test-concurrency=1 -r ./test/isolate-env.cjs -r ts-node/register test/*.test.ts` desde `backend/`. Conserva la precarga `test/isolate-env.cjs`, que impide que `@prisma/client` cargue `backend/.env` (credenciales reales) en las pruebas. No la omitas ni ejecutes archivos de prueba sueltos sin ella salvo con un entorno explícitamente ficticio. No cambies expectativas o límites para ocultar un fallo de comportamiento.
+
+La API usa el prefijo `/api` y el puerto 3000 por defecto. Swagger se publica en `/api/docs` solo en desarrollo; en producción está apagado salvo `SWAGGER_ENABLED=true`, que además exige HTTPS y una cuenta de administrador activa (nunca credenciales en la URL). El healthcheck público es `/api/health`. Vite redirige las peticiones locales de `/api` al backend mediante `frontend/vite.config.js`. Para otra API, `VITE_API_BASE_URL` debe incluir `/api`; conserva su validación en `frontend/config/api-config.js`. Estas variables se incorporan al build del frontend.
+
+### Mantenimiento explícito
+
+Estos comandos se ejecutan desde `backend/` únicamente cuando la tarea cubra la operación y se haya comprobado el destino.
+
+| Comando | Condición y efecto |
+| --- | --- |
+| `npm run db:init` | Exclusivamente para una base vacía; crea el esquema inicial |
+| `npm run db:migrate` | Aplica las migraciones pendientes al destino configurado |
+| `npm run admin:create` | Crea una cuenta real; es el proceso controlado para el primer administrador |
+| `npm run content:restore` | Recupera contenido original en MySQL local de desarrollo, tras build y migraciones |
+| `npm run convenios:import -- --preview` | Requiere build del backend; muestra el inventario sin conectar a MySQL ni escribir archivos |
+| `npm run convenios:import -- --apply --api-base=http://localhost:3000/api` | Importa convenios y logos en MySQL local de desarrollo; ajusta la URL pública al destino real |
+| `npm run db:backup` | **Solo lectura**: vuelca esquema y datos a `backend/.backups/` (instantánea `REPEATABLE READ`, firma SHA-256 y manifiesto). Sin `mysqldump`; ver [docs/procedimientos/backup-restauracion.md](docs/procedimientos/backup-restauracion.md). El archivo contiene datos personales y hashes: cífralo y no lo subas a Git |
+| `npm run db:restore -- --file=… --target=horus_restore_<nombre> --yes` | Restaura **solo** en una base aislada `horus_restore_*` nueva o vacía, nunca en `DB_NAME`; `--verify-only` solo comprueba firma y contenido sin conectar. Tras cargar comprueba recuentos e integridad referencial de cada clave foránea declarada; si falla, sale con código 1 («RESTAURACIÓN FALLIDA») y conserva el destino para revisarlo. No ejecuta `DROP`. Un servidor remoto exige `ALLOW_RESTORE_DB=true` |
+| `npm run uploads:backup [-- --source=… --dir=… --allow-empty]` | **Solo lectura del origen** (`UPLOAD_DIR`): copia los archivos subidos a `backend/.backups/uploads-AAAAMMDD-HHMMSS/` con manifiesto SHA-256 y lo verifica; un origen sin archivos falla salvo `--allow-empty`. Haz primero `db:backup` y después este. Ver [backup-restauracion.md](docs/procedimientos/backup-restauracion.md) |
+| `npm run uploads:restore -- --from=… --verify-only` / `--target=<carpeta nueva o vacía> --yes` | Verifica la instantánea y copia sin sobrescribir jamás (`--only-missing` solo añade lo que falte; `UPLOAD_DIR` exige `--allow-upload-dir`) |
+| `npm run chatbot:purge [-- --dry-run]` | **Borra** filas de chatbot vencidas (> 90 días) de las dos tablas de métricas; requiere `npm run build`. `--dry-run` solo cuenta. Idempotente y por lotes; nada la programa todavía (ver [backend/CHATBOT.md](backend/CHATBOT.md)) |
+
+No ejecutes inicialización, migraciones, importaciones ni creación de usuarios como parte de la instalación, compilación, arranque o revisión rutinaria de tipos. La instalación/build solo genera el cliente Prisma.
 
 ## Backend: convenciones y contratos
 
+Ediciones académicas (fase 2) usa `backend/src/convocatorias/` y `/api/admin/convocatorias`, con sección React `?section=ediciones`. Reutiliza los permisos `convocatorias:*` sin cambiar la matriz. Requiere `20261018-convocatorias-capacidad` antes del código: capacidad nullable conserva filas anteriores, pero altas/apertura exigen cupos positivos. El curso es inmutable; abrir, cerrar/cancelar y archivar son acciones con revisión e historial transaccional. No hay DELETE ni API de Matrículas. Contrato y pruebas aisladas: [Gestión de ediciones](docs/procedimientos/gestion-ediciones.md).
+
 - Mantén la organización por módulos: controladores para HTTP, DTOs para entradas y servicios para reglas de negocio. Reutiliza `PrismaService`; evita crear clientes por petición.
 - Usa `createValidationPipe()` de `backend/src/common/validation.ts`. La conversión implícita está desactivada: convierte explícitamente parámetros numéricos de query con `@Type(() => Number)` cuando corresponda.
-- Distingue campos omitidos de valores `null`. Las actualizaciones de catálogo, galería y contenido deben rechazar cuerpos vacíos y valores inválidos antes de consultar o escribir.
+- Distingue campos omitidos de valores `null`. Las actualizaciones de catálogo, galería, convenios y contenido deben rechazar cuerpos vacíos y valores inválidos antes de consultar o escribir. Conserva las formas de limpiar campos propias de cada recurso.
 - Normaliza nombres y correos donde corresponda. Conserva los espacios de las contraseñas y su validación del límite de bytes UTF-8 para bcrypt.
-- Conserva los contratos existentes de rutas, paginación, claves de respuesta y estados HTTP. Revisa los consumidores del frontend antes de modificarlos.
+- Conserva los contratos existentes de rutas, paginación, claves de respuesta y estados HTTP. Revisa los consumidores del frontend antes de modificarlos. Las listas heredadas conservan su respuesta cuando se omite `page`; el frontend debe solicitar páginas. Solo una exportación explícita recorre todos los resultados.
+- **Validación de entradas:** solo (1) obligatorio/no vacío, (2) longitud máxima del esquema y (3) formato (correo, teléfono, slug, URL). No inventes longitudes mínimas (`@Length(1, max)` en DTO y sin `minLength` en formularios); el teléfono usa `PHONE_PATTERN`. Se mantienen la seguridad de contraseñas (8–72) y los rangos numéricos. También la siguen el formulario público de Contactos (`contacto/dto`), el contacto del chatbot y el nombre del registro de administrador. Quedan fuera newsletter, el Libro de Reclamaciones y las contraseñas/autenticación.
 - Traduce conflictos de unicidad a HTTP 409 mediante la utilidad compartida. No expongas consultas SQL, credenciales, trazas ni mensajes internos en respuestas públicas.
-- Escapa datos del usuario al construir HTML para correos. Las pruebas deben sustituir el envío real.
+- Escapa datos del usuario al construir HTML para correos. Las pruebas deben sustituir el envío real. El proveedor se elige de forma explícita con `MAIL_PROVIDER` (`resend` o `gmail`), sin alternativa automática entre ellos. Sus variables, la diferencia entre mensaje aceptado y entregado, los envíos de resultado incierto (que no se reintentan) y las restricciones de envío —sin dominio verificado, Resend solo entrega a la cuenta titular— están en [backend/MAIL.md](backend/MAIL.md).
 - Mantén la compatibilidad de fechas de calendario y valores decimales; reutiliza la serialización existente y evita conversiones que cambien el día por zona horaria.
 
-### Reglas de negocio que deben preservarse
+### Catálogo y contenido compartido
 
-- El catálogo público solo devuelve registros publicados. Los parámetros del cliente no pueden habilitar borradores ni archivados.
-- El borrado de catálogo archiva el registro. No lo reemplaces por eliminación física.
-- La galería pública excluye elementos inactivos.
+- El catálogo público solo devuelve registros publicados y la galería pública excluye elementos inactivos. Los parámetros del cliente no pueden habilitar borradores, archivados o elementos ocultos.
+- Los cursos y capacitaciones se conservan: `DELETE /api/admin/cursos/:id` responde 409 si existen (404 si no existen), sin modificarlos. Para retirarlos del catálogo público, usar Editar y PUT con `estado: archivado`; la administración puede consultar los archivados y republicarlos con el mismo ID y slug. El panel no ofrece una acción de borrado para ellos. Esta conservación sostiene los futuros módulos académicos, todavía no implementados. Las preguntas frecuentes se archivan mediante DELETE. Por decisión explícita del proyecto, los **servicios** sí se eliminan definitivamente (`DELETE /api/admin/servicios/:id`, con confirmación en el panel); su estado `archivado` sigue disponible desde Editar.
+- Catálogo admite `limpiar` para quitar campos opcionales conocidos sin aceptar `null`. No se puede asignar y limpiar el mismo campo. La agenda usa `periodo` y paginación. Los programas de capacitación pueden omitir modalidad/duración; los cursos las exigen.
+- Las categorías de servicios son `cableado`, `camaras`, `soporte` y `asesoramiento`. Conserva la correspondencia entre DTOs, servicio, enum Prisma, SQL y filtros del frontend; no reintroduzcas `otros` como alternativa automática.
+- El contenido administrable es compartido en MySQL; las cuentas nuevas no crean inventarios propios. El token de sesión y el marcador local de refresco no son fuentes de contenido. La página pública debe funcionar aunque el navegador bloquee storage.
 - Una base sin contenido devuelve listas vacías y contadores en cero. No insertes datos de ejemplo ni inventes resultados para completar pantallas.
 - Los ajustes públicos exponen únicamente claves conocidas. Leer ajustes no debe escribir valores de muestra; los cambios relacionados se guardan en una transacción.
-- Las suscripciones conservan su unicidad por correo y el interés existente al reactivarse si no se proporciona otro.
-- Las cotizaciones conservan cálculos monetarios, transiciones de estado, historial y control de concurrencia mediante `revision`.
-- El chatbot consulta contenido publicado y no inventa disponibilidad, precios ni datos de contacto. Conserva los límites de entrada, el control de frecuencia y el consentimiento para registrar contactos.
+- El diseño original usa metadatos del catálogo y fotos activas; las lecturas nunca importan contenido. `backend/src/content-original/` ofrece recuperación explícita autenticada e idempotente que conserva ediciones y estados, incluidos archivados e inactivos.
+
+### Convenios
+
+- `Convenio` y `ConvenioFoto` son independientes de la galería. La API pública impone `visible=true` y devuelve 404 para detalles ocultos; la creación mantiene `visible=false` por defecto.
+- Conserva las listas `{ ok, items, pagination: { page, limit, total, pages } }` y los detalles `{ ok, item }`. Las listas no cargan fotos ni textos completos; el detalle incluye fotos en una sola petición. Convenios y fotos se ordenan por `orden` e `id`; `origen_local` es interno.
+- Los campos opcionales de texto/logo admiten cadena vacía para limpiar y rechazan `null`. Valida que cada foto pertenezca al convenio indicado y conserva la reordenación múltiple en transacción.
+- Eliminar un convenio borra sus registros de fotos por cascada. Retirar fotos o convenios no borra archivos físicos de uploads, que pueden compartirse.
+- La importación inicial es explícita e idempotente por `origen_local`: conserva íntegramente los convenios existentes y no inventa fotografías ni descripciones. Consulta [backend/CONVENIOS.md](backend/CONVENIOS.md) y el importador antes de intervenir.
+
+### Atención, suscripciones y chatbot
+
+- `backend/src/attention/` guarda seguimiento de consultas y reclamaciones con estado, responsable, notas, respuesta, historial y `revision`. Un cambio obsoleto responde 409. Las reclamaciones y los mensajes con seguimiento/cotizaciones se conservan.
+- En Mensajes, el estado administrativo proviene del seguimiento identificado por `messages` y `registro_id`; sin seguimiento conserva `Contacto.estado`. `attention/message-state.ts` comparte las consultas de listado, filtros previos a paginación, detalle y estadísticas. Las métricas de mensajes son globales, distinguen archivados de atendidos y conservan el total con archivados. El PUT heredado admite tres estados y se serializa con el primer seguimiento bloqueando la fila de Contacto. Consulta [backend/D4-ESTADOS.md](backend/D4-ESTADOS.md).
+- Las cotizaciones conservan cálculos monetarios, transiciones de estado, historial y control de concurrencia mediante `revision`. `POST /admin/cotizaciones` admite el encabezado opcional `Idempotency-Key` (16–128 caracteres `A-Za-z0-9._:-`; permitido en CORS): con él, la restricción UNIQUE de `cotizaciones.idempotencia_clave` hace que repetir o enviar a la vez la misma operación devuelva la misma cotización (`reutilizada: true`) y que la misma clave con otro contenido u otro administrador responda 422. Sin el encabezado se conserva el comportamiento anterior (cada POST crea una). `QuoteForm` genera la clave por operación y la conserva mientras el contenido no cambie. Crear no envía correo; el envío tiene su propio control de intentos. Requiere la migración `20261011-cotizaciones-idempotencia` **antes** de desplegar este código; las claves se conservan con la cotización.
+- Newsletter exige consentimiento explícito en HTTP y proporciona baja mediante token firmado. La baja desactiva; las suscripciones conservan su unicidad por correo y el interés existente al reactivarse si no se proporciona otro.
+- El panel **ya no tiene** pantallas de Suscripciones ni de Reclamaciones (retiradas por decisión del responsable): sus URL abren el Resumen. Se conservan los endpoints administrativos, las tablas y los canales públicos (Libro de Reclamaciones, alta y baja de newsletter). El registro de una reclamación es independiente de su constancia por correo: si el correo falla (o lanza), el registro se conserva y se responde `correo_enviado: false`; la base **no** guarda si la constancia se envió. Las reclamaciones nuevas no tienen hoy una interfaz interna de revisión: ver [docs/procedimientos/atencion-reclamaciones-externo.md](docs/procedimientos/atencion-reclamaciones-externo.md), una propuesta **no implantada** con datos pendientes de aprobación.
+- `contactos` (utf8mb4_0900_ai_ci en MySQL 8) y `attention_records` (utf8mb4_unicode_ci) pueden tener colaciones distintas. `messageState` (`attention/message-state.ts`) fija `COLLATE utf8mb4_unicode_ci` en ambos operandos del `COALESCE`; sin él MySQL responde error 1267 y fallan el dashboard, las métricas y los filtros por estado. No lo retires ni lo resuelvas con una migración sin autorización.
+- El chatbot consulta contenido publicado (cursos, servicios, preguntas frecuentes, convenios visibles y claves públicas de contacto), ordena por relevancia con sinónimos y tolerancia a erratas (`chatbot-search.ts`), pide aclaración si la pregunta no tiene tema y no inventa disponibilidad, precios ni datos de contacto. Conserva los límites de entrada, el control de frecuencia y el consentimiento para registrar contactos; el widget no usa `localStorage`/`sessionStorage`.
+- El chatbot registra **métricas sin texto** (`chatbot_interacciones`) y, solo para preguntas sin respuesta, el texto **redactado** (correos, teléfonos y enlaces) y deduplicado (`chatbot_preguntas_sin_respuesta`); registrar nunca afecta la respuesta. «Solicitar cotización» crea un `Contacto` con `origen=chatbot` y asunto `[Chatbot] [Cotización] …`. La vista `Consultas del chatbot` del panel es de solo lectura (`GET /api/admin/chatbot/sin-respuesta`). Se conservan **90 días** (limpieza por lotes `ChatbotMetricsService.purgeExpiredBatches`: oportunista al registrar —solo si hay tráfico— y mediante `npm run chatbot:purge`, que **debe programarse** en el entorno real; la vista no muestra lo vencido) y la política de privacidad y el aviso del widget lo informan. Requiere la migración `20261009-chatbot-metrics` **antes** de desplegar este código (el cliente Prisma selecciona `contactos.origen`); `db:check` la espera.
+- Las cuotas públicas se comparten en MySQL mediante `rate_limit_buckets` y el guard global; conserva la IP validada por Express.
+- Guards globales de `app.module.ts` (E3.6), en este orden: `PublicRateLimitGuard` y después `AccessGuard` (autorización por rol con los decoradores de `src/permissions/access.decorators.ts`). Van unidos a `ACCESS_MODE = 'por_roles'`: no registres, retires ni condiciones la guard por separado ni con variables de entorno. Toda ruta nueva necesita exactamente un decorador de acceso y su entrada en `route-inventory.ts`; sin él queda denegada (403).
 
 ## Prisma y base de datos
 
-El proyecto utiliza Prisma con `engineType = "client"`, el adaptador MariaDB/MySQL y migraciones SQL propias. Consulta `backend/PRISMA.md` y los scripts antes de intervenir en el esquema.
+El proyecto utiliza Prisma con `engineType = "client"`, el adaptador MariaDB/MySQL y migraciones SQL propias. Consulta [backend/PRISMA.md](backend/PRISMA.md) y los scripts antes de intervenir en el esquema.
 
 - La conexión de la aplicación y los scripts usa variables `DB_*`. El script de generación proporciona una `DATABASE_URL` ficticia y no necesita conectarse a MySQL.
 - Mantén alineadas las versiones de `prisma`, `@prisma/client` y `@prisma/adapter-mariadb`.
 - Para construir errores Prisma en tests, usa la misma clase que el runtime del cliente. Con la configuración actual, importa `PrismaClientKnownRequestError` desde `@prisma/client/runtime/client`.
-- Si cambias modelos, revisa tanto `schema.prisma` como el SQL correspondiente y regenera el cliente. No edites archivos generados en `node_modules` ni en `dist`.
+- Si cambias modelos, revisa tanto `schema.prisma` como el SQL correspondiente y regenera el cliente. No edites archivos generados en `node_modules`, `dist` ni `dist-dev`.
 - Añade nuevas migraciones sin reescribir las ya aplicadas. Regístralas en la lista `versions` de `backend/scripts/migrate.cjs`; crear el archivo SQL por sí solo no lo ejecuta.
 - El ejecutor actual separa sentencias por punto y coma. No introduzcas procedimientos o SQL que requieran otro parser sin adaptar y verificar ese ejecutor.
-- `npm run db:init` es exclusivamente para una base vacía. `npm run db:migrate` modifica el esquema del destino configurado. `npm run admin:create` crea una cuenta real.
-- No ejecutes inicialización, migraciones ni creación de usuarios como parte de una compilación, del arranque o de una revisión rutinaria de tipos.
+- MySQL DDL no es transaccional. Si falla una migración parcialmente, revisa los cambios ya aplicados y `horus_migrations` antes de reintentar; no presupongas una reversión completa.
 - No uses `prisma db push`, `prisma migrate reset` ni borrados de datos para resolver discrepancias del esquema existente.
-- Antes de pruebas de integración, verifica que el servidor configurado sea local o esté destinado a pruebas. El script crea y elimina `horus_prisma_test_<UUID>` y requiere permisos CREATE/DROP DATABASE.
+- Antes de pruebas de integración, verifica que el servidor configurado sea local o esté destinado a pruebas. El script crea y elimina únicamente `horus_prisma_test_<UUID>`, requiere permisos CREATE/DROP DATABASE y no migra la base original configurada.
+- Un destino remoto de pruebas autorizado exige `ALLOW_INTEGRATION_DB=true`. Esa variable no constituye autorización para una base compartida. La integración comprueba persistencia entre administradores y tras reiniciar la API en la base temporal.
 
 ## Frontend: componentes y experiencia de usuario
 
-- Usa React y TypeScript siguiendo los patrones y estilos de la zona modificada. Conserva la identidad visual, el diseño adaptable y los textos en español.
-- Reutiliza componentes del panel, tipos de recursos y clientes HTTP existentes, especialmente `panelRequest` para llamadas administrativas.
-- Conserva el manejo centralizado de HTTP 401 y la expiración de sesión. No trates la presencia de un token como prueba suficiente de autorización.
+- Usa React y TypeScript siguiendo los patrones y estilos de la zona modificada. Conserva la identidad visual, el diseño adaptable y los textos en español. Revisa el orden de estilos en `frontend/src/main.tsx` y los imports de la página antes de cambiar reglas compartidas; limita los selectores a la zona afectada.
+- Reutiliza componentes del panel, tipos de recursos y clientes HTTP existentes: `publicRequest` para lecturas públicas y `panelRequest` para llamadas administrativas.
+- Conserva el manejo centralizado de HTTP 401 y la expiración de sesión. No trates la presencia de un token como prueba suficiente de autorización. Un fallo temporal al consultar `/api/admin/me` ofrece reintento sin borrar la sesión; HTTP 401 la cierra; HTTP 403 nunca cierra la sesión.
+- Contrato de sesión (H-BACK-01, E3.4.2): el login y `/api/admin/me` informan `user.rol` (uno de los tres roles o `null`), `user.permisos` (calculados por el backend) y `acceso.modo` (`por_roles` desde E3.6, con AccessGuard registrada en AppModule; `heredado` solo en backends anteriores, que el panel sigue admitiendo). `panel/context/sessionAccess.ts` los interpreta (`parseSession`) y el contexto los expone como `access` (`null` hasta validar la sesión). El login solo se da por listo, sin consultar `/admin/me`, si trae el contrato completo; un backend antiguo (sin esos campos) se valida con `/admin/me` y queda en modo heredado sin rol ni permisos; una respuesta incompleta o incoherente no concede nada. El rol y los permisos viven solo en memoria (nunca en localStorage) y no sustituyen a la autorización del backend: ocultar una opción no protege nada. React no duplica la matriz de permisos.
+- Navegación por permisos (H-BACK-01, E3.4.3, fase 1): `panel/context/panelAccess.ts` declara cada sección del panel con el permiso de lectura del GET que carga (`PANEL_SECTIONS`, `RESOURCE_READ`) y `panelNavigation(access)` decide qué secciones se ven y cuál es el inicio (Resumen con `estadisticas:leer`; si no, la bandeja). Backend antiguo o cuenta sin rol en modo heredado: navegación heredada completa. Cuenta con rol: solo sus secciones, en ambos modos. `por_roles` sin rol (cuenta básica, p. ej. recién registrada): el inicio es «Mi espacio» (`PanelBasicHome`), con acceso a Ajustes de su cuenta y sin ninguna sección administrativa; no es un bloqueo. Una sección sin permiso (también por enlace directo) muestra un aviso y **no se monta**, de modo que no hace solicitudes; no redirige. «Roles y usuarios» (`?section=cuentas`, componente `PanelAccounts`) solo se ofrece en modo `por_roles` con `cuentas:leer` (hoy, solo el gerente): lista las cuentas de `GET /admin/users` con búsqueda y filtros por rol y estado, resalta las cuentas básicas (activas sin rol; clave interna `pendiente`) y permite asignar, cambiar o retirar roles (`PUT /admin/users/:id/rol`, `cuentas:asignar_rol`) y activar o desactivar (`PUT /admin/users/:id`, `cuentas:editar`), siempre con confirmación. El backend impide cambiar el propio rol, conceder o retirar un rol con permisos que la cuenta que actúa no tiene y dejar el sistema sin gerente activo; audita el cambio y cierra las sesiones de la cuenta. Si añades una sección, declárala en `PANEL_SECTIONS` con el permiso que exige su endpoint (`test:panel-access` lo contrasta con `backend/src/permissions/route-inventory.ts`).
+- Operaciones por permisos (H-BACK-01, E3.4.3, fase 2; desde E3.6 el backend aplica además AccessGuard, en código candidato sin desplegar): `RESOURCE_WRITE` (por `endpoint` de ResourceManager) y `PANEL_ACTIONS` declaran el permiso de cada escritura del panel, igual que la ruta que la exige (`test:panel-access` los contrasta con `route-inventory.ts`). Las secciones usan `usePanelAccess().can(permiso)`: navegación heredada, todo como antes; con rol, solo lo que figura en `permisos`. Sin el permiso, el botón o enlace no se muestra, el formulario se abre en modo consulta (campos deshabilitados, sin guardar) y `?crear=1` o `?contacto=` no abren el alta; además, cada operación vuelve a comprobar el permiso antes de enviar su POST, PUT o DELETE (también con Enter). Guardar con estado «archivado» exige el permiso de archivar del recurso. Todo esto es interfaz: la autorización sigue siendo del backend. Si añades un botón que escribe, declara su permiso y compruébalo también en la función que hace la solicitud.
 - Usa tipos concretos y `import type` cuando corresponda. Para envío de formularios usa `SubmitEvent<HTMLFormElement>`; evita `FormEvent`, obsoleto en los tipos instalados.
 - Inicializa formularios al crearlos y actualiza estado desde eventos o resultados asíncronos. No añadas efectos solo para copiar props a estado.
-- En cargas remotas, cancela peticiones y evita que una respuesta obsoleta sobrescriba la vista actual. Reutiliza `useRequestStatus` cuando encaje con el flujo.
+- En cargas remotas, cancela peticiones y evita que una respuesta obsoleta sobrescriba la vista actual. Reutiliza `usePublicResource` y `useRequestStatus` cuando encajen con el flujo.
 - Mantén separados los exports de componentes y los de hooks/contextos para que Fast Refresh funcione correctamente.
 - Incluye estados de carga, vacío, error y éxito. Evita envíos duplicados y conserva los datos del formulario si falla una operación.
-- Usa HTML semántico, labels, navegación por teclado y foco adecuado en diálogos. No uses únicamente el color para comunicar un estado.
+- Usa HTML semántico, labels, navegación por teclado y foco adecuado en diálogos. No uses únicamente el color para comunicar un estado. Respeta `prefers-reduced-motion` y limpia listeners, timers y bloqueos de scroll al cerrar o desmontar.
+- Conserva el refresco de contenido mediante `contentUpdates.ts`: eventos en el mismo documento y un marcador de storage para otras pestañas del mismo origen. Otros navegadores reciben los cambios al cargar o actualizar; no presupongas sincronización remota en tiempo real.
+- Las rutas de uploads del proxy se conservan como `/api/uploads/<archivo>`. Reutiliza `contentImages.ts` para resolverlas contra la API configurada, incluidos enlaces antiguos de loopback, sin escribir en MySQL ni alterar enlaces externos. Para validarlas en backend, reutiliza `common/image-path.ts`.
+- Home comparte la lista paginada de convenios entre la sección y la estadística, que usa `pagination.total`. Conserva el detalle integrado en escritorio y el diálogo en móvil, con carga, reintento, teclado, retorno de foco y fotos independientes de la galería.
+- La bienvenida de Home es breve, aparece al entrar inicialmente por esa página y no espera imágenes/API ni bloquea scroll, foco o navegación. Conserva su comportamiento con movimiento reducido.
 - En cambios visuales o de interacción, revisa escritorio y móvil y los estados afectados si hay un navegador disponible. Si no los verificaste, indícalo.
+- Notificaciones del panel: usa `notify` (`panel/services/notify.ts`; la política está en `notifyCore.ts` y se prueba con `test:notify`), nunca `toast` directamente. Hay un único `PanelToaster` (montado en `AdminRoute`, solo con sesión; se retira al cerrar sesión) y las páginas públicas no tienen Toaster. El éxito se anuncia solo tras la respuesta confirmada; los errores, conflictos 409 y resultados inciertos conservan su aviso **en línea** con sus controles (un toast es efímero y, con un diálogo modal abierto, el resto de la página es inerte). Un 500 («Internal server error») o un fallo de red nunca muestran texto del servidor (`panelApi`); las excepciones deliberadas del backend (400, 409, 503 con mensaje propio) sí conservan su mensaje.
 
 ## Seguridad, configuración y dependencias
 
-- Nunca publiques valores de `.env`, tokens, contraseñas, certificados privados o datos personales en código, logs, pruebas o respuestas. Documenta nombres de variables y ejemplos ficticios.
-- Conserva la validación de configuración en `deployment.config.ts`, los orígenes CORS exactos y la verificación TLS. Para MySQL sin TLS, `DB_RSA_PUBLIC_KEY` permite fijar una clave pública RSA confiable; nunca activar recuperación indiscriminada de claves. La API comprueba `SELECT 1` antes de escuchar. `TRUSTED_PROXY_CIDRS` enumera proxies explícitos; Caddy reemplaza X-Forwarded-For con la IP validada antes de enviarla a la API.
+- Nunca publiques valores de `.env`, tokens, contraseñas, certificados privados o datos personales en código, logs, pruebas o respuestas. Documenta nombres de variables y ejemplos ficticios. Las variables `VITE_*` son públicas; no contienen secretos.
+- Conserva la validación de configuración en `backend/src/deployment.config.ts`, los orígenes CORS exactos y la verificación TLS. Para MySQL sin TLS, `DB_RSA_PUBLIC_KEY` permite fijar una clave pública RSA confiable; nunca activar recuperación indiscriminada de claves. La API comprueba `SELECT 1` antes de escuchar. `TRUSTED_PROXY_CIDRS` enumera proxies explícitos; Caddy reemplaza X-Forwarded-For con la IP validada antes de enviarla a la API.
 - No retires guards ni alteres el acceso a rutas como efecto secundario de otra corrección.
-- Por decisión explícita del proyecto, el registro administrativo está abierto: `/admin/register` y `POST /api/admin/register` permiten crear cuentas sin sesión previa. Login y registro son pantallas separadas; un visitante vuelve al login tras registrarse. Conserva la validación de datos, contraseñas y correos únicos. El panel, `/api/admin/me` y las demás operaciones administrativas mantienen sus guards y el manejo centralizado de HTTP 401. `npm run admin:create` sigue disponible como alternativa para crear una cuenta.
+- **Registro público sin privilegios** (decisión del responsable, 2026-10-16): `/admin/register` muestra el formulario público y `POST /api/admin/signup` (`@PublicRoute`) crea una cuenta **activa y sin rol** (bcrypt de coste 12, correo único → 409, auditoría `cuenta_creada` con `actor_id` NULL y motivo de registro público). No devuelve token ni datos; el DTO rechaza con 400 cualquier campo ajeno (`rol`, `permisos`, `activo`…); tiene campo trampa `website` y límites de 3/min y 10/h por IP y 30/min global. La cuenta nueva puede iniciar sesión de inmediato y entra en «Mi espacio» (cuenta básica: consulta sus datos y cambia su contraseña). Sin rol no obtiene ningún permiso administrativo: el backend mantiene JWT, AccessGuard y RBAC, y deniega toda ruta con permiso (403 con `NO_ROLE_MESSAGE`); el panel solo adapta la interfaz. Los roles los gestiona el gerente desde «Roles y usuarios» (`PUT /admin/users/:id/rol`, `cuentas:asignar_rol`, auditado) o, desde la terminal, con `npm run admin:assign-role` (auditado). Nunca crees administradores ni asignes roles desde el registro, no expongas listas de cuentas fuera de «Roles y usuarios» y no relajes AccessGuard. `POST /api/admin/register` sigue siendo el alta hecha por un administrador (sesión válida y `cuentas:crear`, sin token en la respuesta); el primer administrador se crea con `npm run admin:create`. Conserva la validación de datos, contraseñas y correos únicos, y el manejo centralizado de HTTP 401.
+- Si la base no tiene la estructura esperada (Prisma `P2021`/`P2022`, p. ej. falta `admin_users.rol` por migraciones pendientes), el login y el registro responden **503** con un mensaje neutro y el registro del servidor indica revisar `npm run db:check`; no se corrige con cambios de esquema improvisados.
+- Las sesiones llevan `session_version`. Cambiar contraseña o desactivar una cuenta revoca sesiones. Conserva los permisos existentes de los administradores.
+- `backend/src/uploads/` permite PNG/JPEG/WebP de hasta 5 MB con comprobación de firma. En producción, `UPLOAD_DIR` requiere almacenamiento persistente, compartido si hay varias instancias; no incluyas archivos subidos en Git ni Docker.
 - Inspecciona las versiones instaladas antes de atribuir errores a una API. No mezcles soluciones de versiones distintas.
 - Añade dependencias solo con una necesidad concreta y actualiza el lockfile correspondiente. Evita `npm audit fix --force` y saltos de versión mayor sin revisar compatibilidad y alcance.
 
@@ -129,35 +204,66 @@ Elige comprobaciones según el cambio y amplía la verificación solo si hay dep
 
 | Cambio | Verificación esperada |
 | --- | --- |
-| Documentación | Rutas, comandos, coherencia con el código y diff |
+| Documentación | Rutas, comandos, coherencia con el código y diff; no requiere builds ni suites de aplicación |
 | Backend | Tipos y pruebas relevantes; build si cambia código compilado o configuración |
-| Frontend | `npm run check`, `npm run lint` y build para cambios de aplicación o configuración |
+| Frontend | `npm run check`, `npm run lint` y `npm run build` para cambios de aplicación o configuración |
+| Configuración de API, proxy o despliegue | `npm run test:deploy` del frontend y pruebas relevantes de configuración/seguridad del backend |
 | Esquema, consultas o transacciones | Cliente regenerado cuando corresponda y pruebas de integración en un destino de pruebas |
 | API compartida | Backend y consumidores del frontend |
-| Interacción visual | Revisión del flujo, estados y accesibilidad cuando sea posible |
+| Interacción visual | Revisión del flujo, estados y accesibilidad en escritorio/móvil cuando sea posible |
+
+### Revisión con navegador
+
+Ejecuta estos scripts desde `frontend/`. Usan Edge/Chromium con perfiles temporales y fixtures HTTP aislados; no utilizan la base real ni envían correo SMTP.
+
+| Comando | Preparación y cobertura |
+| --- | --- |
+| `node scripts/smoke-ui.cjs` | Build de backend y frontend; flujos públicos y del panel, contenido original, sesión, diálogos y escritorio/móvil |
+| `node scripts/smoke-home.cjs` | Build del frontend; Home, bienvenida, movimiento reducido y convenios públicos/administrativos |
+| `node scripts/smoke-global-content.cjs` | Build del frontend; dos contextos de navegador aislados y una visita con storage bloqueado |
+| `npm run smoke:auth` | Build previo; sesión administrativa: login, recuperación y restablecimiento, pestañas, 401 antiguos, timeouts y doble envío |
+| `npm run smoke:session-access` | Compila antes; sesión y contrato de roles (E3.4.2) con API simulada, leyendo el contexto real de React: login y restauración con los tres roles, cuenta sin rol, backend antiguo, contratos parciales, mal formados o incoherentes, rol manipulado en el almacenamiento local, 401 frente a 403 y pestañas (incluido el cambio de rol) |
+| `npm run smoke:panel-access` | Compila antes; navegación por permisos (E3.4.3, fase 1) con API simulada y las listas de permisos leídas del backend: menú e inicio de los tres roles en ambos modos, backend antiguo, cuenta sin rol (heredado y `por_roles`), Biblioteca solo con `items:leer`, enlaces directos sin permiso (aviso, sin redirección y sin solicitudes), «Roles y usuarios» solo para el gerente en `por_roles`, 401 frente a 403 (también al cambiar la contraseña) y atrás/adelante |
+| `npm run smoke:panel-actions` | Compila antes; operaciones por permisos (E3.4.3, fase 2) con API simulada y las listas de permisos leídas del backend: botones de crear, editar, duplicar, eliminar o archivar, recuperar contenido original, convenios, cotizaciones y consultas según los permisos de secretaria, coordinadora, gerente, backend antiguo, cuenta sin rol (heredado) y cuentas ficticias de solo lectura; modo consulta, `?crear=1` y `?contacto=` sin permiso, «archivado» sin permiso de archivar, Enter sin permiso, enlaces cruzados del Resumen; ninguna solicitud de escritura en los casos denegados y, en los permitidos (configuración, editar y archivar cursos, ocultar convenios, anular cotizaciones, cambiar el estado de una consulta), la solicitud sí llega al servidor simulado |
+| `npm run smoke:unsaved` | Compila antes; protección de cambios sin guardar, caducidad y cambio de sesión, ruta de retorno y avisos |
+| `npm run smoke:messages-table`, `smoke:message-detail` | Compilan antes; vista Tabla de Mensajes en la bandeja (D6.3 fase A: totales, paginación, búsqueda, vacío/error/formato inesperado, CSV completo, detalle, eliminación y registro manual) y detalle independiente de la bandeja (`?id=`, filtros, errores, alias `vista=tabla`) |
+| `npm run smoke:attention-conflicts` | Compila antes; concurrencia del seguimiento de mensajes: conflictos entre administradores y HTTP 409 |
+| `npm run smoke:mail-attempts` | Compila antes; envíos manuales de correo (D5) con proveedor simulado: aceptado, fallido, incierto, bloqueado con confirmación, corte de red y doble clic. Detalle en [backend/MAIL.md](backend/MAIL.md) |
+| `npm run smoke:message-center` | Compila antes; Centro de atención (D6.1–D6.2) con API simulada: registro manual dentro de la bandeja y `?crear=1`, borradores y cancelación, doble envío, sesión caducada, **resultado incierto del registro** (timeout, respuesta perdida, 200 ilegible: aviso, comprobación de la bandeja y confirmación antes de repetir) y exportación CSV paginada (varias páginas, filtros, fórmulas, página fallida o lenta, cancelación, cambio de datos y de token). Desde D6.2 cubre también el conmutador Bandeja/Tabla (filtros, paginación, selección y borradores compartidos; teclado) y la eliminación protegida (confirmación, 409, doble DELETE, resultado incierto y comprobación). Acorta los tiempos de espera solo en la página de prueba |
+| `npm run smoke:attention-save` | Compila antes; guardado del seguimiento en la bandeja (D6.3, preparación) con API simulada: guardado normal, **timeout/red/5xx = resultado incierto** (aviso, borrador intacto, sin reintento automático, guardar/correo/eliminar bloqueados), comprobación explícita con GET (confirma solo si la revisión y los valores coinciden; si el servidor no cambió no se concluye), respuesta tardía, 409 con fusión D3, y bloqueo de cambio de consulta/vista/filtro mientras el PUT está pendiente (incluido Atrás). Acorta los tiempos de espera solo en la página de prueba |
+| `npm run smoke:panel-sections` | Compila antes; con API simulada: indicadores del resumen y su error (`—`, nunca ceros), menú sin Suscripciones/Reclamaciones, rutas directas retiradas (abren el Resumen, sin bucles ni consultas al módulo), Centro de atención ante 500 / formato inesperado conservando filtro e `?id=`, Cotizaciones intactas y canales públicos conservados (Libro de Reclamaciones y baja de suscripción) |
+| `npm run smoke:message-responsive` | Compila antes; Centro de atención (D6.4) a 1280 px y 390 px: lista → detalle en móvil con «Volver a la lista», foco al abrir/volver, regiones en vivo, tabla con caption y encabezado de fila, borrador protegido y sin desborde horizontal |
+| `npm run smoke:quote-origin` | Compila antes; Mensajes ↔ Cotizaciones (D7): «Preparar cotización», precarga, parámetro heredado `?contacto`, retorno al origen con filtros, vínculo `contacto_id`, doble envío y **resultado incierto** (sin reintento automático; comprobación y confirmación explícita antes de repetir) |
+| `npm run smoke:panel-toasts` | Compila antes; notificaciones del panel (Sonner): un único Toaster solo en el panel autenticado, éxito solo tras la respuesta del servidor, 500 sin falso éxito ni texto técnico, resultado incierto (no caduca, sin reintentos), 409, borradores intactos y retirada de avisos al cerrar sesión |
+| `npm run smoke:roles` | Compila antes; «Roles y usuarios» con API simulada: menú y acceso según permisos (gerente en `por_roles`, solo lectura con `cuentas:leer`, secretaria sin permiso, modo heredado), listado con las cuentas básicas (sin rol) resaltadas, búsqueda y filtros, cambio de rol con confirmación y avisos, cuerpo `{ rol, rol_actual }`, doble envío, cancelación, 409 con su mensaje, 500 como resultado incierto sin reintento, desactivación confirmada, propia cuenta protegida y móvil |
+| `npm run smoke:signup` | Compila antes; con API simulada: enlace «Crear cuenta» desde el login, formulario de registro (validación local sin solicitudes, campo trampa oculto), cuerpo sin rol ni permisos, éxito solo tras la respuesta, doble envío, 409/400/429/500/502/503 sin texto del servidor, móvil sin desborde, login inmediato de la cuenta sin rol en «Mi espacio» (sin bloqueo, menú solo con «Mi espacio» y sin solicitudes de secciones) y login 401/503 |
+| `npm run smoke:chatbot` | Compila antes; Fase F con API simulada: widget (menú por áreas, sugerencias, enlaces solo internos, reintento de consultas, bloqueo mientras responde, almacenamiento bloqueado, móvil y foco) y «Solicitar cotización» (tipo `cotizacion`, formato de teléfono, 500 sin texto técnico y sin reintento, doble envío, aviso de datos) y vista administrativa de solo lectura de preguntas sin respuesta (métricas reales, paginación, búsqueda, error, formato inesperado y vacío) |
+
+`test:message-export` prueba sin navegador la exportación paginada (`fetchAllPages`: todas las páginas, error intermedio, total cambiante, ids repetidos, cancelación y tope de páginas), las columnas y la neutralización de fórmulas del CSV, el payload del registro manual y la detección de posibles duplicados. Ambas pruebas usan solo mocks y datos ficticios, y los smokes bloquean cualquier petición externa antes de enviarla.
+
+**Rutas de mensajes (D6.3 fase A):** todas abren la bandeja moderna (`MessageInbox`) conservando sus parámetros, sin redirecciones: `/admin/messages`, `?section=mensajes`, `?id=N`, `?estado=…`, `vista=tabla` (o `listado=tabla`) abre la vista Tabla de entrada, y `crear=1` abre el registro manual (también combinado con `vista=tabla`, `id` y `estado`). Al cerrar el registro solo se retira `crear`. `vista=` sigue siendo de `ResourceManager` en el resto de secciones (cursos, servicios…). El conmutador Bandeja/Tabla es estado local y el antiguo enlace «Vista de registros» se retiró.
+**D6.3 fase B (completada):** `ResourceManager` ya no tiene la rama `messages`, los estados `attention*` ni `AttentionEditor stateOnly`, y `resources.mensajes` se retiró: los campos del registro manual viven en `MESSAGE_FIELDS` (`services/messageCreate.ts`) y el título «Bandeja de mensajes» y la sección `mensajes` se resuelven explícitamente en `AdminDashboard`. `ResourceManager` solo gestiona recursos genéricos (cursos, servicios, galería, FAQ, contenido). `recordsOf` conserva su rama `messages` para la bandeja y el registro manual.
+
+**Límites conocidos del registro manual y de la exportación (D6.1):**
+- La exportación CSV recorre el endpoint paginado por desplazamiento (lotes de 100, máximo 10 000 consultas). Se aborta sin entregar archivo si cambia el total, hay ids repetidos, falla o se agota una página o cambia el token; **no puede garantizar consistencia absoluta**: un registro que sale del conjunto mientras otro entra a la vez deja el total intacto y no se detecta.
+- `POST /admin/messages` **no garantiza idempotencia**: cada solicitud que llega al backend puede crear una consulta. El frontend evita los dobles envíos *de la aplicación* (bloqueo síncrono; tras un resultado incierto no repite el POST por sí solo, ofrece comprobar la bandeja y exige confirmación), pero **no puede garantizar que el backend procese una única solicitud**.
+- En pruebas con un servidor local ficticio que cortaba la conexión sin responder se observó que `fetch` se llamaba una vez en JavaScript (y DevTools registraba una solicitud, con o sin interceptación) mientras el servidor recibía varias; en una ejecución del smoke llegaron 4. Los clientes `http` y `fetch` de Node no repitieron la solicitud. Las repeticiones se observaron en la capa de red de Edge, por debajo del código de la aplicación, y **dependieron de las condiciones de conexión** (conexiones inactivas del grupo, `Connection: close`, si ya habían llegado cabeceras): no se afirma que Edge repita siempre un POST ni un número fijo de veces. **Las reglas exactas de reintento de Chromium no están verificadas.** Eliminar el riesgo de duplicado requiere una clave de idempotencia en el backend (no implementada).
+
+Los `smoke:*` que compilan antes comprueban además que `dist/` no esté desactualizado respecto a `src/` y bloquean, antes de enviarla, cualquier petición a un origen distinto del servidor simulado. Con `smoke:auth` y los `node scripts/smoke-*.cjs` compila antes tú. `smoke-ui.cjs` también rechaza las peticiones externas (fuentes, iconos y mapa de las pantallas públicas) en sus dos pestañas y cierra el árbol de Edge: antes las dejaba salir y una red lenta impedía que la página se montara (las hojas de estilo externas bloquean los scripts) y fallaba la espera de `readyState`. `smoke-home.cjs` y `smoke-global-content.cjs` todavía no las bloquean. Los smokes de navegador se ejecutan en serie; `smoke:auth` y los cuatro anteriores cierran el árbol completo de procesos de Edge al terminar.
+
+`SMOKE_BROWSER` permite escoger el ejecutable de Edge/Chromium. `SMOKE_SCREENSHOTS` permite guardar capturas de `smoke-ui.cjs` y `smoke-home.cjs` en un directorio elegido; no las añadas a Git salvo solicitud. Los fixtures verifican interacción; la persistencia real se comprueba con la integración MySQL y la entrega SMTP requiere verificación en el destino correspondiente.
+
+### Antes de entregar
 
 - Añade pruebas de regresión cuando un fallo de comportamiento lo justifique. Comprueba resultados observables, no una copia de la implementación.
 - En tests con decoradores, carga `reflect-metadata` antes de importar clases que lo necesiten.
 - Los tests del backend deben estar incluidos en `backend/tsconfig.json` para el editor y excluidos de la compilación de producción mediante `tsconfig.build.json`.
 - No cambies las expectativas de una prueba únicamente para volverla verde. Si quedó obsoleta, explica qué contrato cambió y conserva la cobertura pertinente.
-- Revisa `git diff --check`, el diff final y los archivos nuevos. Excluye secretos, archivos generados y cambios accidentales.
+- Revisa `git diff --check`, el diff final, los archivos nuevos y `git status --short`. Excluye secretos, archivos generados y cambios accidentales; distingue tus cambios de los que ya existían.
 - Reporta comprobaciones realmente ejecutadas y su resultado. Distingue fallos del código de bloqueos del entorno; no presentes como verificado lo que no pudiste ejecutar.
-- No es necesario ejecutar builds o suites de pruebas por un cambio exclusivamente documental.
 
 ## Mantenimiento de esta guía
 
-Actualiza esta guía cuando cambien comandos, arquitectura, migraciones o contratos importantes. Los READMEs y planes pueden contener notas históricas: contrasta sus afirmaciones con la implementación y las pruebas. Evita registrar aquí cifras temporales de pruebas, vulnerabilidades o estados de despliegue.
+Actualiza esta guía cuando cambien comandos, arquitectura, migraciones o contratos importantes. Contrasta las instrucciones con `package.json`, configuración, implementación y pruebas. Los READMEs y planes pueden contener notas históricas: no conviertas sus pendientes en tareas autorizadas ni registres aquí cifras temporales de pruebas, vulnerabilidades o estados de despliegue.
 
-## Flujos institucionales y revisión con navegador
-
-- Market permanece como próxima etapa; no añadir compras, pagos ni inscripciones automáticas a este alcance.
-- `backend/src/attention/` guarda seguimiento de consultas y reclamaciones con estado, responsable, notas, respuesta, historial y `revision`. Un cambio obsoleto responde 409. Las reclamaciones y los mensajes con seguimiento/cotizaciones se conservan.
-- Catálogo admite `limpiar` para quitar campos opcionales conocidos sin aceptar null. No se puede asignar y limpiar el mismo campo. La agenda usa `periodo` y paginación.
-- Las cuotas públicas se comparten en MySQL mediante `rate_limit_buckets` y el guard global; conservar la IP validada por Express.
-- Las sesiones llevan `session_version`. Cambiar contraseña o desactivar una cuenta revoca sesiones. Mantener el registro abierto y los permisos de los administradores según la decisión existente.
-- `backend/src/uploads/` permite PNG/JPEG/WebP de hasta 5 MB con comprobación de firma. En producción, `UPLOAD_DIR` requiere almacenamiento persistente; no incluir archivos subidos en Git ni Docker.
-- Newsletter exige consentimiento explícito en HTTP y proporciona baja mediante token firmado. La baja desactiva y la reactivación conserva el interés omitido.
-- Las listas heredadas conservan su respuesta sin `page`; el frontend debe solicitar páginas. Solo una exportación explícita recorre todos los resultados.
-- El diseño original usa metadatos del catálogo y fotos activas; las lecturas nunca importan contenido. `backend/src/content-original/` ofrece recuperación explícita autenticada e idempotente que conserva ediciones y estados. `npm run content:restore` solo opera en MySQL local de desarrollo, tras build y migraciones. Los programas de capacitación pueden omitir modalidad/duración; los cursos las exigen.
-- Tras compilar backend y frontend, `node scripts/smoke-ui.cjs` revisa escritorio/móvil con Edge y fixtures aislados. `SMOKE_BROWSER` permite escoger otro ejecutable Chromium. No utiliza la base real ni correo SMTP.
-- La integración MySQL utiliza un servidor local; un destino remoto de pruebas autorizado exige `ALLOW_INTEGRATION_DB=true`. Nunca usarlo como autorización implícita para una base compartida.
+Para ampliar un flujo, consulta su documentación específica: [README.md](README.md), [backend/README.md](backend/README.md), [frontend/README.md](frontend/README.md), [frontend/PANEL-Y-CHATBOT.md](frontend/PANEL-Y-CHATBOT.md) y [backend/CHATBOT.md](backend/CHATBOT.md), [backend/MAIL.md](backend/MAIL.md). Mantén esta guía como instrucciones operativas y evita duplicar inventarios o procedimientos extensos.

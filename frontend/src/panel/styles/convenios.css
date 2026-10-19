@@ -18,3 +18,62 @@
 
 .hp-photo-up svg { transform:rotate(-90deg); }
 .hp-photo-down svg { transform:rotate(90deg); }
+
+/* El editor de Convenios desplaza solo su contenido; encabezado y acciones permanecen visibles. */
+.hp-dialog.hp-convenio-dialog[open] { display:flex; flex-direction:column; width:min(960px,calc(100vw - 32px)); max-height:calc(100dvh - 32px); padding:0; overflow:hidden; }
+.hp-convenio-dialog > header { flex-shrink:0; padding:20px 24px; }
+.hp-convenio-dialog > .hp-dialog-footer { flex-shrink:0; display:grid; justify-content:stretch; gap:.6rem; padding:16px 24px; }
+.hp-convenio-dialog .hp-convenio-form { display:flex; flex-direction:column; flex:1; min-height:0; padding:0; margin:0; overflow:hidden; }
+.hp-convenio-editor-scroll { overflow-y:auto; overscroll-behavior:contain; min-height:0; padding:24px; }
+.hp-convenio-form fieldset { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.hp-convenio-form .hp-full { grid-column:1/-1; }
+.hp-convenio-form label { display:grid; gap:.5rem; margin:0; min-width:0; font-weight:600; }
+.hp-convenio-form input:not([type=checkbox]),.hp-convenio-form textarea { width:100%; min-width:0; box-sizing:border-box; padding:.75rem; font-size:1rem; }
+.hp-convenio-form textarea { resize:vertical; }
+.hp-convenio-form label small,.hp-convenio-help { font-size:.82rem; font-weight:400; line-height:1.5; color:#526178; }
+.hp-convenio-logo-section h3,.hp-convenio-photos h3 { margin:0 0 .75rem; font-size:1rem; font-weight:600; }
+.hp-convenio-logo-preview { display:grid; place-items:center; width:160px; height:160px; flex-shrink:0; border:1px solid #dce4ee; border-radius:12px; background:#f7f9fc; overflow:hidden; padding:12px; text-align:center; font-size:.85rem; }
+.hp-convenio-logo-preview img { width:100%; height:100%; object-fit:contain; }
+.hp-convenio-logo-controls { display:grid; gap:.75rem; flex:1; min-width:180px; justify-items:start; }
+.hp-convenio-logo-controls > button { color:#9e3543; }
+.hp-convenio-logo-link { margin-top:.75rem; }
+.hp-convenio-logo-link summary { cursor:pointer; color:#526178; font-size:.85rem; }
+.hp-convenio-logo-link label { margin-top:.75rem; }
+.hp-convenio-setting { border:1px solid #e2e9f1; border-radius:10px; padding:1rem; }
+.hp-convenio-visibility-control { align-content:center; }
+.hp-convenio-visibility-control > span { display:flex; align-items:center; }
+.hp-convenio-form input[type=checkbox] { width:18px; height:18px; min-height:18px; padding:0; margin:0 .65rem 0 0; flex-shrink:0; }
+.hp-convenio-dialog .hp-convenio-feedback:empty { display:none; }
+.hp-convenio-dialog .hp-convenio-feedback .hp-error,.hp-convenio-dialog .hp-convenio-feedback .hp-notice { margin:0; }
+.hp-convenio-dialog > .hp-dialog-footer .hp-convenio-actions { justify-content:flex-end; }
+.hp-convenio-photos { margin-top:1.5rem; padding-top:1.5rem; }
+.hp-convenio-photos-heading { display:flex; gap:.5rem; align-items:baseline; }
+.hp-convenio-photos-heading .hp-count { font-size:.8rem; }
+.hp-convenio-help { margin:0 0 1rem; overflow-wrap:anywhere; }
+.hp-image-upload { display:grid; gap:.6rem; justify-items:start; max-width:100%; }
+.hp-image-upload small { font-size:.8rem; line-height:1.5; color:#526178; }
+.hp-upload-results { list-style:none; margin:0; padding:0; display:grid; gap:.35rem; font-size:.82rem; max-width:100%; }
+.hp-upload-results li { overflow-wrap:anywhere; }
+.hp-upload-results .is-error { color:#a72d42; }
+.hp-upload-results .is-success { color:#21654e; }
+.hp-convenio-photo-caption { display:block; font-size:.85rem; }
+.hp-convenio-photo-confirm { margin-top:.75rem; border-top:1px solid #e2e9f1; padding-top:.5rem; font-size:.85rem; }
+.hp-convenio-photo-confirm button { margin:.25rem .25rem 0 0; }
+.hp-convenios .hp-table th,.hp-convenios .hp-table td { vertical-align:middle; }
+.hp-convenios .hp-convenio-name { white-space:normal; }
+.hp-convenio-name strong,.hp-convenio-name small { overflow-wrap:anywhere; }
+.hp-convenio-order { display:inline-grid; place-items:center; min-width:2rem; padding:.35rem; border-radius:6px; background:#f2f5fa; font-variant-numeric:tabular-nums; }
+.hp-convenio-visibility { display:inline-block; padding:.35rem .6rem; font-size:.8rem; border-radius:6px; background:#eef1f6; color:#526178; white-space:nowrap; }
+.hp-convenio-visibility.is-visible { color:#21654e; background:#e5f3ec; }
+@media (max-width:900px) {
+  .hp-dialog.hp-convenio-dialog[open] { width:calc(100vw - 24px); max-height:calc(100dvh - 24px); }
+  .hp-convenio-form fieldset { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width:480px) {
+  .hp-convenio-dialog > header,.hp-convenio-editor-scroll { padding:16px; }
+  .hp-convenio-dialog > .hp-dialog-footer { padding:12px 16px; }
+  .hp-convenio-logo-preview { width:128px; height:128px; }
+  .hp-convenio-logo-controls { min-width:100%; }
+  .hp-convenio-dialog > .hp-dialog-footer .hp-convenio-actions { flex-wrap:nowrap; }
+  .hp-convenio-dialog > .hp-dialog-footer button { flex:1; }
+}

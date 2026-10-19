@@ -1,10 +1,14 @@
-import { API_BASE } from './apiBase'
+import { API_BASE, CONTENT_API_BASE, CONTENT_PROVIDER } from './apiBase'
+import { resolveContentImages } from './contentImages'
+import { publicBaseFor } from './contentSource'
 
 export class PublicApiError extends Error {
   constructor(message: string, public status: number, public details: string[] = []) { super(message) }
 }
 export async function publicRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(API_BASE + '/' + path, options)
+  // Lecturas de contenido: NestJS salvo que el build elija Laravel (contentSource.ts). Lo demás, siempre NestJS.
+  const base = publicBaseFor(path, options.method, API_BASE, CONTENT_PROVIDER, CONTENT_API_BASE)
+  const response = await fetch(base + '/' + path, options)
   const data = await response.json().catch(() => null)
   if (!response.ok || data?.ok === false) {
     const details = data?.mensaje || data?.message
@@ -12,12 +16,5 @@ export async function publicRequest<T>(path: string, options: RequestInit = {}):
     throw new PublicApiError(messages.join(' · '), response.status, messages)
   }
   if (!data) throw new PublicApiError('El servidor devolvió una respuesta inválida.', response.status)
-  return data as T
+  return resolveContentImages(data) as T
 }
-type SavedResponse = { ok: boolean; mensaje: string; id: number; numero_reclamo?: string; correo_enviado?: boolean }
-export const enviarContacto = (datos: object) => publicRequest<SavedResponse>('contacto', {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos),
-})
-export const registrarReclamo = (datos: object) => publicRequest<SavedResponse>('reclamaciones', {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos),
-})

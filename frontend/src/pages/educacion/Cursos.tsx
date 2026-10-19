@@ -1,71 +1,26 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import useFadeUp from '../../hooks/useFadeUp'
-import CatalogoCursos from '../../components/CatalogoCursos'
+import PageHero from '../../components/PageHero'
+import CourseCatalog, { type CatalogCopy } from '../../components/edu/CourseCatalog'
 
-import imgCursos from '../../assets/images/galeria/capacitaciones/imagen 1.jpg'
-
-const MODALIDADES = [
-  { cls:'regular',  tag:'Tradicional',  icon:'fa-chalkboard-teacher', title:'Presencial',      desc:'Clases en aula con interacción directa con el docente. La experiencia de aprendizaje más completa.', items:['Clases en aula equipada','Práctica en laboratorio','Networking presencial','Certificado impreso'] },
-  { cls:'featured', tag:'Más popular',  icon:'fa-laptop-house',       title:'Semipresencial',  desc:'Lo mejor de ambos mundos. Clases presenciales semanales combinadas con sesiones virtuales en vivo.',  items:['Clases presenciales y virtuales','Grabaciones disponibles','Horarios flexibles','Certificado oficial'] },
-  { cls:'regular',  tag:'100% Online',  icon:'fa-globe',              title:'Virtual',         desc:'Aprende desde cualquier lugar. Clases en vivo y grabadas disponibles en nuestra plataforma.',          items:['Clases en vivo y grabadas','Plataforma e-learning','Horario completamente flexible','Certificado digital'] },
-]
+const copy: CatalogCopy = {
+  eyebrow: 'Oferta educativa', title: 'Cursos disponibles',
+  intro: 'Filtra por modalidad, revisa el detalle de cada curso y consulta el que te interesa.',
+  plural: 'cursos',
+  emptyTitle: 'Estamos preparando nuevos cursos',
+  emptyText: 'Por ahora no hay cursos publicados. Escríbenos para consultar los próximos cursos o deja tu correo y te avisaremos cuando haya novedades.',
+  consultLabel: 'Consultar próximos cursos', consultSubject: 'Consulta sobre próximos cursos',
+  notify: true,
+}
 
 export default function Cursos() {
-  useFadeUp()
   useEffect(() => { document.title = 'Cursos — Horus Group SRL' }, [])
-
-  return (
-    <>
-      <section className="ed-hero ed-hero-cursos">
-        <div className="container ed-hero-inner">
-          <div className="ed-hero-text fade-up">
-            <div className="ed-hero-tag"><i className="fas fa-book-open" /> Educación</div>
-            <h1>Aprende a tu<br />ritmo, con<br /><span>certificado real</span></h1>
-            <p>Soy los cursos. Presencial, semipresencial o virtual. Tú eliges cómo aprender, yo me adapto a ti.</p>
-            <div className="ed-hero-btns">
-              <a href="#catalogo-cursos" className="btn-coral"><i className="fas fa-book-open" /> Ver cursos</a>
-              <a href="#ed-detail" className="ed-ghost"><i className="fas fa-arrow-down" /> Ver modalidades</a>
-            </div>
-          </div>
-          <div className="ed-hero-visual fade-up">
-            <div className="ed-hero-img"><img src={imgCursos} alt="Cursos" /></div>
-            <div className="ed-hero-card">
-              <i className="fas fa-star" />
-              <p>"3 modalidades de estudio. Todas con la misma calidad y certificación oficial."</p>
-              <span>— Horus Group SRL</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <CatalogoCursos tipo="curso" />
-
-      <section className="ed-modalities" id="ed-detail">
-        <div className="container">
-          <div className="ed-section-head fade-up">
-            <span className="ed-eyebrow">Modalidades</span>
-            <h2>Elige cómo<br />quieres aprender</h2>
-            <p>Tres formas de estudiar, todas con certificación oficial.</p>
-          </div>
-          <div className="ed-modalities-grid">
-            {MODALIDADES.map(m => (
-              <div key={m.title} className={`ed-modality-card ${m.cls} fade-up`}>
-                <div className="ed-modality-body">
-                  <div className="ed-modality-tag">{m.tag}</div>
-                  <div className="ed-modality-icon"><i className={`fas ${m.icon}`} /></div>
-                  <h3>{m.title}</h3>
-                  <p>{m.desc}</p>
-                  <ul className="ed-modality-list">
-                    {m.items.map(item => <li key={item}><i className="fas fa-check" />{item}</li>)}
-                  </ul>
-                  <Link to={'/contactos?asunto='+encodeURIComponent('Consulta sobre cursos en modalidad '+m.title)} className="ed-modality-cta">Consultar cursos</Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    </>
-  )
+  return <>
+    <PageHero eyebrow="Educación" title="Cursos" actions={
+      <Link to="/contactos?asunto=Consulta%20sobre%20cursos" className="home-button"><i className="fas fa-comments" aria-hidden="true" /> Consultar cursos</Link>
+    }>
+      Cursos publicados por Horus Group, con su modalidad, duración y fecha de inicio.
+    </PageHero>
+    <CourseCatalog tipo="curso" copy={copy} />
+  </>
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import logoHorus from '../../assets/images/logo-horus.png'
 import { useCompanySetting } from '../../context/companySettings'
 
@@ -6,7 +6,7 @@ import { useCompanySetting } from '../../context/companySettings'
 const enteredOnHome = typeof window !== 'undefined' && window.location.pathname === '/'
 let welcomed = false
 
-export default function HomeWelcome() {
+export default function HomeWelcome({ children }: { children: (ready: boolean) => ReactNode }) {
   const [visible, setVisible] = useState(() => enteredOnHome && !welcomed)
   const setting = useCompanySetting()
 
@@ -30,8 +30,8 @@ export default function HomeWelcome() {
     }
   }, [visible])
 
-  if (!visible) return null
-  return <div className="home-welcome" role="status" aria-live="polite" aria-atomic="true">
+  return <>
+    {visible && <div className="home-welcome" role="status" aria-live="polite" aria-atomic="true">
     <div className="home-welcome-content">
       <div className="home-welcome-emblem">
         <span className="home-welcome-ring" aria-hidden="true" />
@@ -40,5 +40,7 @@ export default function HomeWelcome() {
       <p className="home-welcome-name">{setting('empresa_nombre', 'Horus Group')}</p>
       <p className="home-welcome-greeting">Te da la bienvenida</p>
     </div>
-  </div>
+  </div>}
+    {children(!visible)}
+  </>
 }

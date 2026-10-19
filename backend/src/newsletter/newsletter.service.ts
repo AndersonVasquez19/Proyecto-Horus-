@@ -13,7 +13,9 @@ export class NewsletterService {
  private signature(value:string){return createHmac('sha256',this.config!.getOrThrow<string>('JWT_SECRET')).update('newsletter:'+value).digest('base64url');}
  async subscribe(dto:SubscribeNewsletterDto){
  const email=dto.email.toLowerCase().trim();
- const item=await this.prisma.newsletter.upsert({where:{email},create:{email,interes:dto.interes||'market',activo:true,consent_at:new Date()},update:{activo:true,consent_at:new Date(),...(dto.interes?{interes:dto.interes}:{})}});
+ // Market ya no es un producto: se rechaza (no se convierte) aunque la llamada no pase por el DTO.
+ if(typeof dto.interes==='string'&&dto.interes.trim().toLowerCase()==='market')throw new BadRequestException('El interés "market" ya no está disponible.');
+ const item=await this.prisma.newsletter.upsert({where:{email},create:{email,interes:dto.interes||'novedades',activo:true,consent_at:new Date()},update:{activo:true,consent_at:new Date(),...(dto.interes?{interes:dto.interes}:{})}});
  let delivered=false;
  if(this.config&&this.mail&&item){const origin=corsOrigins(process.env)[0];if(origin){
  const value=String(item.id),url=new URL('/newsletter/baja',origin);url.searchParams.set('token',value+'.'+this.signature(value));
