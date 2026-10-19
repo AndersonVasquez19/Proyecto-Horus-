@@ -1,0 +1,5 @@
+import type { Quote } from '../types/quotes';
+export default function QuotePrint({quote}:{quote:Quote}) {
+ const money=(value:number|string)=>new Intl.NumberFormat('es-PE',{style:'currency',currency:quote.moneda}).format(Number(value));
+ return <article className="hq-document"><h1>Cotización</h1><p>{quote.numero} · {quote.estado}</p><h2>{quote.emisor}</h2><p>{quote.datos_emisor}</p><h2>Cliente: {quote.cliente}</h2><p>{[quote.documento,quote.email,quote.telefono,quote.direccion].filter(Boolean).join(' · ')}</p><p>Válida hasta: {quote.validez}</p><table><thead><tr><th>Concepto</th><th>Cantidad</th><th>Precio</th><th>Importe</th></tr></thead><tbody>{quote.conceptos.map((line,i)=><tr key={i}><td>{line.descripcion}</td><td>{line.cantidad}</td><td>{money(line.precio)}</td><td>{money(line.importe||0)}</td></tr>)}</tbody></table><dl><dt>Subtotal</dt><dd>{money(quote.subtotal)}</dd><dt>Descuento</dt><dd>{money(quote.descuento)}</dd><dt>Impuesto ({quote.tasa}%)</dt><dd>{money(quote.impuesto)}</dd><dt>Total</dt><dd>{money(quote.total)}</dd></dl>{quote.condiciones&&<><h3>Condiciones</h3><p>{quote.condiciones}</p></>}</article>;
+}

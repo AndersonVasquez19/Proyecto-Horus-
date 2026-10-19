@@ -1,99 +1,149 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { SubmitEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { usePublicResource } from '../../hooks/usePublicResource'
+import PageHero from '../../components/PageHero'
+import SectionHead from '../../components/SectionHead'
+import FaqItem from '../../components/faq/FaqItem'
+import { categoryLabel } from '../../components/faq/faqText'
+import type { FaqPublica, PublicList } from '../../types/public'
 
-const CATEGORIAS = [
-  {
-    icon: 'fa-certificate', color: '#4F46E5', title: 'Certificados y Diplomas',
-    items: [
-      { n: '01', q: '¿Qué pasa si perdí mi certificado y/o diploma y quiero solicitar uno nuevo?', a: 'Puedes solicitar una reimpresión de tu certificado o diploma contactándonos directamente por correo electrónico o WhatsApp. Es posible que apliquen costos administrativos según el tipo de documento.' },
-    ],
-  },
-  {
-    icon: 'fa-book-open', color: '#FF6B47', title: 'Cursos y Evaluaciones',
-    items: [
-      { n: '02', q: '¿Cuáles son las fechas para rendir las evaluaciones de cursos asincrónicos?', a: 'Las evaluaciones de cursos grabados se rinden en fechas fijas que comunicamos mensualmente por correo y redes sociales. Contáctanos para conocer el próximo calendario.' },
-      { n: '03', q: 'Si el curso es presencial o semipresencial y no fui a la parte práctica, ¿qué hago?', a: 'Debes comunicarte con nosotros antes de la siguiente sesión práctica para coordinar un proceso de recuperación o reprogramación, sujeto a disponibilidad.' },
-    ],
-  },
-  {
-    icon: 'fa-shopping-bag', color: '#059669', title: 'Compras y Pagos',
-    items: [
-      { n: '04', q: 'Compré un producto en la web y todavía no me llega, ¿qué debo hacer?', a: 'Escríbenos con tu número de pedido al correo o WhatsApp. Verificaremos el estado de tu envío y te daremos una solución en menos de 24 horas hábiles.' },
-      { n: '05', q: '¿Emiten comprobantes de pago?', a: 'Sí, emitimos boletas y facturas electrónicas. Al momento de tu compra puedes indicar si necesitas factura con los datos de tu empresa.' },
-      { n: '06', q: '¿Qué medios de pago aceptan?', a: 'Aceptamos transferencias bancarias, Yape, Plin, tarjetas de crédito/débito y pago en efectivo en nuestra sede de Cajamarca.' },
-    ],
-  },
-  {
-    icon: 'fa-headset', color: '#7C3AED', title: 'Atención Personalizada',
-    items: [
-      { n: '07', q: '¿Deseas una atención más personalizada?', a: 'Contáctanos directamente por WhatsApp o agenda una reunión virtual con uno de nuestros asesores. Estamos disponibles de lunes a viernes de 8am a 6pm.' },
-    ],
-  },
-]
+type FaqPage = PublicList<FaqPublica>
+
+const PAGE_SIZE = 20
+// The API caps a page at 100; that first page is enough to know the published total and the real categories.
+const OVERVIEW_SIZE = 100
+const SEARCH_MIN_TOTAL = 10
+const SKELETON_ROWS = 6
+const CONTACT_PATH = '/contactos?asunto=' + encodeURIComponent('Consulta desde preguntas frecuentes')
 
 export default function PreguntasFrecuentes() {
-  const [open, setOpen] = useState(null)
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [query, setQuery] = useState('')
+  const [category, setCategory] = useState('')
+  const resultsRef = useRef<HTMLDivElement>(null)
+  const refocusResults = useRef(false)
 
+  const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
+  if (query) params.set('search', query)
+  if (category) params.set('categoria', category)
+  const list = usePublicResource<FaqPage>('preguntas-frecuentes?' + params)
+  // Unfiltered overview: published total (decides whether search / empty state apply) and the categories that really exist.
+  const overview = usePublicResource<FaqPage>('preguntas-frecuentes?page=1&limit=' + OVERVIEW_SIZE)
+  // The last received page stays on screen while the next one loads, so the height does not collapse when paging or filtering.
+  const [kept, setKept] = useState<FaqPage | null>(null)
+  if (list.data && list.data !== kept) setKept(list.data)
+  const view = list.data ?? kept
+
+  useEffect(() => { document.title = 'Preguntas frecuentes — Horus Group SRL' }, [])
+
+  // After changing page, move focus to the top of the results once they have arrived.
   useEffect(() => {
-    document.title = 'Preguntas Frecuentes — Horus Group SRL'
-  }, [])
+    const element = resultsRef.current
+    if (list.loading || !refocusResults.current || !element) return
+    refocusResults.current = false
+    element.focus({ preventScroll: true })
+    element.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }, [list.loading, view])
 
-  const toggle = (id) => setOpen(prev => prev === id ? null : id)
+  const publishedTotal = overview.data?.pagination.total ?? null
+  const categories = useMemo(() => [...new Set((overview.data?.items ?? []).map(item => item.categoria).filter(Boolean))], [overview.data])
+  const filtering = Boolean(query || category)
+  const showSearch = (publishedTotal ?? 0) > SEARCH_MIN_TOTAL || Boolean(query)
+  const showCategories = categories.length >= 2 || Boolean(category)
+  const initialLoading = (list.loading && !view) || (overview.loading && !overview.data && !overview.error)
+  const noPublished = publishedTotal === 0 || (publishedTotal === null && !overview.loading && !filtering && !list.loading && !list.error && !!view && view.items.length === 0)
+  const pages = view?.pagination.pages ?? 0
 
-  return (
-    <>
-      <section className="faq-hero">
-        <div className="faq-hero-inner">
-          <div className="faq-breadcrumb"><i className="fas fa-question-circle" /> Soporte › FAQ</div>
-          <h1>Preguntas Frecuentes</h1>
-          <p>Encuentra respuestas rápidas a las dudas más comunes sobre nuestros servicios.</p>
-        </div>
-      </section>
+  const reloadAll = () => { list.reload(); overview.reload() }
+  const submitSearch = (event: SubmitEvent<HTMLFormElement>) => { event.preventDefault(); setPage(1); setQuery(search.trim()) }
+  const clearSearch = () => { setSearch(''); setQuery(''); setPage(1) }
+  const showAll = () => { setSearch(''); setQuery(''); setCategory(''); setPage(1) }
+  const selectCategory = (value: string) => { setCategory(value); setPage(1) }
+  const goToPage = (next: number) => { refocusResults.current = true; setPage(next) }
 
-      <div className="faq-layout">
-        {CATEGORIAS.map(cat => (
-          <div key={cat.title}>
-            <div className="faq-cat">
-              <div className="faq-cat-icon" style={{ background: cat.color }}>
-                <i className={`fas ${cat.icon}`} />
-              </div>
-              <h2>{cat.title}</h2>
-            </div>
-
-            {cat.items.map(item => {
-              const id = item.n
-              const isOpen = open === id
-              return (
-                <div key={id} className={`faq-item${isOpen ? ' open' : ''}`}>
-                  <div className="faq-question" onClick={() => toggle(id)}>
-                    <div className="faq-question-number">{item.n}</div>
-                    <div className="faq-question-text">{item.q}</div>
-                    <div className="faq-toggle-icon">
-                      <i className={`fas ${isOpen ? 'fa-minus' : 'fa-plus'}`} />
-                    </div>
-                  </div>
-                  <div className="faq-answer">
-                    <div className="faq-answer-inner">{item.a}</div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ))}
-
-        <div className="faq-cta-box">
-          <h3>¿No encontraste lo que buscabas?</h3>
-          <p>Nuestro equipo está disponible para resolver cualquier consulta de forma personalizada.</p>
-          <div className="faq-cta-btns">
-            <a href="https://wa.me/51927582305" className="faq-btn-white" target="_blank" rel="noreferrer">
-              <i className="fab fa-whatsapp" /> Escribir por WhatsApp
-            </a>
-            <Link to="/contactos" className="faq-btn-outline">
-              <i className="fas fa-envelope" /> Enviar un mensaje
-            </Link>
-          </div>
-        </div>
+  let body
+  if (list.error) {
+    body = <div className="tech-state" role="alert">
+      <p>{list.error}</p>
+      <button type="button" className="home-button tech-btn" onClick={reloadAll}>Reintentar</button>
+    </div>
+  } else if (initialLoading || (!view && list.loading) || (list.loading && !view?.items.length)) {
+    body = <div className="faq-skeleton" role="status">
+      <span className="tech-sr">Cargando preguntas…</span>
+      {Array.from({ length: SKELETON_ROWS }, (_, index) => <span key={index} aria-hidden="true" />)}
+    </div>
+  } else if (noPublished) {
+    body = <div className="faq-empty fade-up" role="status">
+      <span className="tech-icon faq-empty-icon" aria-hidden="true"><i className="fas fa-circle-question" /></span>
+      <h3>No hay preguntas frecuentes publicadas por el momento.</h3>
+      <p>Si necesitas ayuda, puedes comunicarte directamente con nuestro equipo.</p>
+      <Link className="home-button" to={CONTACT_PATH}><i className="fas fa-comments" aria-hidden="true" /> Consultar con el equipo</Link>
+    </div>
+  } else if (!view || !view.items.length) {
+    body = <div className="tech-state" role="status">
+      <p>No encontramos preguntas con esos criterios.</p>
+      <div className="faq-state-actions">
+        {query && <button type="button" className="home-button home-button-outline tech-btn faq-outline" onClick={clearSearch}>Limpiar búsqueda</button>}
+        <button type="button" className="home-button tech-btn" onClick={showAll}>Mostrar todas</button>
       </div>
-    </>
-  )
+    </div>
+  } else {
+    body = <div className="faq-list" aria-busy={list.loading} inert={list.loading}>
+      {view.items.map(item => <FaqItem key={item.id} item={item} showBadge={categories.length >= 2} />)}
+    </div>
+  }
+
+  const showCta = !list.error && !initialLoading && !noPublished
+  const total = view?.pagination.total ?? 0
+  const countText = filtering ? total + (total === 1 ? ' resultado' : ' resultados') : total + (total === 1 ? ' pregunta' : ' preguntas')
+
+  return <>
+    <PageHero eyebrow="Ayuda" title="Preguntas frecuentes">
+      Consulta las respuestas publicadas por nuestro equipo.
+    </PageHero>
+
+    <section className="tech-section is-light faq-main" id="preguntas" aria-labelledby="faq-title">
+      <div className="container">
+        <SectionHead id="faq-title" eyebrow="Respuestas" title="Preguntas frecuentes">
+          {noPublished ? null : 'Despliega cada pregunta para ver su respuesta.'}
+        </SectionHead>
+
+        {!noPublished && !initialLoading && (showSearch || showCategories) && <div className="faq-tools">
+          {showSearch && <form className="faq-search" role="search" onSubmit={submitSearch}>
+            <label className="tech-sr" htmlFor="faq-search-input">Buscar por pregunta</label>
+            <i className="fas fa-search faq-search-icon" aria-hidden="true" />
+            <input id="faq-search-input" type="search" maxLength={100} value={search} placeholder="Buscar por pregunta" autoComplete="off" onChange={event => setSearch(event.target.value)} />
+            <button type="submit" className="home-button tech-btn">Buscar</button>
+            {(search || query) && <button type="button" className="home-button home-button-outline tech-btn faq-outline" onClick={() => { clearSearch(); document.getElementById('faq-search-input')?.focus() }}>Limpiar</button>}
+          </form>}
+          {showCategories && <div className="faq-chips" role="group" aria-label="Filtrar por categoría">
+            {['', ...(category && !categories.includes(category) ? [category] : []), ...categories].map(value => <button type="button" key={value || 'todas'} className="faq-chip" aria-pressed={value === category} onClick={() => selectCategory(value)}>
+              {value ? categoryLabel(value) : 'Todas'}
+            </button>)}
+          </div>}
+          <p className="faq-count" aria-live="polite">{countText}</p>
+        </div>}
+
+        <div className="faq-results" ref={resultsRef} tabIndex={-1} aria-label="Lista de preguntas frecuentes">
+          {body}
+        </div>
+
+        {!list.error && !noPublished && pages > 1 && <nav className="tech-pagination faq-pagination" aria-label="Páginas de preguntas frecuentes">
+          <button type="button" className="home-button home-button-outline tech-btn faq-outline" disabled={list.loading || page <= 1} onClick={() => goToPage(page - 1)}>Anterior</button>
+          <span>Página {page} de {pages}</span>
+          <button type="button" className="home-button home-button-outline tech-btn faq-outline" disabled={list.loading || page >= pages} onClick={() => goToPage(page + 1)}>Siguiente</button>
+        </nav>}
+      </div>
+    </section>
+
+    {showCta && <section className="tech-section is-dark faq-cta" aria-labelledby="faq-cta-title">
+      <div className="container">
+        <h2 id="faq-cta-title" className="fade-up">¿No encontraste lo que buscabas?</h2>
+        <p className="fade-up">Puedes enviarnos tu consulta con el formulario de contacto.</p>
+        <Link className="home-button fade-up" to={CONTACT_PATH}><i className="fas fa-comments" aria-hidden="true" /> Consultar con el equipo</Link>
+      </div>
+    </section>}
+  </>
 }

@@ -8,7 +8,7 @@ export class RegisterDto {
   @IsString()
   @IsNotEmpty()
   @Transform(trimValue)
-  @Length(2, 100)
+  @Length(1, 100)
   nombre: string;
 
   @ApiProperty({ example: 'admin@horus.com' })

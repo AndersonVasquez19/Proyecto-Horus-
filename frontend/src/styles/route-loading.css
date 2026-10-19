@@ -1,0 +1,12 @@
+.route-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  min-height: 100vh; min-height: 100dvh; padding: 24px; text-align: center;
+  background: radial-gradient(ellipse at 20% 10%, #1e497655, transparent 60%), #071b2e; color: #d5e0eb;
+}
+.route-loading p { margin: 0; font-size: 14px; letter-spacing: .04em; }
+.route-loading__spinner {
+  width: 38px; height: 38px; border: 3px solid #c9a96133; border-top-color: #c9a961; border-radius: 50%;
+  animation: route-loading-spin .9s linear infinite;
+}
+@keyframes route-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .route-loading__spinner { animation: none; border-top-color: #c9a961; border-right-color: #c9a961; } }

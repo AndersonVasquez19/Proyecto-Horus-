@@ -7,17 +7,25 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "npm run prisma:generate && nest build",
-    "start": "nest start",
-    "start:dev": "nest start --watch",
-    "start:debug": "nest start --debug --watch",
+    "start": "nest start --path tsconfig.dev.json",
+    "start:dev": "nest start --watch --path tsconfig.dev.json",
+    "start:debug": "nest start --debug --watch --path tsconfig.dev.json",
     "start:prod": "node dist/main",
-    "test": "node --test -r ts-node/register test/*.test.ts",
+    "test": "node --test --test-concurrency=1 -r ./test/isolate-env.cjs -r ts-node/register test/*.test.ts",
     "db:migrate": "node scripts/migrate.cjs",
     "admin:create": "node scripts/create-admin.cjs",
+    "admin:assign-role": "node scripts/assign-role.cjs",
     "db:init": "node scripts/init-database.cjs",
     "prisma:generate": "node scripts/prisma-generate.cjs",
     "postinstall": "npm run prisma:generate",
     "db:check": "node scripts/check-database.cjs",
+    "db:backup": "node scripts/backup.cjs",
+    "db:restore": "node scripts/restore.cjs",
+    "chatbot:purge": "node scripts/purge-chatbot.cjs",
+    "uploads:backup": "node scripts/backup-uploads.cjs",
+    "uploads:restore": "node scripts/restore-uploads.cjs",
+    "content:restore": "node scripts/restore-original.cjs",
+    "convenios:import": "node scripts/import-convenios.cjs",
     "test:integration": "npm run build && node --test test/prisma.integration.cjs"
   },
   "dependencies": {
@@ -28,12 +36,13 @@
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.4.15",
     "@nestjs/swagger": "^7.4.2",
-    "@prisma/adapter-mariadb": "6.19.0",
-    "@prisma/client": "6.19.0",
+    "@prisma/adapter-mariadb": "6.19.3",
+    "@prisma/client": "6.19.3",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "dotenv": "^16.4.7",
+    "helmet": "^8.3.0",
     "mysql2": "^3.12.0",
     "nodemailer": "^6.9.16",
     "passport": "^0.7.0",
@@ -49,7 +58,7 @@
     "@types/node": "^22.10.7",
     "@types/nodemailer": "^6.4.17",
     "@types/passport-jwt": "^4.0.1",
-    "prisma": "6.19.0",
+    "prisma": "6.19.3",
     "source-map-support": "^0.5.21",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
@@ -57,5 +66,11 @@
   },
   "engines": {
     "node": "22.x"
+  },
+  "overrides": {
+    "@nestjs/platform-express": {
+      "body-parser": "1.20.8",
+      "qs": "6.16.0"
+    }
   }
 }

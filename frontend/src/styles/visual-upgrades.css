@@ -1,6 +1,6 @@
 ﻿
 
-.ix-eyebrow, .ed-eyebrow, .inner-eyebrow {
+.ix-eyebrow, .inner-eyebrow {
   color: var(--gold-dk) !important;
 }
 
@@ -120,76 +120,12 @@
 .qs-stats-bar { background: var(--grad-hero) !important; }
 .qs-stat-num { color: var(--gold) !important; }
 
-.pc-sidebar-nav a.active,
-.pp-sidebar-nav a.active,
-.pd-sidebar-nav a.active {
-  background: var(--gold-10) !important;
-  color: var(--gold-dk) !important;
-  border-left-color: var(--gold) !important;
-}
-.pc-sidebar-nav a:hover,
-.pp-sidebar-nav a:hover,
-.pd-sidebar-nav a:hover {
-  background: var(--gold-10) !important;
-  color: var(--gold-dk) !important;
-}
-
-.faq-item.open {
-  border-color: var(--gold) !important;
-  box-shadow: 0 4px 20px var(--gold-10) !important;
-}
-.faq-item.open .faq-toggle-icon {
-  background: var(--grad-gold) !important;
-  color: var(--night) !important;
-}
-.faq-question-number {
-  background: var(--gold-10) !important;
-  color: var(--gold-dk) !important;
-}
-
 .gf-btn.active {
   background: var(--grad-gold) !important;
   border-color: var(--gold) !important;
   color: var(--night) !important;
 }
 
-.ct-channel-icon.ct-icon-coral {
-  background: var(--grad-gold) !important;
-  color: var(--night) !important;
-}
-.ct-channel-icon.ct-icon-indigo {
-  background: var(--grad-blue) !important;
-}
-.ct-submit {
-  background: var(--grad-gold) !important;
-  color: var(--night) !important;
-  font-weight: 700 !important;
-}
-.ct-submit:hover {
-  filter: brightness(1.08) !important;
-  transform: translateY(-2px) !important;
-}
-
-.lr-step.active .lr-step-num {
-  background: var(--grad-gold) !important;
-  color: var(--night) !important;
-}
-.lr-btn-primary {
-  background: var(--grad-gold) !important;
-  color: var(--night) !important;
-  font-weight: 700 !important;
-}
-.lr-btn-primary:hover {
-  filter: brightness(1.08) !important;
-  transform: translateY(-2px) !important;
-}
-
-.mkt-tag { color: var(--gold) !important; }
-.mkt-dot { background: var(--gold) !important; }
-.mkt-pill {
-  border-color: var(--gold-20) !important;
-  color: var(--gold-lt) !important;
-}
 
 ::-webkit-scrollbar-thumb { background: var(--gold-dk) !important; }
 ::-webkit-scrollbar-thumb:hover { background: var(--gold) !important; }
@@ -219,7 +155,6 @@
 }
 
 .ix-section-head .ix-eyebrow,
-.ed-section-head .ed-eyebrow,
 .ns-chip {
   background: var(--gold-10) !important;
   color: var(--gold-dk) !important;

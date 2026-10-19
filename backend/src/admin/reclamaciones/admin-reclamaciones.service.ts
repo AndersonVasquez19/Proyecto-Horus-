@@ -1,8 +1,9 @@
 import { serializeComplaint } from '../../database/serialization';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { QueryReclamacionesDto } from './dto/query-reclamaciones.dto';
 
+import { pageArgs, pageResult } from '../../common/list-query.dto';
 @Injectable()
 export class AdminReclamacionesService {
   constructor(
@@ -28,13 +29,15 @@ export class AdminReclamacionesService {
     }
 
     const reclamaciones = await this.prisma.reclamacion.findMany({
-      where,
+      where, ...pageArgs(query),
       orderBy: [{ createdAt: 'desc' }],
     });
 
+    const total = query.page===undefined ? reclamaciones.length : await this.prisma.reclamacion.count({where});
+    const metrics = query.page===undefined ? {} : { metrics: { total: await this.prisma.reclamacion.count(), reclamo: await this.prisma.reclamacion.count({where:{tipo_registro:'reclamo'}}), queja: await this.prisma.reclamacion.count({where:{tipo_registro:'queja'}}) } };
     return {
-      ok: true,
-      total: reclamaciones.length,
+      ok: true, ...pageResult(query,total), ...metrics,
+      total,
       reclamaciones: reclamaciones.map(serializeComplaint),
     };
   }
@@ -52,7 +55,6 @@ export class AdminReclamacionesService {
     if (!reclamacion) {
       throw new NotFoundException({ ok: false, mensaje: 'Reclamación no encontrada.' });
     }
-    await this.prisma.reclamacion.delete({ where: { id } });
-    return { ok: true, mensaje: 'Reclamación eliminada correctamente.' };
+    throw new ConflictException('Conserva la reclamación y su constancia. Puedes archivarla desde el seguimiento.');
   }
 }

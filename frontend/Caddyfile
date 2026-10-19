@@ -1,0 +1,48 @@
+{
+	admin off
+	persist_config off
+	auto_https off
+	servers {
+		trusted_proxies static {$TRUSTED_PROXY_CIDRS:127.0.0.1/32 ::1/128}
+		trusted_proxies_strict
+		client_ip_headers X-Real-IP X-Forwarded-For
+	}
+}
+
+:{$PORT:8080} {
+	encode gzip
+
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# Conserva /api en la ruta que recibe NestJS.
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy {$BACKEND_UPSTREAM:backend.railway.internal:3000} {
+			header_up X-Forwarded-For {client_ip}
+			header_up -X-Real-IP
+		}
+	}
+
+	# Permite recargar las rutas de React Router.
+	# Cabeceras de seguridad del frontend. Solo aquí: las respuestas de /api las pone el backend (Helmet) y no se duplican.
+	# No se envía HSTS desde Caddy (auto_https off; el dominio HTTPS lo gestiona la plataforma).
+	handle {
+		header {
+			X-Content-Type-Options nosniff
+			Referrer-Policy strict-origin-when-cross-origin
+			X-Frame-Options DENY
+			Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+			# CSP del SPA (sin unsafe-eval ni unsafe-inline en scripts). Las fuentes e iconos son locales (se sirven desde 'self'). Orígenes externos permitidos:
+			# el mapa de Google (iframe y la imagen de comprobación de disponibilidad) e imágenes por HTTPS (las configurables desde el panel). Las peticiones a /api
+			# y los uploads son del mismo origen (Caddy hace de proxy). Los estilos en línea se permiten solo en style-src: la biblioteca
+			# sonner inyecta un <style> al cargar y React usa atributos style="..." (p. ej. Inicio, Quiénes somos, Galería).
+			# Si el frontend se sirviera con una API en otro origen, habría que añadir ese origen a connect-src e img-src.
+			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self'; frame-src https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		}
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

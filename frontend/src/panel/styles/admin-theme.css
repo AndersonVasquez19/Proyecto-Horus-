@@ -1,0 +1,31 @@
+/* Identidad compartida del espacio administrativo. */
+.admin-auth, .hp-shell, .hp-dialog {
+  --panel-heading-font: 'Manrope', 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+:is(.admin-auth, .hp-shell, .hp-dialog) :is(h1, h2, h3) {
+  font-family: var(--panel-heading-font);
+  text-wrap: balance;
+}
+:is(.admin-auth, .hp-shell, .hp-dialog) :is(button, input, select, textarea) {
+  font-family: inherit;
+}
+.horus-brand { display: inline-flex; align-items: center; gap: 13px; color: #172c48; }
+.horus-brand__symbol {
+  display: grid; place-items: center; flex: 0 0 auto;
+  width: 62px; height: 62px; padding: 7px;
+  border: 1px solid #d9cba6; border-radius: 18px; background: #fffdf7;
+}
+.horus-brand__symbol img { width: 100%; height: auto; object-fit: contain; }
+.horus-brand__wordmark { display: grid; gap: 5px; }
+.horus-brand__wordmark strong {
+  font-family: 'Manrope', 'Inter', sans-serif; font-size: 22px;
+  font-weight: 800; letter-spacing: .14em; line-height: 1;
+}
+.horus-brand__wordmark strong span { margin-left: 6px; font-weight: 400; letter-spacing: .04em; }
+.horus-brand__wordmark small { font-size: 10px; letter-spacing: .07em; color: #647184; }
+.horus-brand--light { color: #fff; }
+.horus-brand--light .horus-brand__symbol { border-color: #dac18b45; background: #ffffff08; }
+.horus-brand--light .horus-brand__wordmark strong span { color: #e1c78f; }
+.horus-brand--light .horus-brand__wordmark small { color: #aebfd1; }

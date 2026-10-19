@@ -1,0 +1,3 @@
+# Entorno local de Docker y respaldos: nunca se versionan (contienen credenciales o datos personales).
+.env.docker
+backups/

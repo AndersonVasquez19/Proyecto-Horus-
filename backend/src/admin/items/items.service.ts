@@ -4,17 +4,18 @@ import { AdminItem } from '@prisma/client';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 
+import { ListQueryDto, pageArgs, pageResult } from '../../common/list-query.dto';
 @Injectable()
 export class ItemsService {
   constructor(
     private readonly prisma: PrismaService,
   ) {}
 
-  async findAll() {
-    const items = await this.prisma.adminItem.findMany({
-      orderBy: [{ createdAt: 'desc' }],
-    });
-    return { ok: true, items };
+  async findAll(q: ListQueryDto = {}) {
+    const where={...(q.estado?{estado:q.estado}:{}),...(q.search?{titulo:{contains:q.search}}:{})};
+    const items=await this.prisma.adminItem.findMany({where,...pageArgs(q),orderBy:[{createdAt:'desc'},{id:'desc'}]});
+    const total=q.page===undefined?items.length:await this.prisma.adminItem.count({where});
+    return{ok:true,items,...pageResult(q,total)};
   }
 
   async findOne(id: number) {

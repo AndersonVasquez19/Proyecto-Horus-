@@ -1,0 +1,23 @@
+/* Tarjeta local de ubicación y vista del mapa de Google, que solo se carga al pulsar el botón (ver components/LocationMap.tsx). */
+.location-map-fallback { box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; width: 100%; min-height: 16rem; padding: 1.5rem; text-align: center; color: #fff; background: linear-gradient(160deg, #123a5e, #0a2540); }
+.location-map-fallback-icon { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 50%; color: #0a2540; background: #ecc278; font-size: 1.25rem; }
+.location-map-fallback h3 { margin: 0; color: #fff; font-size: 1.1rem; line-height: 1.3; }
+.location-map-fallback-address { margin: 0; max-width: 28rem; color: #fff; font-size: 1.05rem; font-weight: 600; overflow-wrap: anywhere; }
+.location-map-fallback-note { margin: 0; max-width: 28rem; color: #d5e0eb; font-size: .9rem; line-height: 1.5; }
+.location-map-fallback-note:empty { display: none; }
+.location-map-action { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.75rem; padding: .55rem 1.1rem; border: 1px solid #ecc278; border-radius: .6rem; color: #ecc278; background: transparent; font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; }
+.location-map-action:hover { color: #0a2540; background: #ecc278; }
+.location-map-action:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+/* Vista con el mapa: el iframe ocupa el espacio y una barra inferior mantiene la dirección y la salida a la tarjeta. */
+.location-map-view { display: flex; flex-direction: column; width: 100%; background: #0a2540; }
+.location-map-view iframe { display: block; flex: 1 1 auto; width: 100%; min-height: 0; border: 0; }
+.location-map-view-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem .75rem; padding: .5rem .75rem; color: #fff; }
+.location-map-view-address { min-width: 0; flex: 1 1 12rem; font-size: .9rem; overflow-wrap: anywhere; }
+/* Ocupa el mismo espacio que el iframe en cada contenedor. */
+.ct-map .location-map-fallback { position: absolute; inset: 0; min-height: 0; overflow-y: auto; }
+.ct-map .location-map-view { position: absolute; inset: 0; }
+.ct-map .location-map-view iframe { position: static; height: auto; }
+.home-location-map .location-map-fallback { aspect-ratio: 4 / 3; min-height: 16rem; }
+.home-location-map .location-map-view iframe { flex: none; }
+@media (max-width: 900px) { .home-location-map .location-map-fallback { aspect-ratio: 16 / 9; } }
+@media (max-width: 560px) { .home-location-map .location-map-fallback { aspect-ratio: 4 / 3; } }

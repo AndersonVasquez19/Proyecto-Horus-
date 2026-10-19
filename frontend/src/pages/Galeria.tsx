@@ -1,138 +1,77 @@
-import { useState, useEffect, useCallback } from 'react'
-import useFadeUp from '../hooks/useFadeUp'
-import galeriaData from '../data/galeriaData'
+import { useEffect, useState } from 'react'
+import { usePublicResource } from '../hooks/usePublicResource'
+import useReducedMotion from '../hooks/useReducedMotion'
+import PageHero from '../components/PageHero'
+import SectionHead from '../components/SectionHead'
+import GalleryBand from '../components/gallery/GalleryBand'
+import GalleryFilters from '../components/gallery/GalleryFilters'
+import { GalleryGrid, GallerySkeleton } from '../components/gallery/GalleryGrid'
+import GalleryLightbox from '../components/gallery/GalleryLightbox'
+import type { GaleriaPublica, PublicList } from '../types/public'
 
-const FILTERS = [
-  { key: 'all',                label: 'Todos',              icon: 'fa-th' },
-  { key: 'capacitaciones',     label: 'Capacitaciones',     icon: 'fa-chalkboard-teacher' },
-  { key: 'servicio-tecnico',   label: 'Servicio Técnico',   icon: 'fa-tools' },
-  { key: 'colegio-enfermeros', label: 'Colegio Enfermeros', icon: 'fa-heartbeat' },
-  { key: 'colegio-abogados',   label: 'Colegio Abogados',   icon: 'fa-balance-scale' },
-  { key: 'isam',               label: 'ISAM',               icon: 'fa-university' },
-  { key: 'primeros-auxilios',  label: 'Primeros Auxilios',  icon: 'fa-first-aid' },
-]
-
-const bycat = (cat) => galeriaData.filter(i => i.cat === cat)
+const PAGE_SIZE = 24
+type GalleryPage = PublicList<GaleriaPublica> & { categorias: string[] }
 
 export default function Galeria() {
-  useFadeUp()
-  const [active,   setActive]   = useState('all')
-  const [lightbox, setLightbox] = useState(null)
+  const [category, setCategory] = useState('')
+  const [page, setPage] = useState(1)
+  const [lightbox, setLightbox] = useState<number | null>(null)
+  const reducedMotion = useReducedMotion()
+  const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), ...(category ? { categoria: category } : {}) })
+  const { data, loading, error, reload } = usePublicResource<GalleryPage>('galeria?' + params)
+  // Se conserva la última página recibida mientras llega la siguiente, para que la altura no colapse al paginar o filtrar.
+  const [kept, setKept] = useState<GalleryPage | null>(null)
+  if (data && data !== kept) setKept(data)
+  const view = data ?? kept
+  useEffect(() => { document.title = 'Galería — Horus Group SRL' }, [])
 
-  useEffect(() => {
-    document.title = 'Galería — Horus Group SRL'
-  }, [])
+  const selectCategory = (value: string) => { setLightbox(null); setCategory(value); setPage(1) }
+  const goToPage = (next: number) => {
+    setLightbox(null); setPage(next)
+    document.getElementById('galeria')?.scrollIntoView({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' })
+  }
 
-  const filtered = active === 'all' ? galeriaData : galeriaData.filter(i => i.cat === active)
+  let body
+  if (error) {
+    body = <div className="tech-state" role="alert">
+      <p>{error}</p>
+      <button type="button" className="home-button tech-btn" onClick={reload}>Reintentar</button>
+    </div>
+  } else if (!view || (loading && !view.items.length)) {
+    body = <GallerySkeleton />
+  } else if (!view.items.length) {
+    body = <div className="tech-state" role="status">
+      <p>{category ? 'No hay imágenes publicadas en esta categoría.' : 'Por el momento no hay fotografías publicadas.'}</p>
+      {category && <button type="button" className="home-button tech-btn" onClick={() => selectCategory('')}>Ver todas las fotografías</button>}
+    </div>
+  } else {
+    body = <GalleryGrid items={view.items} busy={loading} onOpen={setLightbox} />
+  }
+  const pages = !error && view ? view.pagination.pages : 0
 
-  const stripTop    = [...bycat('capacitaciones').slice(0, 4),   ...bycat('colegio-enfermeros').slice(0, 4)]
-  const stripBottom = [...bycat('servicio-tecnico').slice(0, 4), ...bycat('colegio-abogados').slice(0, 4)]
-
-  const lbPrev = useCallback(() =>
-    setLightbox(p => ({ idx: (p.idx - 1 + filtered.length) % filtered.length }))
-  , [filtered.length])
-
-  const lbNext = useCallback(() =>
-    setLightbox(p => ({ idx: (p.idx + 1) % filtered.length }))
-  , [filtered.length])
-
-  useEffect(() => {
-    if (!lightbox) return
-    const h = e => {
-      if (e.key === 'ArrowLeft')  lbPrev()
-      if (e.key === 'ArrowRight') lbNext()
-      if (e.key === 'Escape')     setLightbox(null)
-    }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [lightbox, lbPrev, lbNext])
-
-  const lbItem = lightbox !== null ? filtered[lightbox.idx] : null
-
-  return (
-    <>
-      <section className="gl-hero">
-        <div className="gl-strip gl-strip-top">
-          <div className="gl-strip-track">
-            {[...stripTop, ...stripTop].map((item, i) => (
-              <div key={i} className="gl-strip-img" style={{ backgroundImage: `url(${item.url})` }} />
-            ))}
-          </div>
-        </div>
-        <div className="gl-strip gl-strip-bottom">
-          <div className="gl-strip-track gl-strip-reverse">
-            {[...stripBottom, ...stripBottom].map((item, i) => (
-              <div key={i} className="gl-strip-img" style={{ backgroundImage: `url(${item.url})` }} />
-            ))}
-          </div>
-        </div>
-        <div className="gl-hero-overlay" />
-        <div className="gl-hero-center">
-          <div className="gl-hero-eyebrow"><i className="fas fa-images" /> Galería de momentos</div>
-          <h1>Nuestro trabajo<br />en <span>imágenes</span></h1>
-          <p>Capacitaciones, proyectos técnicos, eventos y los momentos que hacen que valga la pena lo que hacemos.</p>
-          <a href="#galeria" className="gl-hero-scroll"><i className="fas fa-chevron-down" /></a>
-        </div>
-      </section>
-
-      <section className="gl-main" id="galeria">
-        <div className="gl-filters-wrap">
-          <div className="container">
-            <div className="gl-filters-row">
-              <div className="gl-filters-left">
-                <span className="gl-filters-label"><i className="fas fa-sliders-h" /> Filtrar</span>
-                <div className="gl-filters">
-                  {FILTERS.map(f => (
-                    <button
-                      key={f.key}
-                      className={`gf-btn${active === f.key ? ' active' : ''}`}
-                      onClick={() => setActive(f.key)}
-                    >
-                      <i className={`fas ${f.icon}`} /> {f.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="gl-count-badge">{filtered.length} fotos</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="container">
-          <div className="gl-grid">
-            {filtered.map((item, idx) => (
-              <div key={idx} className="gl-item" onClick={() => setLightbox({ idx })}>
-                <img src={item.url} alt={item.title} loading="lazy" />
-                <div className="gl-item-overlay">
-                  <div className="gl-item-info">
-                    <span className="gl-item-cat">{item.label}</span>
-                  </div>
-                  <div className="gl-item-zoom"><i className="fas fa-expand" /></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {lbItem && (
-        <div className="gl-lightbox open" role="dialog" aria-modal="true">
-          <div className="gl-lb-overlay" onClick={() => setLightbox(null)} />
-          <div className="gl-lb-box">
-            <button className="gl-lb-close" onClick={() => setLightbox(null)}><i className="fas fa-times" /></button>
-            <button className="gl-lb-nav gl-lb-prev" onClick={lbPrev}><i className="fas fa-chevron-left" /></button>
-            <button className="gl-lb-nav gl-lb-next" onClick={lbNext}><i className="fas fa-chevron-right" /></button>
-            <div className="gl-lb-img-wrap">
-              <img src={lbItem.url} alt={lbItem.title} />
-            </div>
-            <div className="gl-lb-info">
-              <span className="gl-lb-title">{lbItem.title}</span>
-              <span className="gl-lb-cat">{lbItem.label}</span>
-              <span className="gl-lb-counter">{lightbox.idx + 1} / {filtered.length}</span>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  )
+  return <>
+    <div className="gl-intro">
+      <PageHero eyebrow="Galería" title="Nuestro trabajo en imágenes" actions={
+        <a href="#galeria" className="home-button home-button-outline"><i className="fas fa-arrow-down" aria-hidden="true" /> Ver fotografías</a>
+      }>
+        Capacitaciones, proyectos técnicos, eventos y los momentos que forman parte de nuestro trabajo.
+      </PageHero>
+      <GalleryBand />
+    </div>
+    <section className="tech-section is-light gl-main" id="galeria" aria-labelledby="galeria-title">
+      <div className="container">
+        <SectionHead id="galeria-title" eyebrow="Fotografías" title="Galería de momentos">
+          Filtra por categoría y amplía cada fotografía para verla con más detalle.
+        </SectionHead>
+        <GalleryFilters categories={view?.categorias ?? []} active={category} total={view && !error ? view.pagination.total : null} onSelect={selectCategory} />
+        {body}
+        {pages > 1 && <nav className="tech-pagination gl-pagination" aria-label="Páginas de galería">
+          <button type="button" className="home-button home-button-outline tech-btn gl-page-btn" disabled={loading || page <= 1} onClick={() => goToPage(page - 1)}>Anterior</button>
+          <span>Página {page} de {pages}</span>
+          <button type="button" className="home-button home-button-outline tech-btn gl-page-btn" disabled={loading || page >= pages} onClick={() => goToPage(page + 1)}>Siguiente</button>
+        </nav>}
+      </div>
+    </section>
+    {!loading && !error && view && lightbox !== null && view.items[lightbox] && <GalleryLightbox items={view.items} initial={lightbox} close={() => setLightbox(null)} />}
+  </>
 }

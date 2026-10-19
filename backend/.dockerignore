@@ -1,0 +1,15 @@
+uploads
+.backups
+node_modules
+dist
+dist-dev
+coverage
+test
+.git
+.vercel
+.env
+.env.*
+*.env
+*.env.*
+*.log
+*.tsbuildinfo

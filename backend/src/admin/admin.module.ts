@@ -4,6 +4,7 @@ import { ItemsModule } from './items/items.module';
 import { MessagesModule } from './messages/messages.module';
 import { AdminReclamacionesModule } from './reclamaciones/admin-reclamaciones.module';
 import { StatsModule } from './stats/stats.module';
+import { AdminChatbotModule } from './chatbot/admin-chatbot.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { StatsModule } from './stats/stats.module';
     MessagesModule,
     AdminReclamacionesModule,
     StatsModule,
+    AdminChatbotModule,
   ],
   exports: [
     AuthModule,
@@ -19,6 +21,7 @@ import { StatsModule } from './stats/stats.module';
     MessagesModule,
     AdminReclamacionesModule,
     StatsModule,
+    AdminChatbotModule,
   ],
 })
 export class AdminModule {}

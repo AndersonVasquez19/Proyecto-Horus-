@@ -1,0 +1,6 @@
+.original-service-image { width:100%; max-width:320px; aspect-ratio:4/3; border-radius:18px; overflow:hidden; }
+.original-service-image img { width:100%; height:100%; object-fit:cover; }
+.original-import-list { max-height:240px; overflow:auto; padding:0 24px 16px; font-size:13px; line-height:1.8; }
+.original-import-body { padding:20px 24px; }
+.original-import-body label { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin:16px 0; }
+.original-import-body select { padding:10px; border:1px solid #dce3ee; border-radius:8px; }

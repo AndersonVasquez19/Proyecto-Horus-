@@ -2,6 +2,7 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
+import { rsaPublicKey } from './connection-security';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
@@ -15,6 +16,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         database: config.get<string>('DB_NAME', 'horus_db'),
         connectionLimit: 2, connectTimeout: 10000, acquireTimeout: 15000, idleTimeout: 10,
         timezone: '+00:00',
+        cachingRsaPublicKey: rsaPublicKey(config.get('DB_RSA_PUBLIC_KEY')),
         ...(config.get<string>('DB_SSL') === 'true' ? {
           ssl: {
             rejectUnauthorized: true,
@@ -24,6 +26,6 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       }),
     });
   }
-  async onModuleInit() { await this.$connect(); }
+  async onModuleInit() { await this.$connect(); await this.$queryRaw`SELECT 1`; }
   async onModuleDestroy() { await this.$disconnect(); }
 }

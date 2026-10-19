@@ -1,39 +1,55 @@
-# Cambio de Sequelize a Prisma
+# Prisma y esquema MySQL
 
-El backend usa Prisma 6.19.0 con el adaptador MariaDB/MySQL, compatible con CommonJS y las variables DB_* actuales. Las rutas HTTP, JWT y nombres de tablas y columnas se conservan. El cliente se genera durante instalación y compilación; esos pasos no modifican MySQL.
+El backend utiliza Prisma 6.19.0, `engineType="client"` y el adaptador MariaDB/MySQL. La aplicación y los scripts comparten variables `DB_*`, verificación TLS y clave RSA pública fijada. El cliente se genera durante instalación/build con una URL ficticia, sin conectarse a la base.
 
 ## Base existente
 
-1. Respaldar la base y probar primero sobre una copia.
-2. Ejecutar npm ci y npm run build con Node 22.
-3. Ejecutar npm run db:check. Es una consulta de solo lectura que compara tablas, columnas, tipos, nulabilidad e índices únicos con el esquema esperado.
-4. Si faltan tablas de catálogo o cotizaciones, revisar los SQL de migrations/ y ejecutar npm run db:migrate en la base elegida. Conserva las versiones de horus_migrations y el bloqueo MySQL anterior. No altera tablas existentes ni copia o elimina registros.
-5. Repetir npm run db:check; cualquier otra diferencia necesita revisión antes de desplegar.
-6. Arrancar con npm run start:dev o npm run start:prod.
+Respaldar y confirmar el destino. Ejecutar `npm ci`, `npm run build` y `npm run db:check`. Revisar los SQL pendientes en `migrations/`, aplicar `npm run db:migrate` y repetir la comprobación.
 
-En la base local revisada faltaba cotizaciones; las demás tablas coincidían en las comprobaciones anteriores. Durante el cambio no se ejecutaron migraciones sobre esa base.
+Las versiones se registran en `scripts/migrate.cjs` y en `horus_migrations`; un bloqueo MySQL evita ejecutores simultáneos. No se reescriben migraciones anteriores.
+
+Ediciones (fase 2) añade `20261018-convocatorias-capacidad`: un único ALTER aditivo con `capacidad INT NULL` y CHECK positivo, sin completar datos anteriores. El cliente Prisma conserva `NULL` para capacidad desconocida. La migración es necesaria antes de activar el módulo; sus reglas, bloqueo por curso, revisión, historial y pruebas están en [Gestión de ediciones](../docs/procedimientos/gestion-ediciones.md). Si el ALTER termina pero no llega a registrarse en `horus_migrations`, comprobar columna/CHECK y registro antes de reintentar; no borrar ni recrear tablas.
+
+`20261002-complete-institutional` añade `activo` y `session_version` a administradores, `consent_at` a suscripciones, seguimiento con historial, cuotas compartidas y una clave foránea que impide borrar un contacto vinculado a una cotización. Las referencias huérfanas antiguas se vuelven `null`, conservando la propuesta.
+
+MySQL DDL no es transaccional. Si falla una migración parcialmente, revisar los cambios aplicados antes de reintentar; no borrar datos ni resetear el esquema.
 
 ## Base nueva
 
-Crear una base vacía y configurar DB_HOST, DB_PORT, DB_NAME, DB_USER y DB_PASS. Ejecutar npm run db:init, npm run db:migrate y, si corresponde, npm run admin:create. La inicialización rechaza bases que ya tengan tablas. DB_SYNC ya no crea tablas al iniciar.
+Crear una base vacía y configurar `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASS`. Ejecutar `npm run db:init`, `npm run db:migrate` y `npm run db:check`. La inicialización rechaza bases con tablas.
 
-## Conexión y despliegue
+`npm run admin:create` es el proceso controlado para crear el primer administrador (el registro público, `POST /api/admin/signup`, solo crea cuentas sin rol). Solicita nombre/correo, utiliza `ADMIN_INITIAL_PASSWORD` temporal y exige `--destino`, `--servidor` (el `server_uuid` que muestra `npm run admin:assign-role -- --listar`), `--operador` y `--motivo`; crea la cuenta sin rol y registra el alta en `admin_auditoria` (ver `docs/procedimientos/roles-administrativos.md`).
 
-- Se mantienen DB_SSL y DB_SSL_CA (PEM con saltos de línea o `\\n`); la validación del certificado sigue activa.
-- El servidor usa un cliente compartido y hasta dos conexiones, en UTC.
-- DATABASE_URL solo aparece en el esquema para las herramientas de Prisma. El comando de generación proporciona una URL ficticia sin abrir conexión. La aplicación y los scripts usan DB_*.
-- No ejecutar prisma db push ni prisma migrate reset sobre una base existente.
-- Las migraciones siguen siendo SQL versionado con horus_migrations; no se ha cambiado a Prisma Migrate. Adoptar ese motor sería un paso separado con una línea base validada contra la base real.
-- Las migraciones MySQL DDL no son transaccionales. Ante un fallo de inicialización parcial, revisar las tablas creadas antes de reintentar.
-- Prisma devuelve objetos planos. La API convierte DATE a YYYY-MM-DD y DECIMAL a cadenas de dos decimales al leer cotizaciones, como el controlador MySQL anterior. Al crear o recalcular importes se conservan los valores numéricos de la respuesta anterior.
-- Cotizaciones usa una transacción y actualización condicionada por id/revision; una edición concurrente obsoleta responde 409 y no sobrescribe el historial.
+## Contratos
 
-## Verificación y límites
+- El arranque ejecuta `SELECT 1`; no inicializa ni migra tablas.
+- Las fechas de calendario se serializan como `YYYY-MM-DD`; los importes leídos se mantienen con dos decimales.
+- Cotizaciones y seguimiento usan transacciones y revisión para detectar modificaciones obsoletas.
+- No utilizar `prisma db push`, `prisma migrate reset` ni eliminar datos para corregir discrepancias.
+- Configurar TLS verificado o la clave pública RSA confiable antes de probar un reinicio de MySQL. Consultar [Railway](../RAILWAY.md).
 
-npm run test:integration compila y crea una base temporal horus_prisma_test_<UUID> en el servidor configurado. Prueba escrituras, autenticación, catálogo, serialización, concurrencia y migraciones repetidas, y la elimina al terminar. Requiere permisos CREATE/DROP DATABASE y no escribe en la base configurada original.
+## Integración
 
-npm test conserva las comprobaciones existentes. Antes del cambio había 25 pruebas aprobadas y 16 fallidas en backend-regressions.test.ts. Después del cambio: 26 aprobadas y 15 fallidas; pasa ahora el caso del teléfono opcional en mensajes administrativos. Las 7 pruebas de integración MySQL pasan. Verificación local ejecutada con Node 24; el proyecto declara Node 22 para despliegue.
+`npm run test:integration` compila y crea/elimina exclusivamente una base `horus_prisma_test_<UUID>`. Requiere CREATE/DROP DATABASE. El destino debe ser local; un servidor remoto de pruebas exige autorización y `ALLOW_INTEGRATION_DB=true`.
 
-Esos fallos anteriores incluyen validación, correos y comportamiento de ajustes; esta migración no los oculta ni desactiva.
+Las pruebas cubren módulos, CRUD, publicación, fechas, importes, concurrencia, seguimiento, cuotas compartidas, recuperación de contraseña y referencias. Los correos de esas pruebas están sustituidos; no acreditan entrega SMTP real. La base configurada original no se migra durante estas comprobaciones.
 
-Para revertir el código, volver a la versión anterior e instalar su lockfile. No hay transformación de registros que deshacer; conservar tablas y el historial de migraciones. Verificar también una copia de la base de producción y su conexión TLS antes de desplegar.
+## Convenios
+
+Convenio y ConvenioFoto se crean mediante 20261002-create-convenios.sql, registrada en el ejecutor existente. Las fotos tienen FK con borrado en cascada de registros y permanecen separadas de GaleriaItem. Ninguna lectura, compilación o arranque importa datos. La carga inicial de los cinco convenios es un mantenimiento explícito e idempotente. Consulta [Convenios](CONVENIOS.md) para contratos, activación manual y vista previa.
+
+## Académico (E4.2 y E4.3b)
+
+`20261015-academico-estructura` crea, vacías y solo con `CREATE TABLE IF NOT EXISTS` (cada una atómica en MySQL 8), `estudiantes`, `convocatorias`, `matriculas`, `certificados` y `academico_historial` (modelos `Estudiante`, `Convocatoria`, `Matricula`, `Certificado` y `AcademicoHistorial`). Solo es estructura: ningún servicio ni ruta la usa todavía. Las reglas viven en MySQL y Prisma no las valida:
+
+- Documento opcional pero todo o nada (`doc_pais`, `doc_tipo`, `doc_numero`), único por la combinación de los tres. Desde E4.3b (`20261016-academico-solo-dni`) solo se admite **DNI peruano**: país `PE`, tipo `DNI` (único valor del ENUM y de `DocumentoTipo` en Prisma) y exactamente 8 dígitos ASCII guardados como texto (conserva los ceros iniciales). El CHECK exige además `CHAR_LENGTH(doc_numero) = 8`, porque el `$` de `REGEXP_LIKE` (ICU) también coincide antes de un salto de línea final: con la regla de E4.2, `'12345678\n'` (o `\r`, `\r\n`, U+0085, U+2028, U+2029) se aceptaba. CE y PASAPORTE se rechazan en estudiantes y certificados. El registro y la matrícula pueden hacerse sin documento; emitir un certificado exige el DNI completo. Registro manual: no hay campos de verificación externa ni RENIEC, y un formato válido no significa que la identidad esté verificada. El servicio normaliza antes de guardar (`src/academico/documento.ts`). Contacto opcional: `email` (VARCHAR 254) y `telefono` (VARCHAR 30), ambos NULL por defecto y sin UNIQUE ni índice (varios estudiantes pueden compartirlos).
+- Convocatorias con fechas (`DATE`) y estado propios: no leen ni modifican `cursos.fecha_inicio` ni `cursos.estado`. Estudiantes y convocatorias se archivan (`archivado_at`); matrículas y certificados se anulan. Todas las claves foráneas son `RESTRICT`: no se puede borrar un curso, estudiante, convocatoria, matrícula, certificado sustituido ni administrador referenciado.
+- Matrícula única por estudiante y convocatoria. El cumplimiento confirmado exige `confirmado_por`, `confirmado_at` y `confirmado_rol`, que solo admite `GERENTE_GENERAL` o `COORDINADORA_INSTITUCIONAL`.
+- Certificados: copia de los datos de emisión (documento obligatorio), código aleatorio de 16-32 `[A-Z0-9]`, anulados conservados con quién, cuándo y por qué. Un solo vigente por matrícula mediante la columna generada `STORED` `vigente_matricula_id` con índice único (no declarada en Prisma a propósito: Prisma no admite columnas generadas y nunca debe escribirla). La sustitución enlaza con `sustituye_a_id` a un certificado de la misma matrícula (clave foránea compuesta) y una sola vez; el orden «anular y después emitir», el motivo y los permisos los comprobará el servicio en una transacción.
+- `academico_historial`, sin claves foráneas ni datos personales (`campos` guarda solo nombres de campos), se escribirá en la misma transacción que el cambio académico.
+
+Con el adaptador, Prisma 6.19.3 entrega una violación de `CHECK` (MySQL 3819) como `DriverAdapterError` (`cause.code = 3819` y el nombre de la restricción en el mensaje), no como `PrismaClientKnownRequestError`; las de `UNIQUE` y claves foráneas llegan como `P2002` y `P2003`. `db:check` verifica la estructura real (columnas, índices, claves foráneas, `CHECK` y columna generada): una tabla previa con otra forma no se corrige en silencio. Las expresiones de los `CHECK` y de la columna generada se comparan con las de la propia migración en forma canónica (`scripts/sql-expression.cjs`): se toleran las reescrituras de MySQL (minúsculas, paréntesis, introductores `_utf8mb4`/`_latin1`), no un cambio de lógica. También exige `id` como clave primaria con `AUTO_INCREMENT` y rechaza índices únicos no previstos (p. ej. `UNIQUE(email)`).
+
+`20261016-academico-solo-dni` son dos `ALTER TABLE` (uno por tabla, cada uno atómico pero con commit implícito: no forman una transacción conjunta). Por eso `db:migrate` comprueba antes de la primera sentencia que todas las filas ya cumplen la regla nueva; si hay algún CE, PASAPORTE o DNI que la regla rechace, se detiene sin modificar datos ni estructura e informa solo recuentos (nada se convierte, borra ni anonimiza). Cada `ALTER` quita y vuelve a crear su CHECK con el mismo nombre y redefine el ENUM, así que es idempotente: si la ejecución se interrumpe entre ambos, repetir `db:migrate` la completa (y vuelve a comprobar los datos). Si una fila no DNI apareciera entre la comprobación y el `ALTER`, MySQL rechaza el `ALTER` sin cambiar nada (1265 en modo estricto, 3819 en no estricto). `db:check` compara con el esquema efectivo de las migraciones académicas en orden (`ACADEMIC_MIGRATIONS`) y rechaza un esquema que aún admita CE o PASAPORTE.
+
+`test/academico-schema.integration.cjs` lo comprueba contra un MySQL 8.4 desechable (instalación desde cero, actualización desde E4.1 con datos, recuperación de una migración parcial, cada restricción, Prisma, `db:check` frente a estructuras incorrectas y respaldo/restauración reales con certificados; y para E4.3b: actualización desde E4.2 con y sin datos DNI, detención ante CE, PASAPORTE o DNI con terminador en modo estricto y no estricto, `ALTER` directo con filas no DNI, recuperación de la migración parcial y rechazo por SQL directo). Exige `ACADEMICO_SCHEMA_TEST_DB=true` y el `server_uuid` del contenedor; solo crea y elimina `horus_e42_<hex>` y `horus_restore_e42_<hex>`.

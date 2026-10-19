@@ -2,6 +2,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { registerDecorator, ValidationOptions } from 'class-validator';
 
 export const trimValue = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value;
+// Formato de teléfono aceptado (sin longitud mínima inventada): dígitos y los separadores habituales.
+export const PHONE_PATTERN = /^(?=.*\d)[+()\d\s.-]+$/;
 export const normalizeEmail = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim().toLowerCase() : value;
 
 export function createValidationPipe() {

@@ -18,7 +18,7 @@ export class ContactoService {
       } });
 
       // Esperar al correo antes de finalizar la función en Vercel.
-      await this.mailService.sendContactoNotificacion({
+      const correoEnviado = await this.mailService.sendContactoNotificacion({
         nombre: dto.nombre,
         email: dto.email,
         telefono: dto.telefono,
@@ -28,6 +28,7 @@ export class ContactoService {
 
       return {
         ok: true,
+        correo_enviado: correoEnviado === true,
         mensaje: 'Mensaje enviado correctamente. Nos pondremos en contacto pronto.',
         id: nuevo.id,
       };

@@ -1,0 +1,2 @@
+/* Página 404: el hero compartido (PageHero), más alto y centrado para que la página no quede como una franja corta. */
+.nf-page .horus-hero { display: grid; align-content: center; min-height: min(72vh, 34rem); }

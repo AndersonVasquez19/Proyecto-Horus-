@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-ssr
+coverage
+.git
+.vercel
+.env
+.env.*
+*.env
+*.env.*
+*.local
+*.log
+*.tsbuildinfo

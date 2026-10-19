@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS `galeria_items` (
 CREATE TABLE IF NOT EXISTS `newsletter_subscribers` (
   `id` INTEGER NOT NULL AUTO_INCREMENT,
   `email` VARCHAR(254) NOT NULL UNIQUE,
-  `interes` VARCHAR(100) NOT NULL DEFAULT 'market',
+  `interes` VARCHAR(100) NOT NULL DEFAULT 'novedades',
   `activo` TINYINT(1) NULL DEFAULT true,
   `createdAt` DATETIME NOT NULL,
   `updatedAt` DATETIME NOT NULL,

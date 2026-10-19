@@ -1,0 +1,10 @@
+/* Notificaciones del panel (Sonner). Identidad navy/dorado; el tipo se distingue también por el icono y el texto, no solo por el color. */
+[data-sonner-toaster] [data-sonner-toast].hp-toast{font-family:inherit;font-size:14px;line-height:1.5;color:#172c48;background:#fff;border:1px solid #dfe5ee;border-left:4px solid #3e638f;border-radius:12px;padding:14px 16px;box-shadow:0 14px 40px #00132a2e}
+[data-sonner-toaster] [data-sonner-toast].hp-toast[data-type=success]{border-left-color:#2f7d5b}
+[data-sonner-toaster] [data-sonner-toast].hp-toast[data-type=error]{border-left-color:#b3402f}
+[data-sonner-toaster] [data-sonner-toast].hp-toast[data-type=warning]{border-left-color:#b79342;background:#fffaf0}
+[data-sonner-toaster] [data-sonner-toast].hp-toast [data-title]{font-weight:600}
+[data-sonner-toaster] [data-sonner-toast].hp-toast [data-description]{color:#4d6178}
+[data-sonner-toaster] [data-sonner-toast].hp-toast [data-close-button]{background:#fff;border-color:#dfe5ee;color:#172c48}
+[data-sonner-toaster] [data-sonner-toast].hp-toast :focus-visible{outline:3px solid #b79342;outline-offset:2px}
+@media(prefers-reduced-motion:reduce){[data-sonner-toaster] [data-sonner-toast]{transition:none!important;animation:none!important}}
