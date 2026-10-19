@@ -70,6 +70,7 @@ export const PANEL_SECTIONS: readonly PanelSectionRule[] = Object.freeze([
   { key: 'estudiantes', group: 'academico', anyOf: ['estudiantes:leer'], target: '/admin/dashboard?section=estudiantes', note: 'GET /admin/estudiantes' },
   { key: 'ediciones', group: 'academico', anyOf: ['convocatorias:leer'], target: '/admin/dashboard?section=ediciones', note: 'GET /admin/convocatorias' },
   { key: 'matriculas', group: 'academico', anyOf: ['matriculas:leer'], target: '/admin/dashboard?section=matriculas', note: 'GET /admin/matriculas' },
+  { key: 'importacion-excel', group: 'academico', anyOf: ['importaciones:previsualizar'], target: '/admin/dashboard?section=importacion-excel', note: 'GET /admin/importaciones/ediciones' },
   { key: 'cursos', group: 'contenido', anyOf: ['cursos:leer', 'servicios:leer'], target: '/admin/dashboard?section=educacion', note: 'Educación: Asesoramiento usa servicios; Capacitaciones y Cursos, cursos. Cada subsección se comprueba con RESOURCE_READ' },
   { key: 'servicios', group: 'contenido', anyOf: ['servicios:leer'], target: '/admin/dashboard?section=servicios' },
   { key: 'galeria', group: 'contenido', anyOf: ['galeria:leer'], target: '/admin/dashboard?section=galeria' },

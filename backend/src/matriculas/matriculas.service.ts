@@ -65,7 +65,7 @@ export class MatriculasService {
       return { ok: true, items, pagination: pagination(q, total) };
     });
   }
-  private async lockEdition(tx: Prisma.TransactionClient, id: number) {
+  async lockEdition(tx: Prisma.TransactionClient, id: number) {
     const initial = await tx.convocatoria.findUnique({ where: { id }, select: { curso_id: true } });
     if (!initial) throw new NotFoundException('La edición no existe.');
     // Mismo orden que ConvocatoriasService: curso → edición → estudiante → matrícula.
@@ -92,15 +92,17 @@ export class MatriculasService {
       campos: before ? ['estado'] : ['estudiante_id', 'convocatoria_id', 'estado', 'cumplimiento'] } });
   }
   create(dto: CreateMatriculaDto, actor: number) {
-    return this.execute(() => this.prisma.$transaction(async tx => {
-      const convoc = await this.lockEdition(tx, dto.convocatoria_id);
-      await this.lockStudent(tx, dto.estudiante_id, true);
-      if (await tx.matricula.findUnique({ where: { estudiante_id_convocatoria_id: { estudiante_id: dto.estudiante_id, convocatoria_id: dto.convocatoria_id } }, select: { id: true } })) throw new ConflictException('El estudiante ya tiene una matrícula en esta edición. Consulta su detalle; una matrícula anulada se reactiva.');
-      await this.admit(tx, convoc, dto.convocatoria_revision);
-      const item = await tx.matricula.create({ data: { estudiante_id: dto.estudiante_id, convocatoria_id: dto.convocatoria_id }, include: relations });
-      await this.audit(tx, item, actor, 'creacion');
-      return { ok: true, item: serialize(item) };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }));
+    return this.execute(() => this.prisma.$transaction(tx => this.createInTransaction(tx, dto, actor), { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }));
+  }
+  // El llamador conserva la misma transacción para todo el lote. Sin transacciones anidadas.
+  async createInTransaction(tx: Prisma.TransactionClient, dto: CreateMatriculaDto, actor: number, motivo?: string) {
+    const convoc = await this.lockEdition(tx, dto.convocatoria_id);
+    await this.lockStudent(tx, dto.estudiante_id, true);
+    if (await tx.matricula.findUnique({ where: { estudiante_id_convocatoria_id: { estudiante_id: dto.estudiante_id, convocatoria_id: dto.convocatoria_id } }, select: { id: true } })) throw new ConflictException('El estudiante ya tiene una matrícula en esta edición. Consulta su detalle; una matrícula anulada se reactiva.');
+    await this.admit(tx, convoc, dto.convocatoria_revision);
+    const item = await tx.matricula.create({ data: { estudiante_id: dto.estudiante_id, convocatoria_id: dto.convocatoria_id }, include: relations });
+    await this.audit(tx, item, actor, 'creacion', undefined, motivo);
+    return { ok: true, item: serialize(item) };
   }
   annul(id: number, dto: AnularMatriculaDto, actor: number) { return this.change(id, dto, actor, false); }
   reactivate(id: number, dto: ReactivarMatriculaDto, actor: number) { return this.change(id, dto, actor, true); }

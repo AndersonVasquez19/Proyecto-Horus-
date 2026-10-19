@@ -30,7 +30,7 @@ const LOGIN = { gerente: 'tk-gerente', coord: 'tk-coord', sec: 'tk-sec' };
 const READ = [['stats', 'estadisticas:leer'], ['messages', 'mensajes:leer'], ['cotizaciones', 'cotizaciones:leer'], ['servicios', 'servicios:leer'], ['cursos', 'cursos:leer'],
   ['preguntas-frecuentes', 'preguntas_frecuentes:leer'], ['galeria', 'galeria:leer'], ['convenios', 'convenios:leer'], ['items', 'items:leer'], ['chatbot', 'chatbot_consultas:leer'],
   ['settings', 'configuracion:leer'], ['users', 'cuentas:leer'], ['contenido-original', 'contenido_original:leer'], ['seguimiento', 'seguimiento_mensajes:leer'],
-  ['estudiantes', 'estudiantes:leer'], ['convocatorias', 'convocatorias:leer'], ['matriculas', 'matriculas:leer']];
+  ['estudiantes', 'estudiantes:leer'], ['convocatorias', 'convocatorias:leer'], ['matriculas', 'matriculas:leer'], ['importaciones', 'importaciones:previsualizar']];
 const fresh = () => ({ mode: 'heredado', me: 'nuevo', status: {}, requests: [] });
 let sim = fresh();
 const shape = acc => {
@@ -62,7 +62,7 @@ const handler = async (req, res, { route, json, body }) => {
   return json({ ok: true, items: [], messages: [], settings: [], sections: [], pagination: { page: 1, total: 0, pages: 1, limit: 20 }, metrics: {} }) || true;
 };
 
-const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Educación', 'Servicios tecnológicos', 'Galería de proyectos', 'Preguntas frecuentes', 'Biblioteca de contenido', 'Convenios', 'Mensajes', 'Cotizaciones', 'Consultas del chatbot', 'Información de empresa'];
+const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Importar desde Excel', 'Educación', 'Servicios tecnológicos', 'Galería de proyectos', 'Preguntas frecuentes', 'Biblioteca de contenido', 'Convenios', 'Mensajes', 'Cotizaciones', 'Consultas del chatbot', 'Información de empresa'];
 
 (async () => {
   const k = await start({ prefix: 'permisos', handler, browserArgs: ['--disable-extensions'] });

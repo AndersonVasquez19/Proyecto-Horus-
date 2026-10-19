@@ -458,7 +458,8 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       const count = key => plan.filter(item => item.key === key && item.route.sweep && item.expected === 'pasa').length;
       // Ediciones suma ocho rutas para gerente/coordinadora y tres lecturas para secretaría; cuenta básica sigue sin acceso.
       // Matrículas: siete rutas G/C y cinco S (cuatro lecturas y alta); anulación/reactivación restringidas.
-      assert.deepEqual(ROLE_KEYS.map(count), [89, 73, 24, 1]);
+      // Importaciones: Gerencia +5; Coordinación +4 (solo aplicar se deniega); Secretaría y básica +0.
+      assert.deepEqual(ROLE_KEYS.map(count), [94, 77, 24, 1]);
       for (const key of ROLE_KEYS) {
         const own = plan.filter(item => item.key === key && item.route.path.startsWith('admin/seguimiento/cotizaciones/'));
         // Un requisito «denegada» se resuelve antes de mirar el rol: 403 genérico también para la cuenta sin rol.

@@ -56,7 +56,7 @@ function expectedColumns() {
 // E4.3b (20261016-academico-solo-dni): el documento académico es solo DNI peruano; un esquema que aún admita CE o PASAPORTE se rechaza.
 const DOC = "ENUM('DNI')", CONFIRMADOR = "ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL')";
 // Migraciones que definen el esquema académico, en su orden de aplicación (el de `versions` en migrate.cjs).
-const ACADEMIC_MIGRATIONS = ['20261015-academico-estructura', '20261016-academico-solo-dni', '20261018-convocatorias-capacidad'];
+const ACADEMIC_MIGRATIONS = ['20261015-academico-estructura', '20261016-academico-solo-dni', '20261018-convocatorias-capacidad', '20261019-importaciones-academicas'];
 // Esquema efectivo tras aplicar en orden las migraciones académicas: cada CHECK o columna generada redefinida en una migración
 // posterior sustituye a la anterior, y un DROP CHECK sin redefinición en esa misma migración la elimina de lo esperado.
 function academicDefinitions() {
@@ -71,6 +71,7 @@ function academicDefinitions() {
   return effective;
 }
 const ACADEMIC = {
+  importaciones_academicas: [['id','char(36)',false],['archivo_sha256','char(64)',false],['convocatoria_id','int',false],['actor_id','int',false],['estado',"ENUM('confirmada')",false],['importados','int',false],['omitidos','int',false],['rechazados','int',false],['estudiantes_nuevos','int',false],['createdAt','datetime(3)',false]],
   estudiantes: [['id','int',false],['nombres','varchar(120)',false],['apellidos','varchar(120)',false],['doc_pais','char(2)',true],['doc_tipo',DOC,true],
     ['doc_numero','varchar(20)',true],['email','varchar(254)',true],['telefono','varchar(30)',true],['archivado_at','datetime(3)',true],['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
   convocatorias: [['capacidad','int',true],['id','int',false],['curso_id','int',false],['nombre','varchar(160)',false],['fecha_inicio','date',true],['fecha_fin','date',true],
@@ -90,6 +91,7 @@ const ACADEMIC = {
 };
 // [tabla, índice, columnas en orden, único, longitudes de prefijo opcionales (una por columna; omitido = ninguna columna con prefijo)]
 const ACADEMIC_INDEXES = [
+  ['importaciones_academicas','importaciones_archivo_destino_uq',['archivo_sha256','convocatoria_id'],true],
   ['estudiantes','estudiantes_documento_uq',['doc_pais','doc_tipo','doc_numero'],true], ['estudiantes','estudiantes_nombre_idx',['apellidos','nombres'],false],
   ['convocatorias','convocatorias_curso_idx',['curso_id','fecha_inicio'],false], ['convocatorias','convocatorias_estado_idx',['estado','fecha_inicio'],false],
   ['matriculas','matriculas_estudiante_convocatoria_uq',['estudiante_id','convocatoria_id'],true], ['matriculas','matriculas_convocatoria_idx',['convocatoria_id','estado'],false],
@@ -102,6 +104,8 @@ const ACADEMIC_INDEXES = [
 ];
 // [tabla, clave foránea, columnas, tabla referenciada, columnas referenciadas]; todas RESTRICT al borrar y al actualizar.
 const ACADEMIC_FOREIGN_KEYS = [
+  ['importaciones_academicas','importaciones_convocatoria_fk',['convocatoria_id'],'convocatorias',['id']],
+  ['importaciones_academicas','importaciones_actor_fk',['actor_id'],'admin_users',['id']],
   ['convocatorias','convocatorias_curso_fk',['curso_id'],'cursos',['id']],
   ['matriculas','matriculas_estudiante_fk',['estudiante_id'],'estudiantes',['id']], ['matriculas','matriculas_convocatoria_fk',['convocatoria_id'],'convocatorias',['id']],
   ['matriculas','matriculas_confirmado_por_fk',['confirmado_por'],'admin_users',['id']],
@@ -110,6 +114,7 @@ const ACADEMIC_FOREIGN_KEYS = [
   ['certificados','certificados_sustituye_fk',['sustituye_a_id','matricula_id'],'certificados',['id','matricula_id']],
 ];
 const ACADEMIC_CHECKS = {
+  importaciones_academicas: ['importaciones_conteos_ck'],
   estudiantes: ['estudiantes_nombres_chk','estudiantes_documento_completo_chk','estudiantes_documento_formato_chk','estudiantes_revision_chk'],
   convocatorias: ['convocatorias_nombre_chk','convocatorias_fechas_chk','convocatorias_revision_chk','convocatorias_capacidad_chk'],
   matriculas: ['matriculas_confirmacion_chk','matriculas_revision_chk'],
@@ -142,7 +147,7 @@ async function checkAcademic(db, indexes) {
     const primary = indexes.filter(i => i.TABLE_NAME === table && i.INDEX_NAME === 'PRIMARY').map(i => i.COLUMN_NAME);
     if (primary.join(',') !== 'id') problems.push(table + ': la clave primaria no es (id)');
     const id = columns.find(c => c.TABLE_NAME === table && c.COLUMN_NAME === 'id');
-    if (id && !/\bauto_increment\b/i.test(id.EXTRA)) problems.push(table + '.id: falta AUTO_INCREMENT');
+    if (id && table !== 'importaciones_academicas' && !/\bauto_increment\b/i.test(id.EXTRA)) problems.push(table + '.id: falta AUTO_INCREMENT');
   }
   // Índices reales de cada tabla académica: { columnas en orden, único }. Los nombres de índice son locales a su tabla, así que cada
   // índice se compara con lo previsto para ESA tabla: certificados_codigo_uq creado en estudiantes no es el índice de certificados.

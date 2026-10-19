@@ -69,6 +69,11 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('POST', 'admin/uploads', 'archivos:crear', 'Solo imágenes del sitio; documentos de estudiantes requerirán almacenamiento privado.'),
 
   // --- Gestión académica (sin borrado físico) ---
+  perm('GET', 'admin/importaciones/ediciones', 'importaciones:previsualizar'),
+  perm('POST', 'admin/importaciones/archivo', 'importaciones:previsualizar'),
+  perm('POST', 'admin/importaciones/vista-previa', 'importaciones:previsualizar'),
+  perm('POST', 'admin/importaciones/confirmacion', 'importaciones:aplicar'),
+  perm('GET', 'admin/importaciones/resultado/:id', 'importaciones:previsualizar'),
   perm('GET', 'admin/matriculas', 'matriculas:leer'), perm('GET', 'admin/matriculas/ediciones', 'matriculas:leer'),
   perm('GET', 'admin/matriculas/:id', 'matriculas:leer'), perm('GET', 'admin/matriculas/:id/historial', 'matriculas:leer'),
   perm('POST', 'admin/matriculas', 'matriculas:crear'), perm('PUT', 'admin/matriculas/:id/anulacion', 'matriculas:anular'),

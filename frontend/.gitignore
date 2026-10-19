@@ -28,3 +28,6 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Capturas y resultados locales de pruebas con datos ficticios.
+.artifacts/

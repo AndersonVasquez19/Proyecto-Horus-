@@ -29,6 +29,7 @@ import { HealthController } from '../src/health.controller';
 import { ConvocatoriasController } from '../src/convocatorias/convocatorias.controller';
 import { EstudiantesController } from '../src/estudiantes/estudiantes.controller';
 import { MatriculasController } from '../src/matriculas/matriculas.controller';
+import { ImportacionesController } from '../src/importaciones/importaciones.controller';
 import { AdminNewsletterController } from '../src/newsletter/admin-newsletter.controller';
 import { NewsletterController } from '../src/newsletter/newsletter.controller';
 import { ReclamacionesController } from '../src/reclamaciones/reclamaciones.controller';
@@ -61,7 +62,7 @@ test('cada permiso tiene un identificador único con el formato recurso:operacio
 
 test('los permisos de recursos futuros están separados de los actuales', () => {
   for (const resource of FUTURE_RESOURCES) assert.ok(resource in RESOURCE_OPERATIONS);
-  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones', 'certificados', 'importaciones', 'reportes_academicos', 'sesiones']);
+  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones', 'certificados', 'reportes_academicos', 'sesiones']);
 });
 
 test('no existe ningún permiso de eliminación física del historial académico', () => {
@@ -229,6 +230,7 @@ test('seguimiento: el permiso depende del recurso y un recurso desconocido se de
 // Inventario de rutas frente a los controladores reales (solo lectura de metadatos; no cambia ninguna ruta)
 // ---------------------------------------------------------------------------------------------------------------
 const CONTROLLERS: Function[] = [
+  ImportacionesController,
   AccountsController, AuthController, AdminChatbotController, ItemsController, MessagesController, AdminReclamacionesController, StatsController,
   AttentionController, CursoController, AdminCursoController, ServicioController, AdminServicioController, PreguntaFrecuenteController,
   AdminPreguntaFrecuenteController, ChatbotController, ContactoController, OriginalContentController, ConveniosController, AdminConveniosController,
