@@ -75,6 +75,7 @@ jobs:
           npm run test:session-access
           npm run test:panel-access
           npm run test:editions
+          npm run test:enrollments
       - run: npm run build
 
   # MySQL efímero del propio runner: se crea y se destruye con el job, con una contraseña de un solo uso que no es un secreto.
@@ -183,6 +184,8 @@ jobs:
           node --test -r ./test/isolate-env.cjs test/convocatorias.integration.cjs
         env:
           EDITIONS_TEST_DB: 'true'
+      - name: Integración de Matrículas (HTTP, cupos e historial transaccional)
+        run: node test/run-academic-isolated.cjs matriculas
       - name: Retirar MySQL
         if: always()
         working-directory: .

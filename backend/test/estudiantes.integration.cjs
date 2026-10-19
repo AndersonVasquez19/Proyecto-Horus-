@@ -15,7 +15,7 @@ test('Estudiantes: contrato HTTP, permisos y persistencia real en MySQL aislado'
   assert.ok(['127.0.0.1', 'localhost', '::1'].includes(process.env.DB_HOST));
   assert.match(process.env.STUDENTS_TEST_SERVER_UUID || '', /^[a-f0-9-]{36}$/i);
   const source = process.env.STUDENTS_TEST_TEMPLATE;
-  assert.ok(['horus_db', 'horus_local'].includes(source), 'plantilla local explícita de solo lectura');
+  assert.ok(['horus_db', 'horus_local'].includes(source) || /^horus_students_template_[0-9a-f]{24}$/.test(source || ''), 'plantilla local explícita de solo lectura o plantilla desechable identificada');
   const db = await mysql.createConnection({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT), user: process.env.DB_USER, password: process.env.DB_PASS });
   let api;
   const name = 'horus_estudiantes_it_' + randomBytes(12).toString('hex');

@@ -28,6 +28,7 @@ import { GaleriaController } from '../src/galeria/galeria.controller';
 import { HealthController } from '../src/health.controller';
 import { ConvocatoriasController } from '../src/convocatorias/convocatorias.controller';
 import { EstudiantesController } from '../src/estudiantes/estudiantes.controller';
+import { MatriculasController } from '../src/matriculas/matriculas.controller';
 import { AdminNewsletterController } from '../src/newsletter/admin-newsletter.controller';
 import { NewsletterController } from '../src/newsletter/newsletter.controller';
 import { ReclamacionesController } from '../src/reclamaciones/reclamaciones.controller';
@@ -60,7 +61,7 @@ test('cada permiso tiene un identificador único con el formato recurso:operacio
 
 test('los permisos de recursos futuros están separados de los actuales', () => {
   for (const resource of FUTURE_RESOURCES) assert.ok(resource in RESOURCE_OPERATIONS);
-  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones', 'certificados', 'importaciones', 'matriculas', 'reportes_academicos', 'sesiones']);
+  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones', 'certificados', 'importaciones', 'reportes_academicos', 'sesiones']);
 });
 
 test('no existe ningún permiso de eliminación física del historial académico', () => {
@@ -182,7 +183,7 @@ test('matriculas:confirmar: gerente y coordinadora sí; secretaria y cuenta sin 
   // Los permisos de matrículas anteriores se conservan: la secretaria sigue sin anular.
   for (const id of ['matriculas:leer', 'matriculas:crear', 'matriculas:editar']) assert.equal(can(S, id), true, id);
   assert.equal(can(S, 'matriculas:anular'), false);
-  assert.ok(FUTURE_RESOURCES.includes('matriculas'), 'matriculas sigue siendo un recurso futuro');
+  assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('matriculas'), 'matriculas es un módulo implementado');
 });
 
 test('la coordinadora no administra cuentas ni configuración crítica', () => {
@@ -232,7 +233,7 @@ const CONTROLLERS: Function[] = [
   AttentionController, CursoController, AdminCursoController, ServicioController, AdminServicioController, PreguntaFrecuenteController,
   AdminPreguntaFrecuenteController, ChatbotController, ContactoController, OriginalContentController, ConveniosController, AdminConveniosController,
   CotizacionesController, AdminGaleriaController, GaleriaController, HealthController, AdminNewsletterController, NewsletterController,
-  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController,
+  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController,
 ];
 
 function normalize(...parts: string[]) { return parts.join('/').split('/').filter(Boolean).join('/'); }

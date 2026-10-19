@@ -76,7 +76,7 @@ test('gerente: todas las secciones de trabajo actuales e inicio en Resumen', () 
 test('coordinadora: contenido, atención y Resumen; sin Biblioteca de contenido', () => {
   const nav = panelNavigation(session('COORDINADORA_INSTITUCIONAL'))
   assert.equal(nav.home, 'resumen')
-  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'ediciones', 'cursos', 'servicios', 'galeria', 'faq', 'convenios', 'mensajes', 'cotizaciones', 'chatbot', 'ajustes', 'configuracion'])
+  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'ediciones', 'matriculas', 'cursos', 'servicios', 'galeria', 'faq', 'convenios', 'mensajes', 'cotizaciones', 'chatbot', 'ajustes', 'configuracion'])
   assert.equal(nav.canOpenResource('contenido'), false)
 })
 
@@ -85,7 +85,7 @@ test('secretaria: inicia en la Bandeja, sin Resumen (no consulta estadísticas) 
     const nav = panelNavigation(session('SECRETARIA', modo))
     assert.equal(nav.home, 'mensajes')
     assert.equal(nav.canOpen('resumen'), false, 'GET /admin/stats exige estadisticas:leer')
-    assert.deepEqual(visible(nav), ['estudiantes', 'ediciones', 'cursos', 'mensajes', 'chatbot', 'ajustes', 'configuracion'])
+    assert.deepEqual(visible(nav), ['estudiantes', 'ediciones', 'matriculas', 'cursos', 'mensajes', 'chatbot', 'ajustes', 'configuracion'])
     // Educación: puede leer cursos y capacitaciones, pero no Asesoramiento (que es un servicio).
     assert.equal(nav.canOpenResource('cursos'), true)
     assert.equal(nav.canOpenResource('servicios'), false)
@@ -156,16 +156,17 @@ test('Roles y usuarios: solo en por_roles con cuentas:leer; nunca en heredado, s
 
 test('secciones desconocidas o con forma rara no se abren; el nombre del rol no concede nada', () => {
   const nav = panelNavigation(session('GERENTE_GENERAL'))
-  for (const key of ['', 'admin', 'usuarios', 'matriculas', 'certificados', '__proto__', 'constructor', 'toString', undefined, null, 5, {}]) assert.equal(nav.canOpen(key), false, String(key))
+  for (const key of ['', 'admin', 'usuarios', 'certificados', '__proto__', 'constructor', 'toString', undefined, null, 5, {}]) assert.equal(nav.canOpen(key), false, String(key))
   for (const resource of ['', 'items', 'mensajes', '__proto__', 'toString']) assert.equal(nav.canOpenResource(resource), false, resource)
   // Con el rol de gerente pero sin permisos, no se abre nada: lo que decide es la lista del backend.
   assert.deepEqual(visible(panelNavigation(session('GERENTE_GENERAL', 'por_roles', []))), ['configuracion'])
 })
 
-test('Estudiantes y Ediciones disponibles; las fases posteriores siguen sin enlaces', () => {
+test('Estudiantes, Ediciones y Matrículas disponibles; las fases posteriores siguen sin enlaces', () => {
   assert.equal(PANEL_SECTIONS.find(rule => rule.key === 'estudiantes')?.anyOf[0], 'estudiantes:leer')
   assert.equal(PANEL_SECTIONS.find(rule => rule.key === 'ediciones')?.anyOf[0], 'convocatorias:leer')
-  for (const rule of PANEL_SECTIONS) assert.ok(!/matriculas|certificados|asistencia|calificaciones|sesiones/.test(rule.key + rule.anyOf.join() + rule.target), rule.key)
+  assert.equal(PANEL_SECTIONS.find(rule => rule.key === 'matriculas')?.anyOf[0], 'matriculas:leer')
+  for (const rule of PANEL_SECTIONS) assert.ok(!/certificados|asistencia|calificaciones|sesiones/.test(rule.key + rule.anyOf.join() + rule.target), rule.key)
 })
 
 // ---------- E3.4.3, fase 2: operaciones de escritura ----------
@@ -224,6 +225,9 @@ test('las demás operaciones del panel coinciden con sus rutas', () => {
   assert.equal(routePermission('POST', 'admin/estudiantes'), A.crearEstudiante)
   assert.equal(routePermission('PUT', 'admin/estudiantes/:id'), A.editarEstudiante)
   assert.equal(routePermission('PUT', 'admin/estudiantes/:id/archivo'), A.archivarEstudiante)
+  assert.equal(routePermission('POST', 'admin/matriculas'), A.crearMatricula)
+  assert.equal(routePermission('PUT', 'admin/matriculas/:id/anulacion'), A.anularMatricula)
+  assert.equal(routePermission('PUT', 'admin/matriculas/:id/reactivacion'), A.reactivarMatricula)
   assert.equal(routePermission('POST', 'admin/convocatorias'), A.crearEdicion)
   assert.equal(routePermission('PUT', 'admin/convocatorias/:id'), A.editarEdicion)
   assert.equal(routePermission('PUT', 'admin/convocatorias/:id/apertura'), A.editarEdicion)

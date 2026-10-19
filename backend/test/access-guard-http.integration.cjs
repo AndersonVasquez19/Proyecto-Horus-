@@ -410,6 +410,14 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       // Contrato independiente de la política: exactamente cinco rutas; secretaría solo lee y crea; la cuenta básica no accede.
       const students = routes.filter(route => /^admin\/estudiantes(?:\/|$)/.test(route.path));
       const editions = routes.filter(route => /^admin\/convocatorias(?:\/|$)/.test(route.path));
+      const enrollments = routes.filter(route => /^admin\/matriculas(?:\/|$)/.test(route.path));
+      assert.deepEqual(enrollments.map(route => route.label), [
+        'GET admin/matriculas', 'GET admin/matriculas/ediciones', 'GET admin/matriculas/999999', 'GET admin/matriculas/999999/historial',
+        'POST admin/matriculas', 'PUT admin/matriculas/999999/anulacion', 'PUT admin/matriculas/999999/reactivacion',
+      ]);
+      assert.deepEqual(ROLE_KEYS.map(key => enrollments.map(route => expectation(key, route))), [
+        Array(7).fill('pasa'), Array(7).fill('pasa'), [...Array(5).fill('pasa'), ...Array(2).fill('sinPermiso')], Array(7).fill('sinRol'),
+      ]);
       assert.deepEqual(editions.map(route => route.label), [
         'GET admin/convocatorias', 'GET admin/convocatorias/cursos', 'GET admin/convocatorias/999999', 'POST admin/convocatorias',
         'PUT admin/convocatorias/999999', 'PUT admin/convocatorias/999999/apertura', 'PUT admin/convocatorias/999999/cierre', 'PUT admin/convocatorias/999999/archivo',
@@ -429,7 +437,7 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       ]);
       const plan = ROLE_KEYS.flatMap(key => routes.map(route => ({ key, route, expected: expectation(key, route) })));
       const before = await businessSnapshot();
-      for (const route of [...students, ...editions]) {
+      for (const route of [...students, ...editions, ...enrollments]) {
         assert.equal((await call(route.path, { method: route.method, body: route.body })).status, 401, 'sin sesión: ' + route.label);
       }
       for (const { key, route, expected } of plan.filter(item => item.expected !== 'pasa')) {
@@ -449,7 +457,8 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       // Así, los totales del barrido pasan de [69, 53, 13, 1] a [74, 58, 16, 1] (sin las variantes con estado en el cuerpo).
       const count = key => plan.filter(item => item.key === key && item.route.sweep && item.expected === 'pasa').length;
       // Ediciones suma ocho rutas para gerente/coordinadora y tres lecturas para secretaría; cuenta básica sigue sin acceso.
-      assert.deepEqual(ROLE_KEYS.map(count), [82, 66, 19, 1]);
+      // Matrículas: siete rutas G/C y cinco S (cuatro lecturas y alta); anulación/reactivación restringidas.
+      assert.deepEqual(ROLE_KEYS.map(count), [89, 73, 24, 1]);
       for (const key of ROLE_KEYS) {
         const own = plan.filter(item => item.key === key && item.route.path.startsWith('admin/seguimiento/cotizaciones/'));
         // Un requisito «denegada» se resuelve antes de mirar el rol: 403 genérico también para la cuenta sin rol.

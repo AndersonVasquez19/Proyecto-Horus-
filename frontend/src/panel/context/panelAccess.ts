@@ -51,6 +51,7 @@ export const RESOURCE_WRITE: Readonly<Record<string, ResourceWrite>> = Object.fr
 // Resto de operaciones del panel, con la ruta que las exige.
 export const PANEL_ACTIONS = Object.freeze({
   crearEdicion: 'convocatorias:crear', editarEdicion: 'convocatorias:editar', cerrarEdicion: 'convocatorias:cerrar', archivarEdicion: 'convocatorias:archivar',
+  crearMatricula: 'matriculas:crear', anularMatricula: 'matriculas:anular', reactivarMatricula: 'matriculas:anular',
   crearEstudiante: 'estudiantes:crear', editarEstudiante: 'estudiantes:editar', archivarEstudiante: 'estudiantes:archivar',
   subirImagen: 'archivos:crear', // POST /admin/uploads
   leerContenidoOriginal: 'contenido_original:leer', // GET /admin/contenido-original (lo carga el diálogo de recuperación)
@@ -68,6 +69,7 @@ export const PANEL_SECTIONS: readonly PanelSectionRule[] = Object.freeze([
   { key: 'resumen', group: 'principal', anyOf: ['estadisticas:leer'], target: '/admin/dashboard?section=resumen', note: 'GET /admin/stats y /admin/stats/actividad' },
   { key: 'estudiantes', group: 'academico', anyOf: ['estudiantes:leer'], target: '/admin/dashboard?section=estudiantes', note: 'GET /admin/estudiantes' },
   { key: 'ediciones', group: 'academico', anyOf: ['convocatorias:leer'], target: '/admin/dashboard?section=ediciones', note: 'GET /admin/convocatorias' },
+  { key: 'matriculas', group: 'academico', anyOf: ['matriculas:leer'], target: '/admin/dashboard?section=matriculas', note: 'GET /admin/matriculas' },
   { key: 'cursos', group: 'contenido', anyOf: ['cursos:leer', 'servicios:leer'], target: '/admin/dashboard?section=educacion', note: 'Educación: Asesoramiento usa servicios; Capacitaciones y Cursos, cursos. Cada subsección se comprueba con RESOURCE_READ' },
   { key: 'servicios', group: 'contenido', anyOf: ['servicios:leer'], target: '/admin/dashboard?section=servicios' },
   { key: 'galeria', group: 'contenido', anyOf: ['galeria:leer'], target: '/admin/dashboard?section=galeria' },
