@@ -9,9 +9,10 @@ const suites = {
   ediciones: ['EDITIONS', 'convocatorias.integration.cjs'],
   estudiantes: ['STUDENTS', 'estudiantes.integration.cjs'],
   access: ['ACCESS_GUARD_HTTP', 'access-guard-http.integration.cjs'],
+  reportes: ['REPORTES', 'reportes.integration.cjs'],
 };
 const suite = suites[process.argv[2]];
-if (!suite) throw new Error('Selecciona matriculas, ediciones, estudiantes o access.');
+if (!suite) throw new Error('Selecciona matriculas, ediciones, estudiantes, access o reportes.');
 const name = 'horus-fase3-' + randomBytes(8).toString('hex');
 const password = randomBytes(32).toString('hex');
 const docker = args => {
@@ -57,6 +58,7 @@ const docker = args => {
       DB_HOST: '127.0.0.1', DB_PORT: port, DB_USER: 'root', DB_PASS: password,
       [suite[0] + '_TEST_DB']: 'true', [suite[0] + '_TEST_SERVER_UUID']: uuid,
       MATRICULAS_BROWSER: process.env.MATRICULAS_BROWSER, MATRICULAS_SCREENSHOTS_DIR: process.env.MATRICULAS_SCREENSHOTS_DIR,
+      REPORTES_MUESTRAS_DIR: process.env.REPORTES_MUESTRAS_DIR,
       EDITIONS_BROWSER: process.env.EDITIONS_BROWSER, EDITIONS_SCREENSHOTS_DIR: process.env.EDITIONS_SCREENSHOTS_DIR,
       STUDENTS_BROWSER: process.env.STUDENTS_BROWSER, STUDENTS_SCREENSHOTS_DIR: process.env.STUDENTS_SCREENSHOTS_DIR };
     if (template) testEnv.STUDENTS_TEST_TEMPLATE = template;

@@ -143,19 +143,21 @@ async function main() {
     assert.equal(requests.some(r => r.route.startsWith('/api/admin/convenios')), false, 'Sin solicitudes al gestor editorial desde ninguna sesión')
     convenio = { id: 1, nombre: 'Convenio conservado', descripcion_corta: 'Descripción pública de prueba', descripcion_completa: '', informacion_adicional: '', sigla: 'CP', logo_url: null, orden: 1, visible: true, fotos: [] }
     console.log('Panel: dos sesiones aisladas sin gestores ni solicitudes editoriales: OK.')
-    // Simula un enlace guardado previamente desde el equipo local.
-    convenio.logo_url = 'http://localhost:5173' + image
+    // El visitante lee el contenido institucional versionado (src/institutional): ninguna petición editorial a la API.
+    const editorial = /^\/api\/(cursos|servicios|galeria|convenios|preguntas-frecuentes|settings)(\/|\?|$)/
+    const before = requests.filter(r => editorial.test(r.route)).length
     const visitor = await newPage(true)
     await navigate(visitor, '/')
-    await visitor.wait('document.querySelector(".home-conv-card")?.textContent.includes("Convenio conservado")')
+    await visitor.wait('document.querySelector(".home-conv-card")?.textContent.includes("Colegio Regional de Licenciados")')
     await visitor.evaluate('document.querySelector(".home-conv-card").scrollIntoView()')
     await visitor.wait('document.querySelector(".home-conv-card img")?.naturalWidth > 0')
-    assert.equal(await visitor.evaluate('document.querySelector(".home-conv-card img").getAttribute("src")'), image)
+    assert.match(await visitor.evaluate('document.querySelector(".home-conv-card img").getAttribute("src")'), /^\/contenido\/[a-f0-9-]{36}\.(jpg|png|webp)$/)
     assert.equal(await visitor.evaluate('!!document.querySelector("[role=alert]")'), false)
-    for (const [route, text] of [['/educacion/cursos', 'Curso global de prueba'], ['/tecnologias/cableado-estructurado', 'Servicio global de prueba'], ['/galeria', 'Foto global de prueba'], ['/preguntas-frecuentes', 'Pregunta global de prueba']]) {
+    for (const [route, text] of [['/educacion/capacitaciones', 'Capacitaciones Empresariales'], ['/tecnologias/cableado-estructurado', 'Cableado Básico'], ['/galeria', 'Nuestro trabajo'], ['/preguntas-frecuentes', 'Preguntas']]) {
       await navigate(visitor, route); await visitor.wait('document.body.innerText.includes(' + JSON.stringify(text) + ')')
       assert.equal(await visitor.evaluate('!!document.querySelector("[role=alert]")'), false, route)
     }
+    assert.equal(requests.filter(r => editorial.test(r.route)).length, before, 'El visitante no pide contenido editorial a la API')
     for (const page of pages) assert.deepEqual(page.errors, [], 'Sin errores JavaScript en el flujo')
     console.log('Visitante: Home, cursos, servicios, galería y FAQ sin sesión, con storage y BroadcastChannel bloqueados: OK.')
   } finally {

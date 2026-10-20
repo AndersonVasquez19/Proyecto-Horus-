@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
-import { usePublicResource } from '../../hooks/usePublicResource'
+import { useInstitutionalResource as usePublicResource } from '../../institutional/useInstitutionalResource'
 import useReducedMotion from '../../hooks/useReducedMotion'
 import type { GaleriaPublica, PublicList } from '../../types/public'
 import GalleryImage from './GalleryImage'

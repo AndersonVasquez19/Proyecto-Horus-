@@ -29,7 +29,15 @@ test('fuente institucional local: listas, filtros, detalle, paginación e imáge
     assert.equal(read('preguntas-frecuentes?page=1').items.length, 0, 'sin FAQ inventadas')
     const convenio = read('convenios?page=1&limit=10').items[0]
     assert.equal(read('convenios/' + convenio.id).item.nombre, convenio.nombre)
-    assert.deepEqual(read('convenios/' + convenio.id).item.fotos, [])
+    const photos = read('convenios/' + convenio.id).item.fotos
+    assert.ok(Array.isArray(photos))
+    for (const photo of photos) assert.ok(fs.existsSync(new URL('../public' + photo.imagen_url, import.meta.url)), photo.imagen_url)
+    for (const item of [...institutionalCatalog.cursos, ...institutionalCatalog.servicios, ...institutionalCatalog.convenios]) {
+      for (const url of [item.imagen_url, item.logo_url].filter(Boolean)) {
+        assert.ok(!/\/api\/uploads|localhost/.test(url), 'sin dependencia de la API: ' + url)
+        assert.ok(fs.existsSync(new URL('../public' + url, import.meta.url)), 'imagen versionada: ' + url)
+      }
+    }
     const hidden = createInstitutionalReader({ ...institutionalCatalog, convenios: institutionalCatalog.convenios.map(item => ({ ...item, visible: false })) })
     assert.equal(hidden('convenios?visible=false').items.length, 0)
     assert.throws(() => hidden('convenios/' + convenio.id), e => e.status === 404)

@@ -85,6 +85,9 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('PUT', 'admin/convocatorias/:id/cierre', 'convocatorias:cerrar'), perm('PUT', 'admin/convocatorias/:id/archivo', 'convocatorias:archivar'),
   perm('POST', 'admin/estudiantes', 'estudiantes:crear'), perm('PUT', 'admin/estudiantes/:id', 'estudiantes:editar'),
   perm('PUT', 'admin/estudiantes/:id/archivo', 'estudiantes:archivar', 'Archivar y restaurar con revisión; nunca elimina al estudiante.'),
+  perm('GET', 'admin/reportes', 'reportes_academicos:leer', 'Catálogo de reportes y capacidades de la cuenta. Solo lectura.'),
+  perm('GET', 'admin/reportes/:tipo', 'reportes_academicos:leer', 'Consulta JSON paginada. Estudiantes y matrículas (datos personales) exigen además estudiantes:leer (y matriculas:leer), comprobados en el servicio.'),
+  perm('GET', 'admin/reportes/:tipo/exportar', 'reportes_academicos:exportar', 'CSV, XLSX o PDF. Estudiantes y matrículas (datos personales) exigen además estudiantes:exportar, comprobado en el servicio.'),
 
   // --- Atención ---
   perm('GET', 'admin/messages', 'mensajes:leer'), perm('GET', 'admin/messages/:id', 'mensajes:leer'),

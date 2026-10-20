@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { usePublicResource } from '../hooks/usePublicResource'
+import { useInstitutionalResource as usePublicResource } from '../institutional/useInstitutionalResource'
 import PublicRequestState from '../components/PublicRequestState'
 import PublicFailure from '../components/PublicFailure'
 import type { CursoPublico, ServicioPublico } from '../types/public'

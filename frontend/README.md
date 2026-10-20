@@ -14,7 +14,7 @@ Login en `/admin/login` y recuperación en `/admin/forgot-password`. `/admin/reg
 
 Desde el panel se gestionan estudiantes, ediciones, matrículas, la importación académica CSV, mensajes y su seguimiento, cotizaciones, consultas del chatbot, roles y la propia cuenta. Las cargas se cancelan al cambiar de vista y las listas usan paginación en el servidor.
 
-El contenido institucional (servicios, cursos y capacitaciones públicos, galería, FAQ, convenios e información de empresa) ya no se administra desde el panel: sus direcciones antiguas muestran un aviso y no consultan la API. La web pública sigue leyendo los datos publicados de NestJS hasta que el equipo web integre el contenido versionado de `src/institutional/` ([guía](../docs/procedimientos/separacion-panel-contenido.md)). Los registros archivados o inactivos permanecen ocultos.
+El contenido institucional (servicios, cursos y capacitaciones públicos, galería, FAQ, convenios e información de empresa) ya no se administra desde el panel: sus direcciones antiguas muestran un aviso y no consultan la API. La web pública lee ese contenido de `src/institutional/catalog.ts` (versionado en código, con imágenes en `public/contenido`, `public/galeria` y `public/site-original`), por lo que se ve sin backend ni base de datos ([guía](../docs/procedimientos/separacion-panel-contenido.md)). Para cambiarlo, edita `catalog.ts` y compila. Solo formularios y chatbot siguen usando la API. Los registros de prueba no se publican.
 
 El guardado comunica cambios a otras pestañas del mismo navegador para volver a consultar la API. Otros navegadores reciben los cambios al cargar o actualizar la sección.
 
