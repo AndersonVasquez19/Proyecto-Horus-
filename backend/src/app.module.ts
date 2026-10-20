@@ -9,6 +9,7 @@ import { CatalogoModule } from './catalogo/catalogo.module';
 import { EstudiantesModule } from './estudiantes/estudiantes.module';
 import { ConvocatoriasModule } from './convocatorias/convocatorias.module';
 import { MatriculasModule } from './matriculas/matriculas.module';
+import { DocentesModule } from './docentes/docentes.module';
 import { ImportacionesModule } from './importaciones/importaciones.module';
 import { ReportesModule } from './reportes/reportes.module';
 import { Module } from '@nestjs/common';
@@ -55,6 +56,7 @@ import { HealthController } from './health.controller';
     EstudiantesModule,
     ConvocatoriasModule,
     MatriculasModule,
+    DocentesModule,
     ImportacionesModule,
     ReportesModule,
     ChatbotModule,

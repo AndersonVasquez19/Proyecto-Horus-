@@ -6,7 +6,7 @@ import type { FollowUpOperation, RouteAccess } from './access';
 // ruta sin clasificar o si un decorador no coincide con este inventario. Las rutas van sin el prefijo global «api».
 export type { RouteAccess } from './access';
 
-export interface RouteEntry { method: 'GET' | 'POST' | 'PUT' | 'DELETE'; path: string; access: RouteAccess; note?: string }
+export interface RouteEntry { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string; access: RouteAccess; note?: string }
 
 const pub = (method: RouteEntry['method'], path: string, note?: string): RouteEntry => ({ method, path, access: { kind: 'publica' }, note });
 const auth = (method: RouteEntry['method'], path: string, note?: string): RouteEntry => ({ method, path, access: { kind: 'autenticada' }, note });
@@ -85,6 +85,17 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('PUT', 'admin/convocatorias/:id/cierre', 'convocatorias:cerrar'), perm('PUT', 'admin/convocatorias/:id/archivo', 'convocatorias:archivar'),
   perm('POST', 'admin/estudiantes', 'estudiantes:crear'), perm('PUT', 'admin/estudiantes/:id', 'estudiantes:editar'),
   perm('PUT', 'admin/estudiantes/:id/archivo', 'estudiantes:archivar', 'Archivar y restaurar con revisión; nunca elimina al estudiante.'),
+  perm('GET', 'admin/docentes', 'docentes:leer', 'Docentes y ponentes: datos personales de terceros, nunca públicos. Docente ≠ cuenta: registrar un docente no crea acceso.'),
+  perm('GET', 'admin/docentes/:id', 'docentes:leer'), perm('GET', 'admin/docentes/:id/asignaciones', 'docentes:leer'),
+  perm('POST', 'admin/docentes', 'docentes:crear'),
+  perm('PATCH', 'admin/docentes/:id', 'docentes:editar', 'Edición parcial con revisión; no cambia el estado activo/inactivo.'),
+  perm('PUT', 'admin/docentes/:id/estado', 'docentes:editar', 'Activar o desactivar con revisión; nunca elimina ni retira asignaciones.'),
+  perm('GET', 'admin/asignaciones-docentes', 'docentes:leer'), perm('GET', 'admin/asignaciones-docentes/:id', 'docentes:leer'),
+  perm('POST', 'admin/asignaciones-docentes', 'docentes:asignar'),
+  perm('PUT', 'admin/asignaciones-docentes/:id', 'docentes:asignar', 'Cambia el rol (principal o participante) de una asignación activa.'),
+  perm('PUT', 'admin/asignaciones-docentes/:id/retiro', 'docentes:asignar', 'Retira de la edición conservando la fila, el motivo y el historial.'),
+  perm('PUT', 'admin/asignaciones-docentes/:id/reactivacion', 'docentes:asignar'),
+  perm('POST', 'admin/asignaciones-docentes/:id/sustitucion', 'docentes:asignar', 'Retira al docente actual y asigna a otro en la misma transacción.'),
   perm('GET', 'admin/reportes', 'reportes_academicos:leer', 'Catálogo de reportes y capacidades de la cuenta. Solo lectura.'),
   perm('GET', 'admin/reportes/:tipo', 'reportes_academicos:leer', 'Consulta JSON paginada. Estudiantes y matrículas (datos personales) exigen además estudiantes:leer (y matriculas:leer), comprobados en el servicio.'),
   perm('GET', 'admin/reportes/:tipo/exportar', 'reportes_academicos:exportar', 'CSV, XLSX o PDF. Estudiantes y matrículas (datos personales) exigen además estudiantes:exportar, comprobado en el servicio.'),

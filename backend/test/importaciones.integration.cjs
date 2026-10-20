@@ -42,6 +42,8 @@ test('Importación CSV: HTTP real, MySQL desechable, atomicidad, permisos y conc
       assert.deepEqual(await snapshot(), before);
       const [[operations]] = await db.query('SELECT COUNT(*) AS n FROM importaciones_academicas'); assert.equal(operations.n, 0);
     });
+    // db:check y la API esperan el esquema completo: se aplican también las migraciones registradas después de la de importaciones (p. ej. docentes).
+    for (const version of versions.slice(versions.indexOf('20261019-importaciones-academicas') + 1)) await applySql(db, version);
     apiDir = mkdtempSync(join(tmpdir(), 'horus-importaciones-api-'));
     const schema = spawnSync(process.execPath, ['-r', join(__dirname, 'isolate-env.cjs'), join(backend, 'scripts/check-database.cjs')], { cwd: apiDir, windowsHide: true, encoding: 'utf8', env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, DB_HOST: process.env.DB_HOST, DB_PORT: process.env.DB_PORT, DB_USER: process.env.DB_USER, DB_PASS: process.env.DB_PASS, DB_NAME: name, DB_RSA_PUBLIC_KEY: process.env.DB_RSA_PUBLIC_KEY } });
     assert.equal(schema.status, 0, schema.stdout);

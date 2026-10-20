@@ -29,6 +29,7 @@ import { HealthController } from '../src/health.controller';
 import { ConvocatoriasController } from '../src/convocatorias/convocatorias.controller';
 import { EstudiantesController } from '../src/estudiantes/estudiantes.controller';
 import { MatriculasController } from '../src/matriculas/matriculas.controller';
+import { AsignacionesDocentesController, DocentesController } from '../src/docentes/docentes.controller';
 import { ReportesController } from '../src/reportes/reportes.controller';
 import { ImportacionesController } from '../src/importaciones/importaciones.controller';
 import { AdminNewsletterController } from '../src/newsletter/admin-newsletter.controller';
@@ -69,7 +70,7 @@ test('los permisos de recursos futuros están separados de los actuales', () => 
 });
 
 test('no existe ningún permiso de eliminación física del historial académico', () => {
-  const forbidden = ['estudiantes', 'matriculas', 'calificaciones', 'certificados', 'asistencia', 'sesiones', 'convocatorias', 'auditoria'];
+  const forbidden = ['estudiantes', 'matriculas', 'docentes', 'calificaciones', 'certificados', 'asistencia', 'sesiones', 'convocatorias', 'auditoria'];
   for (const id of ALL_PERMISSIONS) {
     const [resource, operation] = id.split(':');
     if (forbidden.includes(resource)) assert.notEqual(operation, 'eliminar', id);
@@ -190,6 +191,39 @@ test('matriculas:confirmar: gerente y coordinadora sí; secretaria y cuenta sin 
   assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('matriculas'), 'matriculas es un módulo implementado');
 });
 
+test('docentes: catálogo exacto, gerente y coordinadora (propuesta), secretaría y cuenta sin rol denegadas, sin eliminación física', () => {
+  assert.deepEqual([...RESOURCE_OPERATIONS.docentes], ['leer', 'crear', 'editar', 'asignar']);
+  const all = ['docentes:leer', 'docentes:crear', 'docentes:editar', 'docentes:asignar'];
+  for (const id of all) { assert.ok(isPermission(id), id); assert.equal(can(G, id), true, 'gerente ' + id); assert.equal(can(C, id), true, 'coordinadora ' + id); }
+  // La secretaría no recibe datos personales de docentes mientras no haya una decisión de negocio.
+  for (const id of all) assert.equal(can(S, id), false, 'secretaria ' + id);
+  for (const sinRol of [null, undefined, '', 'ADMIN', 'docente', 'DOCENTE']) for (const id of all) assert.equal(can(sinRol, id), false, String(sinRol) + ' ' + id);
+  for (const id of ['docentes:eliminar', 'docentes:archivar', 'docentes:exportar', 'docentes:*', 'docentes']) assert.equal(isPermission(id), false, id);
+  assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('docentes'), 'docentes es un módulo implementado');
+  assert.deepEqual(permissionsOf(C).filter(id => id.startsWith('docentes:')), [...all].sort());
+  assert.deepEqual(permissionsOf(S).filter(id => id.startsWith('docentes:')), []);
+});
+
+test('docentes: cada ruta exige el permiso previsto, según los decoradores reales y el inventario', () => {
+  const expected: Record<string, string> = {
+    'GET admin/docentes': 'docentes:leer', 'GET admin/docentes/:id': 'docentes:leer', 'GET admin/docentes/:id/asignaciones': 'docentes:leer',
+    'POST admin/docentes': 'docentes:crear', 'PATCH admin/docentes/:id': 'docentes:editar', 'PUT admin/docentes/:id/estado': 'docentes:editar',
+    'GET admin/asignaciones-docentes': 'docentes:leer', 'GET admin/asignaciones-docentes/:id': 'docentes:leer',
+    'POST admin/asignaciones-docentes': 'docentes:asignar', 'PUT admin/asignaciones-docentes/:id': 'docentes:asignar',
+    'PUT admin/asignaciones-docentes/:id/retiro': 'docentes:asignar', 'PUT admin/asignaciones-docentes/:id/reactivacion': 'docentes:asignar',
+    'POST admin/asignaciones-docentes/:id/sustitucion': 'docentes:asignar',
+  };
+  const inventory = ROUTE_INVENTORY.filter(route => /^admin\/(docentes|asignaciones-docentes)/.test(route.path));
+  assert.deepEqual(inventory.map(route => route.method + ' ' + route.path).sort(), Object.keys(expected).sort());
+  for (const route of inventory) assert.deepEqual(route.access, { kind: 'permiso', permission: expected[route.method + ' ' + route.path] }, route.path);
+  const declared = routeHandlers().filter(route => /^\w+ admin\/(docentes|asignaciones-docentes)/.test(route.key));
+  assert.equal(declared.length, Object.keys(expected).length);
+  for (const route of declared) assert.deepEqual(Reflect.getMetadata(ACCESS_METADATA, route.handler), { kind: 'permiso', permission: expected[route.key] }, route.key);
+  // Escribir en el equipo docente nunca se concede con solo leer, y la secretaría no pasa ninguna.
+  for (const route of inventory) if (route.method !== 'GET') assert.notEqual((route.access as { permission: string }).permission, 'docentes:leer', route.path);
+  for (const route of inventory) assert.equal(can(S, (route.access as { permission: string }).permission), false, 'secretaria ' + route.path);
+});
+
 test('la coordinadora no administra cuentas ni configuración crítica', () => {
   for (const id of ALL_PERMISSIONS) if (id.startsWith('cuentas:')) assert.equal(can(C, id), false, id);
   assert.equal(can(C, 'configuracion:editar'), false);
@@ -212,7 +246,7 @@ test('E3.4.1: los tres roles registran consultas manuales (mensajes:crear), pero
   const messages = (role: string) => permissionsOf(role).filter(id => id.startsWith('mensajes:'));
   assert.deepEqual(messages(C), ['mensajes:crear', 'mensajes:editar', 'mensajes:leer']);
   assert.deepEqual(messages(S), ['mensajes:crear', 'mensajes:editar', 'mensajes:leer']);
-  assert.equal(permissionsOf(C).length, 64, 'coordinadora: 62 permisos anteriores + mensajes:crear + matriculas:confirmar (E4.1)');
+  assert.equal(permissionsOf(C).length, 68, 'coordinadora: 62 permisos anteriores + mensajes:crear + matriculas:confirmar (E4.1) + 4 de docentes');
   assert.equal(permissionsOf(S).length, 15, 'secretaria: 14 permisos anteriores + mensajes:crear');
   // La ruta que registra consultas exige exactamente ese permiso (decorador real e inventario).
   const create = ROUTE_INVENTORY.find(route => route.method === 'POST' && route.path === 'admin/messages');
@@ -238,7 +272,7 @@ const CONTROLLERS: Function[] = [
   AttentionController, CursoController, AdminCursoController, ServicioController, AdminServicioController, PreguntaFrecuenteController,
   AdminPreguntaFrecuenteController, ChatbotController, ContactoController, OriginalContentController, ConveniosController, AdminConveniosController,
   CotizacionesController, AdminGaleriaController, GaleriaController, HealthController, AdminNewsletterController, NewsletterController,
-  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController, ReportesController,
+  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController, DocentesController, AsignacionesDocentesController, ReportesController,
 ];
 
 function normalize(...parts: string[]) { return parts.join('/').split('/').filter(Boolean).join('/'); }

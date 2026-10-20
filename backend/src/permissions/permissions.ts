@@ -5,8 +5,8 @@
 // Operaciones específicas de un recurso: enviar (correo), restaurar, asignar_rol, cerrar, registrar,
 // corregir_cerradas, emitir, previsualizar, aplicar.
 //
-// No existen permisos de eliminación física para estudiantes, matrículas, calificaciones ni certificados:
-// el historial académico se archiva o se anula, nunca se borra.
+// No existen permisos de eliminación física para estudiantes, matrículas, docentes, calificaciones ni certificados:
+// el historial académico se archiva, se desactiva o se anula, nunca se borra.
 export const RESOURCE_OPERATIONS = {
   // --- Recursos que ya existen en el backend ---
   cuentas: ['leer', 'crear', 'editar', 'asignar_rol'],
@@ -31,6 +31,7 @@ export const RESOURCE_OPERATIONS = {
   estudiantes: ['leer', 'crear', 'editar', 'archivar', 'exportar'],
   convocatorias: ['leer', 'crear', 'editar', 'cerrar', 'archivar'],
   matriculas: ['leer', 'crear', 'editar', 'anular', 'confirmar'], // confirmar = declarar administrativamente que se completó o no la capacitación (no es una calificación)
+  docentes: ['leer', 'crear', 'editar', 'asignar'], // editar incluye activar/desactivar; asignar = vincular, retirar, reactivar y sustituir docentes en una edición. Sin eliminar: un docente se desactiva.
   sesiones: ['leer', 'crear', 'editar'],
   asistencia: ['leer', 'registrar'],
   calificaciones: ['leer', 'registrar', 'corregir_cerradas'],

@@ -430,6 +430,7 @@ model Convocatoria {
   updatedAt DateTime @updatedAt @db.DateTime(3)
   matriculas Matricula[]
   importaciones ImportacionAcademica[]
+  docentes DocenteAsignacion[]
   @@index([curso_id, fecha_inicio], map: "convocatorias_curso_idx")
   @@index([estado, fecha_inicio], map: "convocatorias_estado_idx")
   @@map("convocatorias")
@@ -551,6 +552,8 @@ enum AcademicoEntidad {
   convocatoria
   matricula
   certificado
+  docente // 20261020-docentes
+  asignacion_docente // 20261020-docentes
 }
 
 enum AcademicoOperacion {
@@ -592,4 +595,78 @@ model AcademicoHistorial {
   @@index([entidad, entidad_id, createdAt], map: "academico_historial_entidad_idx")
   @@index([actor_id, createdAt], map: "academico_historial_actor_idx")
   @@map("academico_historial")
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Docentes y ponentes (migración 20261020-docentes). Son una entidad académica, NO una cuenta: no tienen contraseña, rol ni
+// relación con admin_users, y registrar un docente nunca crea una cuenta de acceso. Nada se borra: un docente se desactiva
+// (activo = false) y sus asignaciones se conservan (relaciones RESTRICT). Las reglas CHECK, la columna generada y las claves
+// foráneas viven en MySQL; Prisma no las valida ni las crea.
+// ---------------------------------------------------------------------------------------------------------------------------
+
+// Documento opcional y de solo DNI peruano, con la misma regla que Estudiante: doc_pais, doc_tipo y doc_numero son los tres NULL
+// o los tres completos. Duplicados: UNIQUE sobre el documento y sobre el correo (ambos admiten varios NULL, sin comparar la
+// colación unicode_ci, que ignora mayúsculas y tildes). El nombre NO es único (existen homónimos): el servicio avisa con 409
+// salvo que se confirme que es otra persona.
+model Docente {
+  id Int @id @default(autoincrement())
+  nombres String @db.VarChar(120)
+  apellidos String @db.VarChar(120)
+  doc_pais String? @db.Char(2)
+  doc_tipo DocumentoTipo?
+  doc_numero String? @db.VarChar(20)
+  especialidad String? @db.VarChar(120)
+  profesion String? @db.VarChar(120)
+  email String? @unique(map: "docentes_email_uq") @db.VarChar(254)
+  telefono String? @db.VarChar(30)
+  activo Boolean @default(true)
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  asignaciones DocenteAsignacion[]
+  @@unique([doc_pais, doc_tipo, doc_numero], map: "docentes_documento_uq")
+  @@index([apellidos, nombres], map: "docentes_nombre_idx")
+  @@map("docentes")
+}
+
+// principal = responsable de la edición (como máximo uno activo); participante = ponente o docente adicional (sin límite).
+enum DocenteRol {
+  principal
+  participante
+}
+
+// activa = figura en el equipo docente; retirada = ya no, pero la fila y su motivo se conservan (historial).
+enum DocenteAsignacionEstado {
+  activa
+  retirada
+}
+
+// Un docente y una edición tienen UNA sola fila (UNIQUE docente_id + convocatoria_id, incluidas las retiradas): retirar y volver
+// a asignar reactiva esa fila, no crea otra. Un solo principal activo por edición: MySQL mantiene la columna generada STORED
+// `principal_activo_convocatoria_id` (= convocatoria_id si rol principal y estado activa, NULL en otro caso) con UNIQUE
+// `docente_asignaciones_principal_uq`. Esa columna NO se declara aquí a propósito: Prisma no admite columnas generadas y nunca
+// debe escribirla. Sustitución: la fila nueva apunta con sustituye_a_id a la retirada; la clave foránea compuesta exige que ambas
+// sean de la MISMA edición. Que la anterior esté retirada, que el docente nuevo esté activo y que la edición admita cambios lo
+// comprueba el servicio, en una transacción con bloqueo curso → edición → docente.
+model DocenteAsignacion {
+  id Int @id @default(autoincrement())
+  docente_id Int
+  docente Docente @relation(fields: [docente_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "docente_asignaciones_docente_fk")
+  convocatoria_id Int
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "docente_asignaciones_convocatoria_fk")
+  rol DocenteRol @default(participante)
+  estado DocenteAsignacionEstado @default(activa)
+  sustituye_a_id Int?
+  sustituye_a DocenteAsignacion? @relation("DocenteSustitucion", fields: [sustituye_a_id, convocatoria_id], references: [id, convocatoria_id], onDelete: Restrict, onUpdate: Restrict, map: "docente_asignaciones_sustituye_fk")
+  sustituciones DocenteAsignacion[] @relation("DocenteSustitucion")
+  retirado_at DateTime? @db.DateTime(3)
+  retiro_motivo String? @db.VarChar(300)
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  @@unique([docente_id, convocatoria_id], map: "docente_asignaciones_docente_edicion_uq")
+  @@unique([id, convocatoria_id], map: "docente_asignaciones_id_edicion_uq")
+  @@index([convocatoria_id, estado], map: "docente_asignaciones_edicion_idx")
+  @@index([sustituye_a_id, convocatoria_id], map: "docente_asignaciones_sustituye_idx")
+  @@map("docente_asignaciones")
 }

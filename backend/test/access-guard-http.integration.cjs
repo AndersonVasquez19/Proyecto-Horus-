@@ -435,9 +435,13 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
         ['pasa', 'pasa', 'pasa', 'sinPermiso', 'sinPermiso'], // secretaría
         ['sinRol', 'sinRol', 'sinRol', 'sinRol', 'sinRol'], // cuenta básica
       ]);
+      // Docentes y ponentes: trece rutas (siete de asignaciones). Gerencia y Coordinación pasan todas; Secretaría y la cuenta básica ninguna.
+      const teachers = routes.filter(route => /^admin\/(docentes|asignaciones-docentes)(?:\/|$)/.test(route.path));
+      assert.equal(teachers.length, 13);
+      assert.deepEqual(ROLE_KEYS.map(key => teachers.map(route => expectation(key, route))), [Array(13).fill('pasa'), Array(13).fill('pasa'), Array(13).fill('sinPermiso'), Array(13).fill('sinRol')]);
       const plan = ROLE_KEYS.flatMap(key => routes.map(route => ({ key, route, expected: expectation(key, route) })));
       const before = await businessSnapshot();
-      for (const route of [...students, ...editions, ...enrollments]) {
+      for (const route of [...students, ...editions, ...enrollments, ...teachers]) {
         assert.equal((await call(route.path, { method: route.method, body: route.body })).status, 401, 'sin sesión: ' + route.label);
       }
       for (const { key, route, expected } of plan.filter(item => item.expected !== 'pasa')) {
@@ -461,7 +465,8 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       // Importaciones: Gerencia +5; Coordinación +4 (solo aplicar se deniega); Secretaría y básica +0.
       // Reportes académicos: Gerencia +3 (catálogo, consulta y exportación); Coordinación +2 (sin reportes_academicos:exportar);
       // Secretaría y básica +0 (sin reportes_academicos:leer). La matriz de roles no cambia.
-      assert.deepEqual(ROLE_KEYS.map(count), [97, 79, 24, 1]);
+      // Docentes y asignaciones: trece rutas para Gerencia y Coordinación (propuesta pendiente de confirmar); Secretaría y básica +0.
+      assert.deepEqual(ROLE_KEYS.map(count), [110, 92, 24, 1]);
       for (const key of ROLE_KEYS) {
         const own = plan.filter(item => item.key === key && item.route.path.startsWith('admin/seguimiento/cotizaciones/'));
         // Un requisito «denegada» se resuelve antes de mirar el rol: 403 genérico también para la cuenta sin rol.

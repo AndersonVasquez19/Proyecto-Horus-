@@ -187,3 +187,34 @@ test('migraciones: DocumentoTipo de Prisma y db:check reflejan el esquema efecti
   const check = readFileSync(join(__dirname, '..', 'scripts', 'check-database.cjs'), 'utf8');
   assert.ok(check.includes(`DOC = "ENUM('DNI')"`));
 });
+
+test('migraciones: la 20261020-docentes crea dos tablas restrictivas y solo amplía el ENUM del historial, sin cuentas ni datos, reflejada en schema.prisma y db:check', () => {
+  const sql = statements(read('20261020-docentes'));
+  assert.deepEqual(sql.map(s => (s.match(/^(?:CREATE TABLE IF NOT EXISTS|ALTER TABLE) `(\w+)`/) ?? [])[1]), ['docentes', 'docente_asignaciones', 'academico_historial'], 'cada sentencia es idempotente y atómica');
+  assert.ok(versions.indexOf('20261020-docentes') > versions.indexOf('20261019-importaciones-academicas'), 'va después de la estructura académica y de Ediciones (capacidad)');
+  const [teachers, assignments, history] = sql;
+  const all = sql.join('\n');
+  assert.ok(!/ON (DELETE|UPDATE) (CASCADE|SET NULL|SET DEFAULT)/i.test(all), 'ninguna relación borra ni modifica en cascada');
+  assert.equal((all.match(/FOREIGN KEY/g) ?? []).length, 3); assert.equal((all.match(/ON DELETE RESTRICT ON UPDATE RESTRICT/g) ?? []).length, 3);
+  assert.ok(!/admin_users|`(password|rol|token|cuenta_id|admin_user_id)`/i.test(teachers), 'un docente no es una cuenta: sin contraseña, rol ni vínculo con admin_users');
+  assert.match(teachers, /`doc_tipo` ENUM\('DNI'\) NULL/, 'documento opcional y solo DNI');
+  assert.match(teachers, /UNIQUE KEY `docentes_documento_uq` \(`doc_pais`, `doc_tipo`, `doc_numero`\)/);
+  assert.match(teachers, /UNIQUE KEY `docentes_email_uq` \(`email`\)/);
+  assert.ok(!/telefono`\)/.test(teachers.replace(/CONSTRAINT[^\n]*\n/g, '')), 'el teléfono se puede compartir: sin índice ni UNIQUE');
+  assert.match(assignments, /UNIQUE KEY `docente_asignaciones_docente_edicion_uq` \(`docente_id`, `convocatoria_id`\)/, 'sin asignaciones duplicadas');
+  assert.match(assignments, /`principal_activo_convocatoria_id` INT GENERATED ALWAYS AS \(CASE WHEN `rol` = 'principal' AND `estado` = 'activa' THEN `convocatoria_id` ELSE NULL END\) STORED/);
+  assert.match(assignments, /UNIQUE KEY `docente_asignaciones_principal_uq` \(`principal_activo_convocatoria_id`\)/, 'un solo principal activo por edición');
+  assert.match(assignments, /FOREIGN KEY \(`sustituye_a_id`, `convocatoria_id`\) REFERENCES `docente_asignaciones` \(`id`, `convocatoria_id`\)/, 'la sustitución es de la misma edición');
+  assert.match(history, /^ALTER TABLE `academico_historial` MODIFY `entidad` ENUM\('estudiante','convocatoria','matricula','certificado','docente','asignacion_docente'\) NOT NULL$/, 'solo se AÑADEN valores al final del ENUM');
+  assert.ok(!/DROP|DELETE|TRUNCATE|RENAME|UPDATE |INSERT /i.test(all.replace(/ON (UPDATE|DELETE) (RESTRICT|CURRENT_TIMESTAMP\(3\))/g, '')), 'sin sentencias destructivas ni de datos');
+  const schema = readFileSync(join(__dirname, '..', 'prisma', 'schema.prisma'), 'utf8'), check = readFileSync(join(__dirname, '..', 'scripts', 'check-database.cjs'), 'utf8');
+  for (const [model, table] of [['Docente', 'docentes'], ['DocenteAsignacion', 'docente_asignaciones']]) {
+    assert.match(schema, new RegExp('model ' + model + ' \\{[\\s\\S]*?@@map\\("' + table + '"\\)'), model);
+    assert.ok(check.includes(table + ': ['), 'db:check debe comprobar las columnas de ' + table);
+  }
+  assert.match(schema, /enum AcademicoEntidad \{[^}]*docente[^}]*asignacion_docente[^}]*\}/);
+  assert.ok(!/^\s+principal_activo_convocatoria_id\b/m.test(schema.match(/model DocenteAsignacion \{([\s\S]*?)\n\}/)![1]), 'Prisma no declara (ni escribe) la columna generada');
+  assert.ok(!/onDelete: (Cascade|SetNull)|onUpdate: (Cascade|SetNull)/.test(schema.slice(schema.indexOf('model Docente '))), 'relaciones restrictivas también en Prisma');
+  for (const name of [...all.matchAll(/(?:KEY|CONSTRAINT) `(\w+)`/g)].map(match => match[1])) assert.ok(check.includes("'" + name + "'"), 'db:check debe verificar ' + name);
+  assert.ok(check.includes("'20261020-docentes'"), 'db:check recorre la migración');
+});
