@@ -98,7 +98,28 @@ Se levantó temporalmente la API compilada con su configuración habitual (`.env
 | `POST /api/chatbot/message` (una consulta de catálogo) | 200 |
 | Errores | Ningún cuerpo filtra SQL, trazas ni nombres de índices |
 
-**No comprobado con cuentas reales:** `GET /api/admin/docentes` con Gerencia (200), Coordinación (200), Secretaría (403) y cuenta básica (403). No hay sesiones válidas disponibles ni se debían usar contraseñas reales ni forjar tokens. Ese resultado se verificó **solo en el clon con cuentas ficticias** (sección 5: 200 / 200 / 403 / 403 y 401 sin sesión, más 404 para un id inexistente). La primera sesión real de Gerencia o Coordinación debería confirmar `GET /api/admin/docentes` = 200 con lista vacía.
+**No comprobado con cuentas reales durante la activación:** `GET /api/admin/docentes` con Gerencia (200), Coordinación (200), Secretaría (403) y cuenta básica (403). En esa sesión no había sesiones válidas disponibles ni se debían usar contraseñas reales ni forjar tokens. Ese resultado se verificó **solo en el clon con cuentas ficticias** (sección 5: 200 / 200 / 403 / 403 y 401 sin sesión, más 404 para un id inexistente). La verificación con la sesión real de Gerencia se hizo después y se documenta en la sección 7.1.
+
+### 7.1 Verificación posterior con la sesión real de Gerencia General
+
+Hecha **personalmente por el responsable** desde Microsoft Edge, con su sesión real de Gerente General en el panel de Horus Group, mediante una petición `GET` **de solo lectura** (no se creó, editó ni asignó ningún docente). Resultado comunicado por el responsable el 20 de octubre de 2026:
+
+| Dato | Resultado |
+| --- | --- |
+| Endpoint | `GET /api/admin/docentes` |
+| Estado HTTP | 200 |
+| Total de docentes | 0 |
+| Mensaje | «Acceso autorizado correctamente» |
+| Backend | NestJS conectado a `horus_db` |
+
+Qué demuestra: autenticación (sesión JWT válida) y autorización de **Gerencia General** funcionan contra el backend NestJS con `DocentesModule` conectado a `horus_db`, y las tablas de docentes recién migradas responden, vacías, como se esperaba.
+
+Qué **no** demuestra, y alcance de la evidencia:
+
+- **Coordinación y Secretaría** no se probaron con sesiones reales. Sus permisos (Coordinación 200, Secretaría 403, cuenta básica 403) se comprobaron únicamente con **cuentas ficticias en el entorno aislado** (clon de la sección 5).
+- Solo se probó una lectura de la lista. No se ejercitaron `POST`, `PUT`, asignaciones ni el detalle por id contra `horus_db`.
+- Esta comprobación la ejecutó y la informó el responsable: no fue reproducida ni observada por el asistente, que no volvió a iniciar NestJS ni a conectarse a `horus_db` para documentarla. No se guardó captura ni registro en el repositorio.
+- No es una validación de despliegue: no indica qué entorno sirvió el backend más allá de lo comunicado (NestJS conectado a `horus_db`).
 
 Tras las pruebas HTTP, `horus_db` volvió a ser idéntica a la instantánea posterior a la migración; la consulta de chatbot no dejó filas de métricas y las cuotas temporales (`rate_limit_buckets`, excluidas de las huellas por diseño) conservaron su recuento.
 
@@ -106,7 +127,7 @@ Tras las pruebas HTTP, `horus_db` volvió a ser idéntica a la instantánea post
 
 No se detuvo ningún servicio, así que no hubo nada que restablecer: el servicio `MySQL80` (PIDs 4800 y 5576), el servidor Vite y los tres contenedores del Docker local siguen como estaban. La API NestJS tampoco estaba en marcha al empezar ni se dejó en marcha. Lo único levantado y retirado fue la API de verificación (puerto 3917) y la instancia aislada (apagada mediante `SHUTDOWN` tras confirmar su UUID y directorio; su directorio de datos, la copia de uploads de prueba y la credencial efímera se eliminaron). Sin procesos Edge `horus-*` sobrantes.
 
-**Pendiente para el responsable:** arrancar o desplegar el backend de este commit con `DocentesModule` cuando decida (la migración ya está aplicada, como exige el orden: migración antes que el código). La API habitual no estaba en marcha durante esta tarea y no se desplegó nada.
+**Pendiente para el responsable:** desplegar el backend de este commit con `DocentesModule` en los entornos que correspondan cuando decida (la migración ya está aplicada en `horus_db`, como exige el orden: migración antes que el código). La API habitual no estaba en marcha durante esta tarea y el asistente no desplegó nada; el responsable arrancó después NestJS contra `horus_db` para la comprobación de la sección 7.1.
 
 ## 9. Recuperación disponible
 
@@ -125,11 +146,11 @@ No se detuvo ningún servicio, así que no hubo nada que restablecer: el servici
 
 ## 11. Limitaciones reales de esta activación
 
-1. **Permisos probados con cuentas ficticias.** Gerencia 200, Coordinación 200, Secretaría 403 y cuenta básica 403 se comprobaron solo en el clon aislado. Contra `horus_db` únicamente se verificaron 401 sin sesión, las lecturas públicas y el chatbot.
-2. **Verificación pendiente con la sesión administrativa real.** Falta confirmar `GET /api/admin/docentes` = 200 con lista vacía con una sesión real de Gerencia o Coordinación, una vez desplegado el backend con `DocentesModule`.
+1. **Permisos de Coordinación y Secretaría probados solo con cuentas ficticias.** Coordinación 200, Secretaría 403 y cuenta básica 403 se comprobaron únicamente en el clon aislado, no con sesiones reales. Contra `horus_db` se verificaron 401 sin sesión, las lecturas públicas y el chatbot (por el asistente), y Gerencia 200 con la sesión real del responsable (sección 7.1).
+2. **Gerencia verificada con sesión real, pero de forma limitada.** El responsable confirmó `GET /api/admin/docentes` = 200, 0 docentes, desde Edge (solo lectura; sección 7.1). Sigue sin probarse con sesión real Coordinación ni Secretaría, ni ninguna escritura contra `horus_db`.
 3. **Respaldos no cifrados.** La base y los archivos subidos contienen datos personales y hashes de contraseñas de cuentas; el SHA-256 solo detecta daños accidentales. Pendiente de la política de custodia del responsable.
 4. **Ventana por observación.** La ausencia de escritores se comprobó, no se impuso bloqueando el puerto 3306.
-5. **Backend sin desplegar.** El código con `DocentesModule` no se ha arrancado ni desplegado contra `horus_db`; solo se levantó temporalmente en el puerto 3917 para las pruebas de solo lectura.
+5. **Backend sin desplegar.** Durante la activación, el código con `DocentesModule` solo se levantó temporalmente en el puerto 3917 para las pruebas de solo lectura. Después, según el responsable, un backend NestJS conectado a `horus_db` atendió la petición de la sección 7.1; no se ha registrado ningún despliegue en Railway ni en otro entorno.
 6. **Alcance de la migración.** Solo `horus_db`. `horus_local`, Railway, `horus_group` y cualquier otra base o instalación deben verificar su propio historial (`npm run db:check`) y seguir el procedimiento de [Gestión de docentes y ponentes](gestion-docentes.md#migración-y-activación), que se conserva (respaldo con `--verify-only`, restauración aislada y ensayo en clon) para futuras instalaciones.
 
 ## 12. Git
