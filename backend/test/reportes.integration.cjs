@@ -66,16 +66,44 @@ const col = i => { let s = ''; for (let n = i + 1; n > 0; n = Math.floor((n - 1)
 const fromSerial = (serial, withTime) => { const d = new Date(Date.UTC(1899, 11, 30) + Math.round(serial * 1440) * 60000).toISOString(); return withTime ? d.slice(0, 10) + ' ' + d.slice(11, 16) : d.slice(0, 10); };
 // Texto de un PDF de pdfkit (flujos FlateDecode, operadores TJ con cadenas hex WinAnsi). Solo para comprobar contenido.
 const WIN_ANSI_80 = { 0x91: 0x2018, 0x92: 0x2019, 0x93: 0x201c, 0x94: 0x201d, 0x95: 0x2022, 0x96: 0x2013, 0x97: 0x2014, 0x85: 0x2026, 0x80: 0x20ac };
+// El delimitador final es solo `\nendstream`: un `\r?` previo consumiría como terminador el último byte del flujo comprimido
+// cuando vale 0x0D (≈1/256 de los flujos), lo truncaría y `inflateSync` fallaría. Si el productor usara CRLF, el `\r` sobrante
+// queda al final de los datos y zlib lo ignora tras el fin del flujo. pdfkit comprime todos sus flujos: uno que no se pueda
+// descomprimir es un fallo del PDF o del extractor y debe verse, no omitirse en silencio.
 function pdfText(pdf) {
   const pages = [];
-  for (const match of pdf.toString('latin1').matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
-    let content; try { content = zlib.inflateSync(Buffer.from(match[1], 'latin1')).toString('latin1'); } catch { continue; }
+  let index = 0;
+  for (const match of pdf.toString('latin1').matchAll(/stream\r?\n([\s\S]*?)\nendstream/g)) {
+    index++;
+    let content;
+    try { content = zlib.inflateSync(Buffer.from(match[1], 'latin1')).toString('latin1'); }
+    catch (error) { throw new Error('PDF: el flujo ' + index + ' (' + match[1].length + ' bytes) no se pudo descomprimir: ' + error.message); }
     const lines = [...content.matchAll(/\[((?:[^\]\\]|\\.)*)\]\s*TJ/g)].map(op => [...op[1].matchAll(/<([0-9a-fA-F]*)>/g)]
       .map(part => [...Buffer.from(part[1], 'hex')].map(b => String.fromCodePoint(WIN_ANSI_80[b] ?? b)).join('')).join(''));
     if (lines.length) pages.push(lines.join('\n'));
   }
   return pages;
 }
+// Regresión determinista del extractor (sin MySQL ni red): un flujo comprimido cuyo último byte es 0x0D no puede truncarse.
+// El último byte de un flujo zlib es el byte bajo del Adler-32 del contenido, así que se busca un relleno cuyo contenido lo produzca.
+function flateStreamEndingWithCr(text, terminator) {
+  for (let i = 0; i < 100000; i++) {
+    const content = Buffer.from('BT\n[<' + Buffer.from(text, 'latin1').toString('hex') + '>] TJ\nET\n% ' + i + '\n', 'latin1');
+    const compressed = zlib.deflateSync(content);
+    if (compressed[compressed.length - 1] === 0x0d) return Buffer.concat([Buffer.from('<< /Length ' + compressed.length + ' /Filter /FlateDecode >>\nstream' + terminator), compressed, Buffer.from(terminator + 'endstream\n')]);
+  }
+  throw new Error('No se encontró un flujo comprimido que termine en 0x0D');
+}
+test('pdfText conserva un flujo comprimido cuyo último byte es 0x0D y falla ante uno ilegible', () => {
+  for (const terminator of ['\n', '\r\n']) {
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.3\n1 0 obj\n'), flateStreamEndingWithCr('Ficticio 0D', terminator), Buffer.from('endobj\n%%EOF\n')]);
+    assert.deepEqual(pdfText(pdf), ['Ficticio 0D'], 'terminador ' + JSON.stringify(terminator));
+  }
+  // Un flujo al que le falta su último byte (lo que hacía la expresión anterior) ya no se omite: la prueba falla con un mensaje claro.
+  const truncated = flateStreamEndingWithCr('Ficticio 0D', '\n');
+  const broken = Buffer.concat([Buffer.from('%PDF-1.3\n'), truncated.subarray(0, truncated.indexOf(Buffer.from('\nendstream')) - 1), Buffer.from('\nendstream\n%%EOF\n')]);
+  assert.throws(() => pdfText(broken), /PDF: el flujo 1 \(\d+ bytes\) no se pudo descomprimir/);
+});
 // Opcional: guarda los archivos descargados por HTTP (datos ficticios) como ejemplos. Nunca se ejecuta en la CI.
 const sample = (name, data) => {
   const dir = process.env.REPORTES_MUESTRAS_DIR;
