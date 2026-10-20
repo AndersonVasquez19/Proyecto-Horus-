@@ -21,6 +21,16 @@ function verifyProfile(profile, identity) {
 // EPERM/EACCES; el rmSync nativo de Node 23+ no reintenta ese caso (Node 22 sí). Reintento
 // síncrono y acotado, solo sobre el perfil propio y verificando su identidad en cada intento.
 const RETRYABLE_REMOVE = new Set(['EPERM', 'EACCES', 'EBUSY', 'ENOTEMPTY']);
+// Solo diagnóstico: si el borrado sigue fallando, añade al error qué procesos mantienen archivos del perfil abiertos según el
+// Restart Manager de Windows. No cierra nada ni cambia el resultado: el error se sigue lanzando y el smoke sigue fallando.
+function withLockReport(profile, error) {
+  if (process.platform !== 'win32' || !RETRYABLE_REMOVE.has(error.code)) return error;
+  const report = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+    '-File', path.join(__dirname, 'smoke-profile-locks.ps1'), '-Profile', profile], { windowsHide: true, encoding: 'utf8', timeout: 20000 });
+  const detail = report.error ? 'diagnóstico no disponible (' + report.error.message + ')' : (report.stdout || report.stderr || '').trim().replace(/\s+/g, ' ');
+  error.message += ' [bloqueo del perfil: ' + detail + ']';
+  return error;
+}
 function removeProfile(profile, identity, deadline = Date.now() + 15000) {
   for (;;) {
     verifyProfile(profile, identity);
@@ -28,7 +38,7 @@ function removeProfile(profile, identity, deadline = Date.now() + 15000) {
       fs.rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
       return;
     } catch (error) {
-      if (!RETRYABLE_REMOVE.has(error.code) || Date.now() >= deadline) throw error;
+      if (!RETRYABLE_REMOVE.has(error.code) || Date.now() >= deadline) throw withLockReport(profile, error);
     }
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
   }

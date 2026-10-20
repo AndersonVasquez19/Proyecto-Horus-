@@ -169,10 +169,10 @@ async function main() {
     ck(!/nota previa|mensaje/i.test(rows[0].join('|')), 'el CSV no incluye notas ni el cuerpo del mensaje');
     await p.close(); }
 
-  { // otro recurso con «items» (ResourceManager sigue intacto para el resto de secciones)
-    const p = await session('/admin/dashboard?section=cursos&seccion=cursos&vista=tabla'); await p.wait('document.querySelectorAll(".hp-table tbody tr").length === 3', 'tabla de cursos');
-    const rows = await p.evaluate("[...document.querySelectorAll('.hp-table tbody tr')].map(tr => tr.querySelector('.hp-record strong')?.textContent)");
-    ck(rows.join('|') === 'Curso 1|Curso 2|Curso 3' && (await p.evaluate("document.querySelector('.hp-card-heading .hp-count')?.textContent")) === '3', 'cursos (respuesta con «items»): sigue mostrando sus registros y su total en ResourceManager', { rows }); await p.close(); }
+  { // vista=tabla en otra sección no abre la tabla de mensajes. Cursos ya no se gestiona en el panel (separación del contenido
+    // institucional): su dirección antigua muestra el aviso, sin tabla ni bandeja.
+    const p = await session('/admin/dashboard?section=cursos&seccion=cursos&vista=tabla'); await p.wait('document.querySelector("[data-panel-editorial-retired]")', 'aviso de cursos retirados');
+    ck(await p.evaluate('!document.querySelector(".hw-inbox") && !document.querySelector(".hp-table")'), 'cursos con vista=tabla: aviso de gestión retirada, sin tabla de registros ni bandeja de mensajes'); await p.close(); }
 
   console.log('\n== FUNCIONES CONSERVADAS');
   { const p = await session(TABLE); await waitRows(p, 20, 'tabla');

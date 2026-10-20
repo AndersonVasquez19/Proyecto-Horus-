@@ -2,11 +2,13 @@
 // Cubre: indicadores del resumen y su error, Centro de Atención ante errores 500/formato inesperado (conservando filtros e ?id=),
 // retiro de Suscripciones y Reclamaciones del panel (menú, tarjetas y rutas directas) y los canales públicos que se conservan.
 const { start, sleep, TOKEN } = require('./smoke-kit.cjs');
+const permissionSource = require('node:fs').readFileSync(require('node:path').join(__dirname, '../../backend/src/permissions/permissions.ts'), 'utf8');
+const managerPermissions = [...permissionSource.match(/RESOURCE_OPERATIONS = \{([\s\S]*?)\} as const/)[1].matchAll(/^\s*([a-z_]+): \[([^\]]*)\]/gm)]
+  .flatMap(([, resource, ops]) => [...ops.matchAll(/'([a-z_]+)'/g)].map(op => resource + ':' + op[1]));
 
 const sim = { stats: 'ok', list: 'ok', libro: 'ok', unsub: 'ok', activity: 'ok' };
 const requests = [];
-const zero = { total: 0, publicados: 0, borradores: 0, archivados: 0 };
-const catalogo = { cursos: { total: 4, publicados: 3, borradores: 1, archivados: 0, por_tipo: { curso: { total: 3, publicados: 2, borradores: 1, archivados: 0 }, capacitacion: { total: 1, publicados: 1, borradores: 0, archivados: 0 } } }, servicios: { ...zero, total: 5, publicados: 5 }, 'preguntas-frecuentes': { ...zero, total: 2, publicados: 2 } };
+const academico = { estudiantes: 12, edicionesActivas: 2, matriculasRegistradas: 9, matriculasVigentes: 7 };
 const messages = Array.from({ length: 6 }, (_, i) => { const id = 6 - i; return { id, nombre: 'Persona ' + id, email: 'p' + id + '@example.test', telefono: '987654' + String(id).padStart(3, '0'), asunto: 'Asunto ' + id, mensaje: 'Mensaje ' + id, estado: id % 2 ? 'nuevo' : 'en_proceso', createdAt: '2026-05-0' + id + 'T10:00:00.000Z', updatedAt: '2026-05-0' + id + 'T10:00:00.000Z' }; });
 // Serie ficticia terminada hoy (UTC): día i → i % 4 mensajes, la mitad (redondeo hacia abajo) del chatbot.
 const activity = dias => { const today = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate());
@@ -25,12 +27,12 @@ const handler = async (req, res, { route, url, json, body }) => {
   if (route === '/api/reclamaciones' && req.method === 'POST') { await body(); return (sim.libro === 'error' ? json({ ok: false, mensaje: 'ER_SECRET fallo interno' }, 500) : json({ ok: true, correo_enviado: true, numero_reclamo: 'HG-20260101-TEST', id: 1 })) || true; }
   if (route === '/api/newsletter/unsubscribe' && req.method === 'POST') { await body(); return (sim.unsub === 'error' ? json({ message: 'ER_SECRET' }, 500) : json({ ok: true })) || true; }
   if (!route.startsWith('/api/admin/')) return json({ ok: true, items: [], pagination: { page: 1, total: 0, pages: 1, limit: 12 } }) || true;
-  if (route === '/api/admin/me') return (token === TOKEN ? json({ ok: true, user: { id: 1, nombre: 'Ana Administradora', email: 'ana@example.test' } }) : json({ message: 'Unauthorized' }, 401)) || true;
+  if (route === '/api/admin/me') return (token === TOKEN ? json({ ok: true, user: { id: 1, nombre: 'Ana Administradora', email: 'ana@example.test', rol: 'GERENTE_GENERAL', permisos: managerPermissions }, acceso: { modo: 'por_roles' } }) : json({ message: 'Unauthorized' }, 401)) || true;
   if (token !== TOKEN) return json({ message: 'Unauthorized' }, 401) || true;
   const sub = route.slice('/api/admin/'.length); let m;
   if (sub === 'stats/actividad') return (sim.activity === 'error' ? json({ message: 'Internal server error ER_SECRET' }, 500) : sim.activity === 'malformed' ? json({ ok: true, items: [] }) : json(activity(+url.searchParams.get('dias') || 30))) || true;
   if (sub === 'stats' && sim.stats === 'malformed') return json({ ok: true, items: [], pagination: { page: 1, total: 0, pages: 1 } }) || true;
-  if (sub === 'stats') return (sim.stats === 'error' ? json({ message: 'Internal server error ER_SECRET' }, 500) : json({ ok: true, stats: { catalogo, mensajes: { total: 6, nuevos: 3, enProceso: 3, atendidos: 0, archivados: 0 }, reclamaciones: { total: 9 }, contenido: { total: 0 }, administradores: { total: 1 } }, actividadReciente: { mensajes: messages.slice(0, 2).map(x => ({ id: x.id, nombre: x.nombre, asunto: x.asunto, estado: x.estado, createdAt: x.createdAt })), reclamaciones: [] } })) || true;
+  if (sub === 'stats') return (sim.stats === 'error' ? json({ message: 'Internal server error ER_SECRET' }, 500) : json({ ok: true, stats: { academico, mensajes: { total: 6, nuevos: 3, enProceso: 3, atendidos: 0, archivados: 0, pendientes: 6 } }, actividadReciente: { mensajes: messages.slice(0, 2).map(x => ({ id: x.id, nombre: x.nombre, asunto: x.asunto, estado: x.estado, createdAt: x.createdAt })) } })) || true;
   if (sub === 'messages') {
     if (sim.list === 'error') return json({ message: 'Internal server error ER_SECRET' }, 500) || true;
     if (sim.list === 'malformed') return json({ ok: true, pagination: { total: 6, page: 1, limit: 20, pages: 1 }, metrics: {} }) || true;
@@ -51,19 +53,35 @@ const handler = async (req, res, { route, url, json, body }) => {
   const clean = async () => { await ctl('clear'); await k.closePages(); };
   const metricValues = p => p.evaluate('[...document.querySelectorAll(".hp-metrics article")].map(a => a.querySelector("strong").textContent)');
   const navLabels = p => p.evaluate('[...document.querySelectorAll("aside nav .hp-nav-item")].map(b => b.textContent.trim())');
+  const capture = async (p, name) => {
+    const fs = require('node:fs'), path = require('node:path');
+    const dir = path.resolve(__dirname, '../.artifacts/panel-operativo'); fs.mkdirSync(dir, { recursive: true });
+    await p.evaluate('document.fonts.ready.then(() => true)');
+    const shot = await p.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+    fs.writeFileSync(path.join(dir, name + '.png'), Buffer.from(shot.data, 'base64'));
+  };
 
   console.log('\n== RESUMEN: INDICADORES');
   await clean();
   { const p = await session('/admin/dashboard'); await p.wait('document.querySelector(".hp-metrics article strong") && document.querySelector(".hp-metrics article strong").textContent !== "…" && document.querySelector(".hw-work")', 'indicadores cargados');
     const values = await metricValues(p);
-    ck(values.join() === '11,10,3,1', 'los indicadores muestran las cifras reales de la API (catálogo 11, publicados 10, mensajes nuevos 3, borradores 1)', values);
+    ck(values.join() === '12,2,9,7,6', 'los indicadores muestran estudiantes, ediciones abiertas, matrículas registradas/vigentes y consultas pendientes de la API', values);
     ck(!(await p.evaluate('!!document.querySelector(".hp-error")')), 'sin aviso de error cuando la API responde');
     ck(await p.evaluate('!!document.querySelector(".hw-work")'), 'se muestra «Tu trabajo pendiente»');
     const labels = await navLabels(p);
     ck(!labels.some(l => /Suscripciones|Reclamaciones/.test(l)) && labels.includes('Mensajes') && labels.includes('Cotizaciones'), 'el menú ya no tiene Suscripciones ni Reclamaciones y conserva Mensajes y Cotizaciones', labels);
     const links = await p.evaluate('[...document.querySelectorAll(".hw-work a, .hp-main a")].map(a => a.getAttribute("href"))');
     ck(!links.some(h => /reclamaciones|newsletter/.test(h || '')) && !/reclamaciones registradas|Consultar suscripciones/.test(await p.text('main')), 'el resumen no enlaza ni menciona los módulos retirados', links);
-    ck(links.some(h => /\/admin\/messages\?estado=nuevo/.test(h || '')), 'las tarjetas del Centro de Atención siguen enlazadas'); await p.close(); }
+    ck(links.some(h => /\/admin\/messages\?estado=nuevo/.test(h || '')), 'las tarjetas del Centro de Atención siguen enlazadas');
+    ck(!labels.some(l => /Educación|Galería|Convenios|Biblioteca|Información de empresa|Preguntas frecuentes|Servicios tecnológicos/.test(l)), 'el menú no ofrece gestores editoriales');
+    ck(await p.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'resumen de escritorio sin desborde');
+    await capture(p, 'resumen-escritorio'); await p.close(); }
+  { const p = await session('/admin/dashboard', 390); await p.wait('document.querySelector(".hw-work")', 'resumen móvil');
+    ck(await p.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'resumen móvil sin desborde horizontal');
+    await capture(p, 'resumen-movil');
+    await p.click('.hp-menu-toggle', 'Abrir menú'); await p.wait('document.querySelector(".hp-sidebar.is-open")', 'menú móvil');
+    ck(await p.evaluate('document.querySelector(".hp-body").inert && document.querySelector(".hp-sidebar").contains(document.activeElement)'), 'menú móvil aísla el contenido y recibe el foco');
+    await capture(p, 'menu-movil'); await p.close(); }
 
   console.log('\n== RESUMEN: ERROR DE ESTADÍSTICAS');
   await clean();
@@ -72,7 +90,7 @@ const handler = async (req, res, { route, url, json, body }) => {
     ck(values.every(v => v === '—'), 'con la API en error los indicadores muestran «—», no cero', values);
     ck(/Los indicadores no están disponibles/.test(text) && !/ER_SECRET/.test(text), 'aviso claro en español sin texto técnico del backend', text.slice(0, 160));
     ck(!(await p.evaluate('!!document.querySelector(".hw-work")')) && /No se pudo consultar la actividad/.test(text), 'no se presentan tarjetas de trabajo ni actividad inventadas');
-    await ctl('stats', 'ok'); await p.click('.hp-heading .hp-btn', 'Actualizar'); await p.wait('!document.querySelector(".hp-error") && document.querySelector(".hp-metrics article strong")?.textContent === "11"', 'recuperación');
+    await ctl('stats', 'ok'); await p.click('.hp-heading .hp-btn', 'Actualizar'); await p.wait('!document.querySelector(".hp-error") && document.querySelector(".hp-metrics article strong")?.textContent === "12"', 'recuperación');
     ck(true, '«Actualizar resumen» se recupera del error'); await p.close(); }
 
   console.log('\n== RESUMEN: RESPUESTA DE ESTADÍSTICAS CON FORMA INESPERADA');
@@ -96,7 +114,7 @@ const handler = async (req, res, { route, url, json, body }) => {
   await clean();
   { await ctl('activity', 'error'); const p = await session('/admin/dashboard'); await p.wait('document.querySelector(".hp-activity-card [role=alert]")', 'error de actividad'); const text = await p.text('.hp-activity-card'); const values = await metricValues(p);
     ck(!/ER_SECRET/.test(text) && /No se pudo cargar la actividad/.test(text) && !(await p.evaluate('!!document.querySelector(".hp-chart")')), 'si falla la actividad se avisa sin texto técnico y no se dibuja un gráfico inventado', text.slice(0, 160));
-    ck(values.join() === '11,10,3,1', 'los indicadores del resumen siguen disponibles aunque falle el gráfico', values);
+    ck(values.join() === '12,2,9,7,6', 'los indicadores del resumen siguen disponibles aunque falle el gráfico', values);
     await ctl('activity', 'ok'); await p.click('.hp-activity-card [role=alert] .hp-btn', 'Reintentar'); await p.wait('document.querySelectorAll(".hp-chart title").length === 30', 'recuperación'); ck(true, '«Reintentar» recupera el gráfico'); await p.close(); }
   await clean();
   { await ctl('activity', 'malformed'); const p = await session('/admin/dashboard'); await p.wait('document.querySelector(".hp-activity-card [role=alert]")', 'formato inesperado');

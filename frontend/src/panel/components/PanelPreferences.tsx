@@ -7,7 +7,7 @@ import { useUnsavedChanges } from '../unsaved/unsavedContext';
 
 const REQUEST_TIMEOUT_MS = 20_000;
 
-// "Ajustes": for now only the signed-in administrator's password.
+// «Mi cuenta»: por ahora solo la contraseña de la cuenta con sesión iniciada.
 export default function PanelPreferences() {
   const { token, logout } = useAdminAuth();
   const [busy, setBusy] = useState(false), [actionError, setActionError] = useState(''), [mismatch, setMismatch] = useState(false);
@@ -46,7 +46,7 @@ export default function PanelPreferences() {
     }
   };
   return <>
-    <div className="hp-heading"><div><p className="hp-kicker">ESPACIO DE TRABAJO</p><h1>Ajustes</h1><p>Configura las preferencias de tu cuenta y del panel.</p></div></div>
+    <div className="hp-heading"><div><p className="hp-kicker">ADMINISTRACIÓN</p><h1>Mi cuenta</h1><p>Gestiona el acceso de tu propia cuenta.</p></div></div>
     <section className="hp-card hp-password-card" aria-labelledby="password-title">
       <div className="hp-card-heading"><div><h2 id="password-title">Cambiar contraseña</h2></div><PanelIcon name="lock" /></div>
       {actionError && <p id="password-error" ref={errorBox} tabIndex={-1} role="alert" className="hp-error">{actionError}</p>}

@@ -29,6 +29,7 @@ model AdminUser {
   matriculas_confirmadas Matricula[] @relation("MatriculaConfirmadoPor")
   certificados_emitidos Certificado[] @relation("CertificadoEmitidoPor")
   certificados_anulados Certificado[] @relation("CertificadoAnuladoPor")
+  importaciones ImportacionAcademica[]
   @@map("admin_users")
 }
 
@@ -428,9 +429,31 @@ model Convocatoria {
   createdAt DateTime @default(now()) @db.DateTime(3)
   updatedAt DateTime @updatedAt @db.DateTime(3)
   matriculas Matricula[]
+  importaciones ImportacionAcademica[]
   @@index([curso_id, fecha_inicio], map: "convocatorias_curso_idx")
   @@index([estado, fecha_inicio], map: "convocatorias_estado_idx")
   @@map("convocatorias")
+}
+
+enum ImportacionEstado {
+  confirmada
+}
+
+model ImportacionAcademica {
+  id String @id @db.Char(36)
+  archivo_sha256 String @db.Char(64)
+  convocatoria_id Int
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "importaciones_convocatoria_fk")
+  actor_id Int
+  actor AdminUser @relation(fields: [actor_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "importaciones_actor_fk")
+  estado ImportacionEstado @default(confirmada)
+  importados Int
+  omitidos Int
+  rechazados Int
+  estudiantes_nuevos Int
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  @@unique([archivo_sha256, convocatoria_id], map: "importaciones_archivo_destino_uq")
+  @@map("importaciones_academicas")
 }
 
 enum MatriculaEstado {

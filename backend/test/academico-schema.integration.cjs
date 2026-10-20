@@ -38,7 +38,7 @@ const statementsOf = name => readFileSync(join(backend, 'migrations', name + '.s
 
 test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actualización, recuperación, restricciones y Prisma)', async t => {
   if (process.env.ACADEMICO_SCHEMA_TEST_DB !== 'true') return t.skip('Requiere ACADEMICO_SCHEMA_TEST_DB=true y un MySQL desechable identificado.');
-  assert.deepEqual(VERSIONS.slice(-3), [MIGRATION, SOLO_DNI, '20261018-convocatorias-capacidad'], 'E4.2 y la de solo DNI son las últimas registradas, en ese orden');
+  assert.deepEqual(VERSIONS.slice(VERSIONS.indexOf(MIGRATION)), [MIGRATION, SOLO_DNI, '20261018-convocatorias-capacidad', '20261019-importaciones-academicas'], 'las migraciones académicas conservan su orden y añaden importaciones al final');
   const host = process.env.DB_HOST || '', port = Number(process.env.DB_PORT || 0);
   const expectedUuid = String(process.env.ACADEMICO_SCHEMA_TEST_SERVER_UUID ?? '').trim().toLowerCase();
   assert.ok(['localhost', '127.0.0.1', '::1'].includes(host) && port > 0, 'DB_HOST de bucle local y DB_PORT explícito');
@@ -98,12 +98,14 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
   const databaseAtE41 = () => databaseBefore(MIGRATION); // sin tablas académicas
   const databaseAtE42 = async () => {
     const name = await databaseBefore(SOLO_DNI);
-    // Aislar las pruebas históricas de DNI: capacidad es independiente y ya está aplicada en su línea base.
+    // Aislar las pruebas históricas de DNI: capacidad e importaciones son independientes y ya están en su línea base.
     // La actualización natural E4.3b → capacidad, con datos y sin esta preparación, se prueba en convocatorias.integration.cjs.
     const db = await connectTo(name);
     try {
-      for (const statement of statementsOf('20261018-convocatorias-capacidad')) await db.query(statement);
-      await db.execute('INSERT INTO horus_migrations (name, applied_at) VALUES (?, ?)', ['20261018-convocatorias-capacidad', new Date()]);
+      for (const version of ['20261018-convocatorias-capacidad', '20261019-importaciones-academicas']) {
+        for (const statement of statementsOf(version)) await db.query(statement);
+        await db.execute('INSERT INTO horus_migrations (name, applied_at) VALUES (?, ?)', [version, new Date()]);
+      }
     } finally { await db.end(); }
     return name;
   }; // esquema documental E4.2 (todavía con CE y PASAPORTE)
@@ -227,7 +229,7 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
       const before = await snapshot(name, ['horus_migrations']);
       assert.ok(before.cursos && before.admin_users && before.cotizaciones, 'instantánea de las tablas habituales');
       await migrateAndCheck(name);
-      const after = await snapshot(name, ['horus_migrations', ...ACADEMIC_TABLES]);
+      const after = await snapshot(name, ['horus_migrations', ...ACADEMIC_TABLES, 'importaciones_academicas']);
       assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort(), 'no se crean ni eliminan otras tablas');
       for (const table of Object.keys(before)) {
         assert.equal(after[table].ddl, before[table].ddl, table + ': definición sin cambios');
