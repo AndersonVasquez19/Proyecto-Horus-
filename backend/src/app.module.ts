@@ -10,6 +10,7 @@ import { EstudiantesModule } from './estudiantes/estudiantes.module';
 import { ConvocatoriasModule } from './convocatorias/convocatorias.module';
 import { MatriculasModule } from './matriculas/matriculas.module';
 import { ImportacionesModule } from './importaciones/importaciones.module';
+import { ReportesModule } from './reportes/reportes.module';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { PublicRateLimitGuard } from './common/public-rate-limit.guard';
@@ -55,6 +56,7 @@ import { HealthController } from './health.controller';
     ConvocatoriasModule,
     MatriculasModule,
     ImportacionesModule,
+    ReportesModule,
     ChatbotModule,
     MailModule,
     ContactoModule,
