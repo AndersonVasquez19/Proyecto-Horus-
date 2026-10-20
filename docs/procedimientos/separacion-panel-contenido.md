@@ -71,6 +71,8 @@ Estilo limitado al panel con navy `#102D4F`, azul `#2554EB`, cian `#18BBD1`, dor
 
 ## Integración de Carlos
 
+> **Estado actual (integrada).** Los 11 consumidores públicos ya importan `useInstitutionalResource`. `catalog.ts` se regeneró como instantánea del contenido **publicado** de la base real (4 capacitaciones, 19 servicios, 4 convenios con foto, 61 fotos de galería, ajustes de empresa; FAQ vacía porque la base no tiene ninguna). Se excluyó el curso de prueba `test`. Los IDs coinciden con MySQL, de modo que los enlaces del chatbot apuntan al mismo elemento. Las 25 imágenes subidas desde el panel se copiaron a `frontend/public/contenido` (hash en [inventario-contenido-publicado.csv](inventario-contenido-publicado.csv)). Lo descrito a continuación sobre la semilla original es histórico.
+
 `frontend/src/institutional/` contiene:
 
 - `types.ts`: contratos basados en los tipos públicos existentes, sin Prisma.

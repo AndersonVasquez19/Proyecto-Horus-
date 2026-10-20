@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { usePublicResource } from '../hooks/usePublicResource'
+import { useInstitutionalResource as usePublicResource } from '../institutional/useInstitutionalResource'
 import type { ConvenioList } from '../types/convenios'
 import HomeWelcome from '../components/home/HomeWelcome'
 import HomeHero from '../components/home/HomeHero'

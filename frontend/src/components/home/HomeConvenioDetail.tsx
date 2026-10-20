@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { usePublicResource } from '../../hooks/usePublicResource'
+import { useInstitutionalResource as usePublicResource } from '../../institutional/useInstitutionalResource'
 import type { ConvenioResponse } from '../../types/convenios'
 import PublicImage from '../PublicImage'
 import HomeConvenioGallery from './HomeConvenioGallery'

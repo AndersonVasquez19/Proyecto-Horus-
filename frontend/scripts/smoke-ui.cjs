@@ -12,7 +12,7 @@ const courseEntries=[fixtureCourse,fixtureCap,...programEntries];
 const importBodies=[],serviceBodies=[],courseBodies=[],serviceDeletes=[],courseDeletes=[],adminCourseRequests=[],loginBodies=[],passwordBodies=[];
 const service={id:1,titulo:'Servicio de prueba',descripcion:'Descripción del servicio',categoria:'cableado',alcance:'Alcance de prueba',estado:'publicado'};
 const quote={id:1,numero:'COT-PRUEBA',cliente:'Cliente de prueba',email:'test@example.com',telefono:'',documento:'',direccion:'',emisor:'Emisor de prueba',datos_emisor:'',moneda:'PEN',validez:'2099-12-31',condiciones:'Condiciones de prueba',conceptos:[{descripcion:'Servicio',cantidad:1,precio:100,importe:100}],subtotal:'100.00',descuento:0,tasa:18,impuesto:'18.00',total:'118.00',estado:'borrador',revision:1,historial:[{accion:'Creada como borrador',usuario:1,fecha:'2026-01-01T00:00:00Z'}]};
-let chunkError=false,faqError=false,meUnavailable=false,attention={estado:'nuevo',responsable:'',notas:'',respuesta:'',revision:1,historial:[]},bodies=[],contactBodies=[];
+let chunkError=false,meUnavailable=false,attention={estado:'nuevo',responsable:'',notas:'',respuesta:'',revision:1,historial:[]},bodies=[],contactBodies=[];
 const server=http.createServer(async(req,res)=>{
  try{const u=new URL(req.url,'http://localhost'),p=u.pathname;
  if(p.startsWith('/api/')){
@@ -42,7 +42,6 @@ const server=http.createServer(async(req,res)=>{
  if(/^\/api\/(cursos|servicios)\/\d+$/.test(p)&&req.method==='GET')return json({statusCode:404,message:'Cannot GET '+p,error:'Not Found'},404);
  if(p==='/api/convenios/1')return json({ok:true,item:fixtureConvenio});
  if(p==='/api/convenios')return json({ok:true,items:[fixtureConvenio],pagination:{page:1,limit:6,total:1,pages:1}});
- if(p==='/api/preguntas-frecuentes'&&faqError)return json({message:'Fallo de prueba'},503);
  if(p==='/api/admin/cursos')adminCourseRequests.push(u.search);let items=['/api/cursos','/api/admin/cursos'].includes(p)?courseEntries.filter(x=>(!u.searchParams.get('tipo')||x.tipo===u.searchParams.get('tipo'))&&(!u.searchParams.get('modalidad')||x.modalidad===u.searchParams.get('modalidad'))):['/api/servicios','/api/admin/servicios'].includes(p)?serviceEntries.filter(x=>!u.searchParams.get('categoria')||u.searchParams.get('categoria').split(',').includes(x.categoria)):p==='/api/preguntas-frecuentes'?[{id:1,pregunta:'Pregunta de prueba',respuesta:'Respuesta de prueba',categoria:'General'}]:p==='/api/galeria'?galleryEntries.filter(x=>!u.searchParams.get('categoria')||x.categoria===u.searchParams.get('categoria')):[];
  const total=items.length,page=Number(u.searchParams.get('page')||1),limit=Number(u.searchParams.get('limit')||24);items=items.slice((page-1)*limit,page*limit);
  return json({ok:true,items,categorias:[...new Set(galleryEntries.map(x=>x.categoria))],pagination:{total,pages:Math.ceil(total/limit)}});
@@ -85,24 +84,23 @@ async function main(){
  const click=label=>evaluate('Array.from(document.querySelectorAll("button,a")).find(x=>x.textContent.trim()==='+JSON.stringify(label)+')?.click()');
  await send('Page.enable');await send('Runtime.enable');await send('Fetch.enable',{patterns:[{urlPattern:'*'}]});
  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
- await navigate('/educacion/cursos');await wait('document.body.innerText.includes("Curso de prueba")');assert.equal(await evaluate('document.body.innerText.includes("Capacitación de prueba")'),false);
- const courseCard='[...document.querySelectorAll("article.edu-card")].find(a=>a.textContent.includes("Curso de prueba"))';
+ await navigate('/educacion/cursos');await wait('!!document.querySelector(".edu-empty")');
  assert.equal(await evaluate('document.querySelector("h1").textContent'),'Cursos');assert.equal(await evaluate('document.querySelector(".horus-hero-eyebrow").textContent'),'Educación');
  assert.equal(await evaluate('document.body.innerText.includes("Actualizar catálogo")'),false,'El botón de desarrollo ya no existe.');
- assert.equal(await evaluate('Array.from(document.querySelectorAll(".edu-chip")).map(c=>c.textContent.replace(/\\s+/g," ").trim()).join("|")'),'Todas 1|Virtual 1','Los filtros salen de las modalidades reales.');
- assert.equal(await evaluate(courseCard+'.querySelector(".edu-facts").textContent.includes("Por confirmar")'),false,'Curso completo: sin campos por confirmar.');
- assert.equal(await evaluate(courseCard+'.querySelector("a[aria-label^=Consultar]").getAttribute("aria-label")'),'Consultar sobre Curso de prueba');
- await evaluate('Array.from(document.querySelectorAll(".edu-chip")).find(c=>c.textContent.includes("Virtual")).click()');await wait('document.querySelector(".edu-chip[aria-pressed=true]").textContent.includes("Virtual")&&document.querySelectorAll("article.edu-card").length===1');
- await click('Consultar');await wait('location.pathname==="/contactos"');assert.equal(await evaluate('document.getElementById("ct-asunto").value'),'Consulta sobre: Curso de prueba','Consultar conserva el nombre del curso como asunto.');
- await navigate('/educacion/cursos');await wait('document.body.innerText.includes("Curso de prueba")');await click('Ver detalle');await wait('location.pathname==="/educacion/cursos/1"&&document.body.innerText.includes("Temario de prueba")');
- assert.equal(await evaluate('document.querySelector("h1").textContent'),'Curso de prueba');
- await click('Solicitar información');await wait('document.getElementById("ct-asunto")?.value==="Consulta sobre: Curso de prueba"');
- await evaluate(`(()=>{const values={nombre:'Ana de prueba',email:'test@example.com',telefono:'+51 999 888 777',mensaje:'Consulta de prueba'};for(const [name,value] of Object.entries(values)){const el=document.getElementById('ct-'+name);Object.getOwnPropertyDescriptor(el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));}})()`);await sleep(100);await evaluate('document.getElementById("ct-nombre").form.requestSubmit()');await wait('document.body.innerText.includes("Recibimos tu mensaje. Gracias por escribirnos. No es necesario que lo envíes de nuevo.")');assert.equal(contactBodies.length,1);assert.equal(contactBodies[0].telefono,'+51 999 888 777');assert.equal(contactBodies[0].asunto,'Consulta sobre: Curso de prueba');
- await navigate('/preguntas-frecuentes');await wait('!!document.querySelector("details")');await evaluate('document.querySelector("summary").click()');assert.equal(await evaluate('document.querySelector("details").open'),true);
- faqError=true;await evaluate('window.dispatchEvent(new CustomEvent("horus:content-updated",{detail:"contenido-original"}))');await wait('!!document.querySelector("[role=alert]")');faqError=false;await click('Reintentar');await wait('!!document.querySelector("details")');
+ assert.equal(await evaluate('document.querySelector("[role=alert]")===null'),true,'Sin cursos publicados: estado vacío, no error.');
+ // Contenido institucional en código (src/institutional/catalog.ts): las capacitaciones reales sustituyen al curso simulado.
+ await navigate('/educacion/capacitaciones');await wait('document.querySelectorAll("article.edu-card").length===4');
+ const capCard='[...document.querySelectorAll("article.edu-card")].find(a=>a.textContent.includes("Capacitaciones Empresariales"))';
+ assert.equal(await evaluate('document.querySelector("h1").textContent'),'Capacitaciones');
+ assert.equal(await evaluate(capCard+'.querySelector("a[aria-label^=Consultar]").getAttribute("aria-label")'),'Consultar sobre Capacitaciones Empresariales');
+ await evaluate(capCard+'.querySelector("a[aria-label^=Consultar]").click()');await wait('location.pathname==="/contactos"');assert.equal(await evaluate('document.getElementById("ct-asunto").value'),'Consulta sobre: Capacitaciones Empresariales','Consultar conserva el nombre de la capacitación como asunto.');
+ await navigate('/educacion/capacitaciones/7');await wait('document.querySelector("h1")?.textContent==="Capacitaciones Empresariales"');
+ await click('Solicitar información');await wait('document.getElementById("ct-asunto")?.value==="Consulta sobre: Capacitaciones Empresariales"');
+ await evaluate(`(()=>{const values={nombre:'Ana de prueba',email:'test@example.com',telefono:'+51 999 888 777',mensaje:'Consulta de prueba'};for(const [name,value] of Object.entries(values)){const el=document.getElementById('ct-'+name);Object.getOwnPropertyDescriptor(el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));}})()`);await sleep(100);await evaluate('document.getElementById("ct-nombre").form.requestSubmit()');await wait('document.body.innerText.includes("Recibimos tu mensaje. Gracias por escribirnos. No es necesario que lo envíes de nuevo.")');assert.equal(contactBodies.length,1);assert.equal(contactBodies[0].telefono,'+51 999 888 777');assert.equal(contactBodies[0].asunto,'Consulta sobre: Capacitaciones Empresariales');
+ await navigate('/preguntas-frecuentes');await wait('document.querySelector("h1")?.textContent.includes("Preguntas")');assert.equal(await evaluate('document.querySelector("[role=alert]")===null'),true,'FAQ vacía: sin error.');
  console.log('UI: catálogo, consultas y FAQ comprobados.');
  await navigate('/galeria');await wait('!!document.querySelector(".gl-card")');await evaluate('document.querySelector(".gl-card").focus();document.querySelector(".gl-card").click()');await wait('!!document.querySelector("dialog[open]")');await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27,nativeVirtualKeyCode:27});await wait('!document.querySelector("dialog[open]")');assert.equal(await evaluate('document.activeElement.classList.contains("gl-card")'),true);
- await navigate('/');await wait('!!document.querySelector(".home-conv-card")');await evaluate('document.querySelector(".home-conv-card").click()');await wait('!!document.querySelector("#home-conv-center #convDesc")');assert.equal(await evaluate('document.querySelector("#convNombre").textContent'),'Convenio de prueba');await evaluate('document.querySelector("#convClose").click()');await wait('!document.querySelector("#home-conv-center #convDesc")');
+ await navigate('/');await wait('!!document.querySelector(".home-conv-card")');await evaluate('document.querySelector(".home-conv-card").click()');await wait('!!document.querySelector("#home-conv-center #convDesc")');assert.equal(await evaluate('document.querySelector("#convNombre").textContent'),'Colegio Regional de Licenciados en Administración de Cajamarca');await evaluate('document.querySelector("#convClose").click()');await wait('!document.querySelector("#home-conv-center #convDesc")');
  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await navigate('/educacion/cursos');await wait('!!document.querySelector(".nav-toggle")');await evaluate('document.querySelector(".nav-toggle").click()');await wait('document.querySelector(".nav-toggle").getAttribute("aria-expanded")==="true"');await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27,nativeVirtualKeyCode:27});await wait('document.querySelector(".nav-toggle").getAttribute("aria-expanded")==="false"');
  assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'),true);
  console.log('UI: diálogos, foco y menú móvil comprobados.');
@@ -151,20 +149,18 @@ async function main(){
  await evaluate('localStorage.setItem("horus-admin-token","isolated-ui-test-token")');
 
  const capture=async(name,selector)=>{if(!process.env.SMOKE_SCREENSHOTS)return;await evaluate('document.querySelector('+JSON.stringify(selector)+')?.scrollIntoView({block:"start"})');await sleep(300);const result=await send('Page.captureScreenshot',{format:'png'});fs.mkdirSync(process.env.SMOKE_SCREENSHOTS,{recursive:true});fs.writeFileSync(path.join(process.env.SMOKE_SCREENSHOTS,name+'.png'),Buffer.from(result.data,'base64'));};
- await navigate('/tecnologias/cableado-estructurado');await wait('document.querySelectorAll("[role=tab]").length===4');
+ await navigate('/tecnologias/cableado-estructurado');await wait('document.querySelectorAll("[role=tab]").length===6');
  await evaluate('document.querySelector("[role=tab]").focus()');await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39,nativeVirtualKeyCode:39});
  await wait('document.querySelector("[role=tab][aria-selected=true]").textContent.includes("Cat 5e")');
  assert.equal(await evaluate('document.activeElement.getAttribute("aria-selected")'),"true");
  await wait('document.querySelector(".cable-panel-media img")?.naturalWidth>0');await capture('cableado-desktop','#categorias');
- await navigate('/tecnologias/camaras-seguridad');await wait('document.querySelectorAll(".cam-card").length===4');assert.equal(await evaluate('document.querySelectorAll(".cam-card-media").length'),4);await capture('camaras-desktop','#soluciones');
- const supportEntries=serviceEntries.filter(x=>x.categoria==='soporte');
- Object.assign(supportEntries[0],{presentacion:'mantenimiento',imagen_url:'/site-original/categoria1.jpg'});Object.assign(supportEntries[1],{presentacion:'software',imagen_url:'/site-original/categoria2.webp'});
- await navigate('/tecnologias/soporte-mantenimiento');await wait('document.querySelectorAll(".sop-card").length===4');
+ await navigate('/tecnologias/camaras-seguridad');await wait('document.querySelectorAll(".cam-card").length===7');assert.equal(await evaluate('document.querySelectorAll(".cam-card-media").length'),7);await capture('camaras-desktop','#soluciones');
+ await navigate('/tecnologias/soporte-mantenimiento');await wait('document.querySelectorAll(".sop-card").length===3');
  await wait('Array.from(document.querySelectorAll(".sop-card-media img")).slice(0,2).every(i=>i.complete&&i.naturalWidth>0)');
- assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".sop-card-media img"),i=>new URL(i.src).pathname).slice(0,2)'),['/site-original/categoria1.jpg','/site-original/categoria2.webp'],'Soporte muestra la imagen del registro aunque su presentación sea mantenimiento o software.');
+ assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".sop-card-media img"),i=>new URL(i.src).pathname).slice(0,2)'),['/contenido/702b9c58-7d36-4af4-9b08-6086ee0e4c3a.jpg','/contenido/7d24640f-ea42-4625-a228-5dce8e973fa6.jpg'],'Soporte muestra la imagen del registro aunque su presentación sea mantenimiento o software.');
  assert.equal(await evaluate('!!document.querySelector(".sop-terminal,.sop-maint-cycle,.sop-card-visual")'),false,'No quedan ilustraciones fijas en Soporte.');await capture('soporte-desktop','#servicios');
- await navigate('/educacion/asesoramiento');await wait('document.querySelectorAll(".edu-card").length===3');assert.equal(await evaluate('document.querySelectorAll(".edu-benefit").length'),4);assert.equal(await evaluate('document.querySelector("h1").textContent'),'Asesoramiento');await capture('asesoramiento-desktop','#asesoramiento');
- await navigate('/educacion/capacitaciones');await wait('document.querySelectorAll(".edu-card").length===5');assert.equal(await evaluate('Array.from(document.querySelectorAll(".edu-card h3")).some(h=>h.textContent.includes("Capacitación de prueba"))'),true);assert.equal(await evaluate('document.querySelector("h1").textContent'),'Capacitaciones');await capture('capacitaciones-desktop','#catalogo');
+ await navigate('/educacion/asesoramiento');await wait('document.querySelectorAll(".edu-card").length===3');assert.equal(await evaluate('document.querySelectorAll(".edu-benefit").length'),0,'Sin servicios de tipo beneficio publicados: la sección no se muestra.');assert.equal(await evaluate('document.querySelector("h1").textContent'),'Asesoramiento');await capture('asesoramiento-desktop','#asesoramiento');
+ await navigate('/educacion/capacitaciones');await wait('document.querySelectorAll(".edu-card").length===4');assert.equal(await evaluate('Array.from(document.querySelectorAll(".edu-card h3")).some(h=>h.textContent.includes("Capacitaciones Empresariales"))'),true);assert.equal(await evaluate('document.querySelector("h1").textContent'),'Capacitaciones');await capture('capacitaciones-desktop','#catalogo');
  await navigate('/galeria');await wait('document.querySelectorAll(".gl-band-panel img").length>=1');await wait('document.querySelector(".gl-band-panel img")?.naturalWidth>0');await capture('galeria-carrusel','.gl-intro');
  await evaluate('Array.from(document.querySelectorAll(".gl-chip")).find(x=>x.textContent.trim()==="Capacitaciones").click()');await wait('document.querySelector(".gl-chip[aria-pressed=true]")?.textContent==="Capacitaciones"&&document.querySelector(".gl-grid")?.getAttribute("aria-busy")!=="true"');assert.equal(await evaluate('Array.from(document.querySelectorAll(".gl-card-cat")).every(x=>x.textContent==="Capacitaciones")'),true);await capture('galeria-desktop','#galeria');
  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
@@ -173,7 +169,7 @@ async function main(){
  }
  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
  await evaluate('localStorage.setItem("horus-admin-token","isolated-ui-test-token")');
- await navigate('/tecnologias/cableado-estructurado');await wait('document.querySelectorAll("[role=tab]").length===4');
+ await navigate('/tecnologias/cableado-estructurado');await wait('document.querySelectorAll("[role=tab]").length===6');
  // A second real tab saves the panel form. The open public tab receives the browser storage event.
  const adminTarget=await fetch('http://127.0.0.1:'+port+'/json/new?about:blank',{method:'PUT'}).then(r=>r.json());
  const adminSocket=new WebSocket(adminTarget.webSocketDebuggerUrl);await new Promise((r,j)=>{adminSocket.onopen=r;adminSocket.onerror=j});
@@ -220,7 +216,7 @@ async function main(){
  meUnavailable=true;await navigate('/admin/dashboard?section=cotizaciones');await wait('document.body.innerText.includes("No pudimos validar tu sesión")');assert.ok(await evaluate('localStorage.getItem("horus-admin-token")'));meUnavailable=false;assert.equal(await evaluate('!!document.querySelector(".hp-shell")'),false);await click('Reintentar');await wait('document.body.innerText.includes("Cotizaciones")');
  await send('Network.enable');await send('Network.setCacheDisabled',{cacheDisabled:true});chunkError=true;await navigate('/admin/dashboard?section=cotizaciones');await wait('document.body.innerText.includes("No pudimos abrir esta página")');chunkError=false;await click('Recargar página');await wait('document.body.innerText.includes("Cotizaciones")');
  console.log('UI: carga de pantallas y recuperación de error comprobados.');
- console.log('UI: catálogo, detalle, consulta, FAQ/reintento, galería/foco, convenio, menú móvil, cotización, error de correo, seguimiento y sesión transitoria: OK.');
+ console.log('UI: catálogo, detalle, consulta, FAQ vacía, galería/foco, convenio, menú móvil, cotización, error de correo, seguimiento y sesión transitoria: OK.');
  // Mapa de ubicación (Inicio y Contactos, escritorio y móvil): tarjeta con la dirección, sin iframe ni peticiones externas hasta pulsar «Mostrar mapa».
  const mapButton='Mostrar mapa — requiere Internet';
  const cardState='JSON.stringify({card:!!document.querySelector(".location-map-fallback"),address:(document.querySelector(".location-map-fallback-address")||{}).textContent||"",iframes:document.querySelectorAll("iframe").length,button:!!Array.from(document.querySelectorAll("button")).find(x=>x.textContent.trim()==='+JSON.stringify(mapButton)+')})';

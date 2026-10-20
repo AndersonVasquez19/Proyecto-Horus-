@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { usePublicResource } from '../hooks/usePublicResource'
+import { useInstitutionalResource as usePublicResource } from '../institutional/useInstitutionalResource'
 import useReducedMotion from '../hooks/useReducedMotion'
 import PageHero from '../components/PageHero'
 import SectionHead from '../components/SectionHead'
