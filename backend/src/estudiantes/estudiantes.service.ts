@@ -41,10 +41,14 @@ export class EstudiantesService {
   }
 
   create(dto: CreateEstudianteDto) {
-    return this.execute(async () => ({ ok: true, item: await this.prisma.estudiante.create({ data: {
+    return this.execute(async () => ({ ok: true, item: await this.createInTransaction(this.prisma, dto) }));
+  }
+
+  createInTransaction(tx: Pick<Prisma.TransactionClient, 'estudiante'>, dto: CreateEstudianteDto) {
+    return tx.estudiante.create({ data: {
       nombres: dto.nombres, apellidos: dto.apellidos, doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: dto.doc_numero,
       email: dto.email || null, telefono: dto.telefono || null,
-    } }) }));
+    } });
   }
 
   update(id: number, dto: UpdateEstudianteDto) {

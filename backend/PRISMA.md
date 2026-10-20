@@ -1,5 +1,7 @@
 # Prisma y esquema MySQL
 
+Fase 4: `20261019-importaciones-academicas` se aplica después de `20261018-convocatorias-capacidad`; añade `importaciones_academicas` sin modificar datos previos. Prisma y `db:check` verifican columnas, unicidad por archivo/destino, claves foráneas restrictivas y recuentos válidos. Requiere aplicar ambas migraciones antes de habilitar la importación, con autorización explícita del destino. Véase [el procedimiento](../docs/procedimientos/importacion-academica.md).
+
 El backend utiliza Prisma 6.19.0, `engineType="client"` y el adaptador MariaDB/MySQL. La aplicación y los scripts comparten variables `DB_*`, verificación TLS y clave RSA pública fijada. El cliente se genera durante instalación/build con una URL ficticia, sin conectarse a la base.
 
 ## Base existente

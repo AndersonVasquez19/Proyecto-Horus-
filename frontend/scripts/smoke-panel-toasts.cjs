@@ -2,19 +2,24 @@
 // errores HTTP sin falso éxito, resultado incierto sin reintentos, sin duplicados y sin tocar borradores.
 const { start, sleep, TOKEN } = require('./smoke-kit.cjs');
 
-const sim = { settingsPut: 'ok', settingsDelay: 0, seguimientoPut: 'ok' };
+// Información de empresa se retiró del panel (separación del contenido institucional): el éxito confirmado, los envíos repetidos y
+// el error HTTP se comprueban ahora al archivar un estudiante (PUT /admin/estudiantes/:id/archivo).
+const sim = { archivePut: 'ok', archiveDelay: 0, seguimientoPut: 'ok' };
 let writes = [];
+const NOW = '2026-05-01T10:00:00.000Z';
+const STUDENT = { id: 5, nombres: 'Persona Ficticia', apellidos: 'Prueba', doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '10000005', email: null, telefono: null, archivado_at: null, revision: 1, createdAt: NOW, updatedAt: NOW };
 const messages = Array.from({ length: 4 }, (_, i) => { const id = 4 - i; return { id, nombre: 'Persona ' + id, email: 'p' + id + '@example.test', telefono: '987654' + String(id).padStart(3, '0'), asunto: 'Asunto ' + id, mensaje: 'Mensaje ' + id, estado: 'nuevo', createdAt: '2026-05-0' + id + 'T10:00:00.000Z', updatedAt: '2026-05-0' + id + 'T10:00:00.000Z' }; });
 const handler = async (req, res, { route, json, body }) => {
-  if (route.startsWith('/__s/')) { const [, , key, value] = route.split('/'); if (key === 'clear') { writes = []; Object.assign(sim, { settingsPut: 'ok', settingsDelay: 0, seguimientoPut: 'ok' }); } else sim[key] = key.endsWith('Delay') ? Number(value) : value; return json({ ok: true }) || true; }
+  if (route.startsWith('/__s/')) { const [, , key, value] = route.split('/'); if (key === 'clear') { writes = []; Object.assign(sim, { archivePut: 'ok', archiveDelay: 0, seguimientoPut: 'ok' }); } else sim[key] = key.endsWith('Delay') ? Number(value) : value; return json({ ok: true }) || true; }
   if (route === '/__state') return json({ writes }) || true;
   if (!route.startsWith('/api/')) return false;
   const token = (req.headers.authorization || '').replace('Bearer ', '');
   if (route === '/api/settings') return json({ ok: true, settings: {} }) || true;
   if (route === '/api/admin/me') return (token === TOKEN ? json({ ok: true, user: { id: 1, nombre: 'Ana Administradora', email: 'ana@example.test' } }) : json({}, 401)) || true;
   const sub = route.replace('/api/admin/', ''); let m;
-  if (sub === 'settings' && req.method === 'GET') return json({ ok: true, settings: [{ clave: 'telefono', valor: '987654321', grupo: 'contacto', descripcion: 'Teléfono' }, { clave: 'correo', valor: 'info@example.test', grupo: 'contacto', descripcion: 'Correo' }] }) || true;
-  if (sub === 'settings' && req.method === 'PUT') { await body(); writes.push('PUT settings'); if (sim.settingsDelay) await sleep(sim.settingsDelay); return (sim.settingsPut === 'error' ? json({ message: 'Internal server error ER_SECRET' }, 500) : json({ ok: true })) || true; }
+  if (sub === 'estudiantes' && req.method === 'GET') return json({ ok: true, items: [STUDENT], pagination: { total: 1, page: 1, limit: 20, pages: 1 } }) || true;
+  if (sub === 'estudiantes/5' && req.method === 'GET') return json({ ok: true, item: STUDENT }) || true;
+  if (sub === 'estudiantes/5/archivo' && req.method === 'PUT') { await body(); writes.push('PUT archivo'); if (sim.archiveDelay) await sleep(sim.archiveDelay); return (sim.archivePut === 'error' ? json({ message: 'Internal server error ER_SECRET' }, 500) : json({ ok: true, item: { ...STUDENT, archivado_at: NOW, revision: 2 } })) || true; }
   if (req.method !== 'GET') { const data = await body(); writes.push(req.method + ' ' + sub); if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/)) && req.method === 'PUT') {
       if (sim.seguimientoPut === '500') return json({ message: 'Internal server error ER_SECRET' }, 500) || true;
       if (sim.seguimientoPut === '409') return json({ message: 'La revisión cambió.' }, 409) || true;
@@ -35,32 +40,34 @@ const handler = async (req, res, { route, json, body }) => {
   const toasts = p => p.evaluate('[...document.querySelectorAll("[data-sonner-toast]")].map(t => ({ type: t.getAttribute("data-type"), text: t.innerText.replace(/\\s+/g, " ").trim() }))');
   const toasters = p => p.evaluate('document.querySelectorAll("section[aria-label^=Notificaciones]").length'); // Sonner solo crea la lista [data-sonner-toaster] cuando hay avisos; el contenedor vivo siempre existe
   const waitToast = (p, type, what) => p.wait('[...document.querySelectorAll("[data-sonner-toast]")].some(t => t.getAttribute("data-type") === ' + JSON.stringify(type) + ')', what);
-  const submitSettings = p => p.evaluate('document.querySelector("main form").requestSubmit(); 1');
+  const STUDENTS = '/admin/dashboard?section=estudiantes';
+  const openArchive = async p => { await p.wait('document.querySelector("main button[aria-label^=\\"Archivar a \\"]")', 'estudiantes'); await p.click('main button', 'Archivar a Persona Ficticia'); await p.wait('[...document.querySelectorAll("dialog[open] button")].some(b => b.textContent.includes("Confirmar archivo"))', 'confirmación de archivo'); };
+  const confirmArchive = p => p.evaluate('[...document.querySelectorAll("dialog[open] button")].find(b => b.textContent.includes("Confirmar archivo") || b.textContent.includes("Guardando"))?.click(); 1');
 
   console.log('\n== UN ÚNICO TOASTER, SOLO EN EL PANEL AUTENTICADO');
   await clean();
   { const p = await open(1280); await p.go('/', 'document.querySelector("main, #root > *")'); await sleep(500);
     ck((await toasters(p)) === 0, 'las páginas públicas no montan Toaster (sin notificaciones del panel)');
     await p.go('/admin/login'); await sleep(400); ck((await toasters(p)) === 0, 'la pantalla de acceso no monta Toaster'); await p.close(); }
-  { const p = await session('/admin/dashboard?section=ajustes'); await p.wait('document.querySelector("main form")', 'ajustes');
+  { const p = await session(STUDENTS); await p.wait('document.querySelector("main button[aria-label^=\\"Archivar a \\"]")', 'estudiantes');
     await p.wait('document.querySelector("section[aria-label^=Notificaciones]")', 'contenedor de notificaciones'); ck((await toasters(p)) === 1, 'el panel autenticado monta exactamente un Toaster');
     await p.go('/admin/dashboard?section=resumen', 'document.querySelector(".hp-metrics")'); await p.wait('document.querySelector("section[aria-label^=Notificaciones]")', 'contenedor de notificaciones'); ck((await toasters(p)) === 1, 'cambiar de sección no duplica el Toaster');
     await p.wait('document.querySelector("section[aria-label^=Notificaciones]")?.getAttribute("aria-live") === "polite"', 'contenedor en vivo'); ck(true, 'el contenedor es una región en vivo educada con nombre accesible en español («Notificaciones»)'); await p.close(); }
 
   console.log('\n== ÉXITO SOLO TRAS CONFIRMAR, ERROR HTTP Y DUPLICADOS');
   await clean();
-  { await ctl('settingsDelay', '900'); const p = await session('/admin/dashboard?section=ajustes'); await p.wait('document.querySelector("main form")', 'ajustes');
-    await submitSettings(p); await sleep(350);
+  { await ctl('archiveDelay', '900'); const p = await session(STUDENTS); await openArchive(p);
+    await confirmArchive(p); await sleep(350);
     ck((await toasts(p)).length === 0 && (await state()).writes.length === 1, 'mientras el PUT sigue pendiente NO hay aviso de éxito');
-    await submitSettings(p); await submitSettings(p);
+    await confirmArchive(p); await confirmArchive(p);
     await waitToast(p, 'success', 'éxito confirmado'); await sleep(300);
     const list = await toasts(p);
-    ck(list.length === 1 && /se guardó correctamente/.test(list[0].text), 'tras la respuesta 200 aparece un único aviso de éxito', list);
+    ck(list.length === 1 && /Estudiante archivado/.test(list[0].text), 'tras la respuesta 200 aparece un único aviso de éxito', list);
     ck((await state()).writes.length === 1, 'los envíos repetidos mientras había un PUT en curso no crearon más peticiones (ni más avisos)', await state()); await p.close(); }
   await clean();
-  { await ctl('settingsPut', 'error'); const p = await session('/admin/dashboard?section=ajustes'); await p.wait('document.querySelector("main form")', 'ajustes');
-    await submitSettings(p); await p.wait('document.querySelector("main .hp-error[role=alert]")', 'error');
-    const list = await toasts(p); const text = await p.text('main');
+  { await ctl('archivePut', 'error'); const p = await session(STUDENTS); await openArchive(p);
+    await confirmArchive(p); await p.wait('document.querySelector("dialog[open] .hp-error[role=alert], main .hp-error[role=alert]")', 'error');
+    const list = await toasts(p); const text = await p.text('dialog[open]') + ' ' + await p.text('main');
     ck(!list.some(t => t.type === 'success'), 'un error HTTP 500 nunca se presenta como éxito', list);
     ck(!/ER_SECRET|Internal/.test(text + JSON.stringify(list)) && /no pudo completar/.test(text), 'el error muestra un texto saneado, sin detalles técnicos del servidor', text.slice(0, 160)); await p.close(); }
 

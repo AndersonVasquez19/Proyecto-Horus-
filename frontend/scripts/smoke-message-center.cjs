@@ -247,11 +247,12 @@ async function main() {
       const wrong = Object.entries({ inbox: true, legacy: false, dialog: false, detail: '', ...expected }).filter(([key, value]) => got[key] !== value);
       ck(wrong.length === 0 && got.url === route, '10. ' + route + ' abre la bandeja moderna (' + (expected.table ? 'vista Tabla' : 'vista Bandeja') + (expected.dialog ? ', con el registro manual' : '') + ') y conserva la URL', { got, wrong });
     }
-    // Regla de alcance: vista= en otras secciones sigue siendo de ResourceManager
-    await session('/admin/dashboard?section=cursos&seccion=cursos&vista=tabla'); await page.wait('document.querySelector(".hp-heading h1")', 'cursos');
-    ck(await page.evaluate('!document.querySelector(".hw-inbox") && [...document.querySelectorAll(".hw-tabs button")].some(b => b.textContent.trim() === "Tabla" && b.getAttribute("aria-pressed") === "true")'), '10. vista=tabla en cursos sigue siendo de ResourceManager (alias acotado a mensajes)');
-    await session('/admin/dashboard?section=servicios&vista=tabla'); await page.wait('document.querySelector(".hp-heading h1")', 'servicios');
-    ck(await page.evaluate('!document.querySelector(".hw-inbox") && document.querySelector(".hp-heading h1").innerText !== "Centro de consultas"'), '10. vista=tabla en servicios no abre la bandeja de mensajes');
+    // Regla de alcance: vista= en otras secciones no abre la bandeja. Cursos y servicios ya no se gestionan en el panel: su dirección
+    // antigua muestra el aviso de gestión retirada (separación del contenido institucional).
+    await session('/admin/dashboard?section=cursos&seccion=cursos&vista=tabla'); await page.wait('document.querySelector("[data-panel-editorial-retired]")', 'cursos');
+    ck(await page.evaluate('!document.querySelector(".hw-inbox")'), '10. vista=tabla en cursos no abre la bandeja (alias acotado a mensajes)');
+    await session('/admin/dashboard?section=servicios&vista=tabla'); await page.wait('document.querySelector("[data-panel-editorial-retired]")', 'servicios');
+    ck(await page.evaluate('!document.querySelector(".hw-inbox") && document.querySelector("h1").innerText !== "Centro de consultas"'), '10. vista=tabla en servicios no abre la bandeja de mensajes');
     // Atrás/Adelante con el alias: se conserva la URL de entrada y la vista; seleccionar añade una sola entrada
     const entry = '/admin/dashboard?section=mensajes&vista=tabla';
     await session(entry); await page.wait('document.querySelector(".hw-inbox-table tbody tr")', 'tabla'); const startHistory = await page.evaluate('history.length');

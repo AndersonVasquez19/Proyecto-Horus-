@@ -1,0 +1,76 @@
+// Un contenedor propio por suite; nunca usa .env, Compose ni contenedores existentes.
+const { spawnSync, spawn } = require('node:child_process');
+const { randomBytes } = require('node:crypto');
+const { join } = require('node:path');
+const { readFileSync } = require('node:fs');
+const mysql = require('mysql2/promise');
+const suites = {
+  matriculas: ['MATRICULAS', 'matriculas.integration.cjs'],
+  ediciones: ['EDITIONS', 'convocatorias.integration.cjs'],
+  estudiantes: ['STUDENTS', 'estudiantes.integration.cjs'],
+  access: ['ACCESS_GUARD_HTTP', 'access-guard-http.integration.cjs'],
+};
+const suite = suites[process.argv[2]];
+if (!suite) throw new Error('Selecciona matriculas, ediciones, estudiantes o access.');
+const name = 'horus-fase3-' + randomBytes(8).toString('hex');
+const password = randomBytes(32).toString('hex');
+const docker = args => {
+  const r = spawnSync('docker', args, { encoding: 'utf8', windowsHide: true, env: { ...process.env, MYSQL_PWD: password } });
+  if (r.status !== 0) throw new Error('Docker no pudo completar ' + args[0]);
+  return r.stdout.trim();
+};
+(async () => {
+  docker(['image', 'inspect', 'mysql:8.4']); // sin descargas ni instalaciones
+  let owned = false;
+  try {
+    const env = { ...process.env, MYSQL_ROOT_PASSWORD: password };
+    const run = spawnSync('docker', ['run', '-d', '--name', name, '--label', 'horus.test=fase3', '-e', 'MYSQL_ROOT_PASSWORD', '-p', '127.0.0.1::3306', 'mysql:8.4'], { env, encoding: 'utf8', windowsHide: true });
+    if (run.status !== 0) throw new Error('No se pudo crear el contenedor desechable.');
+    owned = true;
+    const port = JSON.parse(docker(['inspect', name]))[0].NetworkSettings.Ports['3306/tcp'][0].HostPort;
+    let uuid;
+    for (let i = 0; i < 90; i++) {
+      let db;
+      try {
+        db = await mysql.createConnection({ host: '127.0.0.1', port: Number(port), user: 'root', password, connectTimeout: 1000 });
+        const [[row]] = await db.query('SELECT @@server_uuid AS uuid'); uuid = row.uuid; break;
+      } catch { await new Promise(resolve => setTimeout(resolve, 1000)); }
+      finally { if (db) await db.end(); }
+    }
+    if (!uuid) throw new Error('MySQL desechable no inició a tiempo.');
+    const expectedUuid = docker(['exec', '-e', 'MYSQL_PWD', name, 'mysql', '-uroot', '-N', '-B', '-e', 'SELECT @@server_uuid']);
+    if (uuid !== expectedUuid) throw new Error('UUID de conexión distinto al del contenedor propio.');
+    console.log('Destino aislado: ' + name + ' · MySQL 8.4 · UUID verificado');
+    let template;
+    if (process.argv[2] === 'estudiantes') {
+      template = 'horus_students_template_' + randomBytes(12).toString('hex');
+      const db = await mysql.createConnection({ host: '127.0.0.1', port: Number(port), user: 'root', password });
+      try {
+        const [tables] = await db.query("SELECT TABLE_SCHEMA FROM information_schema.TABLES WHERE TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys')");
+        if (tables.length) throw new Error('La plantilla requiere un servidor propio vacío.');
+        await db.query('CREATE DATABASE `' + template + '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'); await db.changeUser({ database: template });
+        const versions = JSON.parse(readFileSync(join(__dirname, '../scripts/migrate.cjs'), 'utf8').match(/const versions = (\[[^\]]*\])/)[1].replaceAll("'", '"'));
+        for (const version of ['00000000-initial', ...versions]) for (const sql of readFileSync(join(__dirname, '../migrations', version + '.sql'), 'utf8').split(';').map(s => s.trim()).filter(Boolean)) await db.query(sql);
+      } finally { await db.end(); }
+    }
+    const testEnv = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP,
+      DB_HOST: '127.0.0.1', DB_PORT: port, DB_USER: 'root', DB_PASS: password,
+      [suite[0] + '_TEST_DB']: 'true', [suite[0] + '_TEST_SERVER_UUID']: uuid,
+      MATRICULAS_BROWSER: process.env.MATRICULAS_BROWSER, MATRICULAS_SCREENSHOTS_DIR: process.env.MATRICULAS_SCREENSHOTS_DIR,
+      EDITIONS_BROWSER: process.env.EDITIONS_BROWSER, EDITIONS_SCREENSHOTS_DIR: process.env.EDITIONS_SCREENSHOTS_DIR,
+      STUDENTS_BROWSER: process.env.STUDENTS_BROWSER, STUDENTS_SCREENSHOTS_DIR: process.env.STUDENTS_SCREENSHOTS_DIR };
+    if (template) testEnv.STUDENTS_TEST_TEMPLATE = template;
+    const code = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['--test', '-r', './test/isolate-env.cjs', join('test', suite[1])], { cwd: join(__dirname, '..'), env: testEnv, windowsHide: true, stdio: 'inherit' });
+      child.once('error', reject); child.once('exit', resolve);
+    });
+    process.exitCode = code === 0 ? 0 : 1;
+  } finally {
+    if (owned) {
+      const info = JSON.parse(docker(['inspect', name]))[0];
+      if (info.Name !== '/' + name || info.Config.Labels['horus.test'] !== 'fase3') throw new Error('Identidad de contenedor propio inesperada.');
+      docker(['rm', '-f', name]);
+      console.log('Contenedor propio retirado: ' + name);
+    }
+  }
+})().catch(() => { console.error('Falló la ejecución aislada; no se muestran credenciales.'); process.exitCode = 1; });

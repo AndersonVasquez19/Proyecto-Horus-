@@ -50,7 +50,7 @@ export default function MessageInbox() {
   // Vista del listado: ambas comparten datos, filtros, selección y detalle. Solo cambia cómo se dibuja la lista; el detalle (y el borrador del editor)
   // ocupa siempre el mismo lugar del árbol, así que alternar la vista no lo desmonta. Es estado local: cambiar la URL con un borrador abierto avisaría sin necesidad.
   // Alias heredados: `vista=tabla` (la antigua tabla de mensajes) y `listado=tabla` abren la vista Tabla de entrada. Aquí solo llegan las URL de MENSAJES
-  // (AdminDashboard dirige el resto de secciones a ResourceManager), así que `vista=` de cursos, servicios, etc. no se ve afectado. No hay redirección:
+  // (AdminDashboard monta cada sección por separado; los gestores editoriales se retiraron del panel). No hay redirección:
   // los parámetros (`id`, `estado`, `crear`…) se conservan tal cual y el historial no cambia.
   const [view, setView] = useState<'bandeja' | 'tabla'>(() => params.get('listado') === 'tabla' || params.get('vista') === 'tabla' ? 'tabla' : 'bandeja');
   const [deleting, setDeleting] = useState(false);

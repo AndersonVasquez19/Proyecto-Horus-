@@ -1,5 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ActivityQueryDto } from './activity-query.dto';
+import { DashboardQueryDto } from './dashboard-query.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { StatsService } from './stats.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -16,8 +17,8 @@ export class StatsController {
   @RequirePermission('estadisticas:leer')
   @ApiOperation({ summary: 'Obtener métricas, estadísticas y actividad reciente del sistema' })
   @ApiResponse({ status: 200, description: 'Estadísticas consolidadas para el dashboard' })
-  async getDashboardStats() {
-    return this.statsService.getDashboardStats();
+  async getDashboardStats(@Query() query: DashboardQueryDto) {
+    return query.vista === 'operativa' ? this.statsService.getOperationalStats() : this.statsService.getDashboardStats();
   }
 
   @Get('actividad')

@@ -73,10 +73,10 @@ test('gerente: todas las secciones de trabajo actuales e inicio en Resumen', () 
   }
 })
 
-test('coordinadora: contenido, atención y Resumen; sin Biblioteca de contenido', () => {
+test('coordinadora: gestión académica, atención y Resumen, sin gestores editoriales', () => {
   const nav = panelNavigation(session('COORDINADORA_INSTITUCIONAL'))
   assert.equal(nav.home, 'resumen')
-  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'ediciones', 'cursos', 'servicios', 'galeria', 'faq', 'convenios', 'mensajes', 'cotizaciones', 'chatbot', 'ajustes', 'configuracion'])
+  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'ediciones', 'matriculas', 'importacion-excel', 'mensajes', 'cotizaciones', 'chatbot', 'configuracion'])
   assert.equal(nav.canOpenResource('contenido'), false)
 })
 
@@ -85,7 +85,7 @@ test('secretaria: inicia en la Bandeja, sin Resumen (no consulta estadísticas) 
     const nav = panelNavigation(session('SECRETARIA', modo))
     assert.equal(nav.home, 'mensajes')
     assert.equal(nav.canOpen('resumen'), false, 'GET /admin/stats exige estadisticas:leer')
-    assert.deepEqual(visible(nav), ['estudiantes', 'ediciones', 'cursos', 'mensajes', 'chatbot', 'ajustes', 'configuracion'])
+    assert.deepEqual(visible(nav), ['estudiantes', 'ediciones', 'matriculas', 'mensajes', 'chatbot', 'configuracion'])
     // Educación: puede leer cursos y capacitaciones, pero no Asesoramiento (que es un servicio).
     assert.equal(nav.canOpenResource('cursos'), true)
     assert.equal(nav.canOpenResource('servicios'), false)
@@ -93,8 +93,12 @@ test('secretaria: inicia en la Bandeja, sin Resumen (no consulta estadísticas) 
   }
 })
 
-test('Biblioteca de contenido: solo con items:leer cuando hay rol', () => {
-  assert.equal(panelNavigation(session('SECRETARIA', 'heredado', ['items:leer'])).canOpen('contenido'), true)
+test('gestores editoriales retirados incluso con todos sus permisos y en modo heredado', () => {
+  for (const access of [legacyBackend(), session(null, 'heredado'), session('GERENTE_GENERAL', 'por_roles'), session('COORDINADORA_INSTITUCIONAL')]) {
+    const nav = panelNavigation(access)
+    for (const key of ['cursos', 'educacion', 'servicios', 'galeria', 'faq', 'contenido', 'convenios', 'ajustes']) assert.equal(nav.canOpen(key), false, key)
+  }
+  assert.equal(panelNavigation(session('SECRETARIA', 'heredado', ['items:leer'])).canOpen('contenido'), false)
   assert.equal(panelNavigation(session('SECRETARIA', 'heredado', ['items:leer'])).canOpenResource('contenido'), true)
   assert.equal(panelNavigation(session('COORDINADORA_INSTITUCIONAL', 'heredado', ['cursos:leer'])).canOpen('contenido'), false)
 })
@@ -156,16 +160,17 @@ test('Roles y usuarios: solo en por_roles con cuentas:leer; nunca en heredado, s
 
 test('secciones desconocidas o con forma rara no se abren; el nombre del rol no concede nada', () => {
   const nav = panelNavigation(session('GERENTE_GENERAL'))
-  for (const key of ['', 'admin', 'usuarios', 'matriculas', 'certificados', '__proto__', 'constructor', 'toString', undefined, null, 5, {}]) assert.equal(nav.canOpen(key), false, String(key))
+  for (const key of ['', 'admin', 'usuarios', 'certificados', '__proto__', 'constructor', 'toString', undefined, null, 5, {}]) assert.equal(nav.canOpen(key), false, String(key))
   for (const resource of ['', 'items', 'mensajes', '__proto__', 'toString']) assert.equal(nav.canOpenResource(resource), false, resource)
   // Con el rol de gerente pero sin permisos, no se abre nada: lo que decide es la lista del backend.
   assert.deepEqual(visible(panelNavigation(session('GERENTE_GENERAL', 'por_roles', []))), ['configuracion'])
 })
 
-test('Estudiantes y Ediciones disponibles; las fases posteriores siguen sin enlaces', () => {
+test('Estudiantes, Ediciones y Matrículas disponibles; las fases posteriores siguen sin enlaces', () => {
   assert.equal(PANEL_SECTIONS.find(rule => rule.key === 'estudiantes')?.anyOf[0], 'estudiantes:leer')
   assert.equal(PANEL_SECTIONS.find(rule => rule.key === 'ediciones')?.anyOf[0], 'convocatorias:leer')
-  for (const rule of PANEL_SECTIONS) assert.ok(!/matriculas|certificados|asistencia|calificaciones|sesiones/.test(rule.key + rule.anyOf.join() + rule.target), rule.key)
+  assert.equal(PANEL_SECTIONS.find(rule => rule.key === 'matriculas')?.anyOf[0], 'matriculas:leer')
+  for (const rule of PANEL_SECTIONS) assert.ok(!/certificados|asistencia|calificaciones|sesiones/.test(rule.key + rule.anyOf.join() + rule.target), rule.key)
 })
 
 // ---------- E3.4.3, fase 2: operaciones de escritura ----------
@@ -224,6 +229,9 @@ test('las demás operaciones del panel coinciden con sus rutas', () => {
   assert.equal(routePermission('POST', 'admin/estudiantes'), A.crearEstudiante)
   assert.equal(routePermission('PUT', 'admin/estudiantes/:id'), A.editarEstudiante)
   assert.equal(routePermission('PUT', 'admin/estudiantes/:id/archivo'), A.archivarEstudiante)
+  assert.equal(routePermission('POST', 'admin/matriculas'), A.crearMatricula)
+  assert.equal(routePermission('PUT', 'admin/matriculas/:id/anulacion'), A.anularMatricula)
+  assert.equal(routePermission('PUT', 'admin/matriculas/:id/reactivacion'), A.reactivarMatricula)
   assert.equal(routePermission('POST', 'admin/convocatorias'), A.crearEdicion)
   assert.equal(routePermission('PUT', 'admin/convocatorias/:id'), A.editarEdicion)
   assert.equal(routePermission('PUT', 'admin/convocatorias/:id/apertura'), A.editarEdicion)
@@ -261,7 +269,7 @@ test('gerente: todas las operaciones de escritura', () => {
   }
 })
 
-test('secretaria: Cursos, Capacitaciones e Información de empresa en modo consulta; registra y atiende consultas sin eliminarlas', () => {
+test('secretaria: conserva permisos históricos de lectura; registra y atiende consultas sin eliminarlas', () => {
   for (const modo of ['heredado', 'por_roles']) {
     const nav = panelNavigation(session('SECRETARIA', modo))
     for (const permission of Object.values(RESOURCE_WRITE.cursos)) assert.equal(nav.can(permission), false, permission)
@@ -276,7 +284,7 @@ test('secretaria: Cursos, Capacitaciones e Información de empresa en modo consu
   }
 })
 
-test('coordinadora: gestiona el contenido salvo borrar cursos y servicios; sin eliminar consultas, editar la configuración ni recuperar contenido original', () => {
+test('coordinadora: permisos históricos conservados; sin eliminar consultas, editar configuración ni recuperar contenido original', () => {
   const nav = panelNavigation(session('COORDINADORA_INSTITUCIONAL'))
   const yes = ['cursos:crear', 'cursos:editar', 'cursos:archivar', 'servicios:crear', 'servicios:editar', ...Object.values(RESOURCE_WRITE['preguntas-frecuentes']), ...Object.values(RESOURCE_WRITE.galeria),
     PANEL_ACTIONS.crearConvenio, PANEL_ACTIONS.editarConvenio, PANEL_ACTIONS.eliminarConvenio, PANEL_ACTIONS.subirImagen,

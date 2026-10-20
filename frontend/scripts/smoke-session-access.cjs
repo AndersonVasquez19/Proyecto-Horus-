@@ -25,7 +25,8 @@ const ACCOUNTS = {
 };
 const TOKEN_OF = { gerente: 'tk-gerente', coord: 'tk-coord', sec: 'tk-sec', norol: 'tk-norol' };
 // perm: cambios de rol o permisos hechos «en el backend» con la sesión abierta (token → { rol?, permisos? }); modo: acceso.modo informado.
-const fresh = () => ({ login: 'nuevo', me: 'nuevo', meDelay: 0, messages: 'ok', settings: 'ok', modo: 'heredado', perm: {}, expired: new Set(), requests: [] });
+const fresh = () => ({ login: 'nuevo', me: 'nuevo', meDelay: 0, messages: 'ok', seguimiento: 'ok', modo: 'heredado', perm: {}, expired: new Set(), requests: [] });
+const MESSAGE = { id: 71, nombre: 'Persona Ficticia', email: 'persona@example.test', telefono: '999999999', asunto: 'Consulta ficticia', mensaje: 'Mensaje ficticio.', estado: 'nuevo', createdAt: '2030-01-01T10:00:00.000Z' };
 let sim = fresh();
 
 // Distintas formas de la respuesta (login y /me comparten forma): contrato nuevo, backend antiguo, parcial, mal formado, incoherente.
@@ -69,8 +70,10 @@ const handler = async (req, res, { route, url, json, body }) => {
   }
   if (!ACCOUNTS[token] || sim.expired.has(token)) return json({ message: 'Unauthorized' }, 401) || true;
   const sub = route.slice('/api/admin/'.length);
-  if (sub === 'settings' && req.method === 'PUT' && sim.settings === '403') return json({ ok: false, mensaje: 'No tienes permiso para realizar esta operación. ER_SECRET' }, 403) || true;
-  if (sub === 'settings' && req.method === 'GET') return json({ ok: true, settings: [{ clave: 'empresa_nombre', valor: 'Horus Group', descripcion: 'Nombre comercial', grupo: 'empresa' }] }) || true;
+  // Seguimiento de una consulta (la antigua prueba usaba Información de empresa, retirada del panel): el PUT puede responder 403.
+  if (sub === 'seguimiento/messages/71' && req.method === 'PUT' && sim.seguimiento === '403') return json({ ok: false, mensaje: 'No tienes permiso para realizar esta operación. ER_SECRET' }, 403) || true;
+  if (sub === 'seguimiento/messages/71' && req.method === 'GET') return json({ ok: true, item: { estado: 'nuevo', responsable: '', notas: '', respuesta: '', revision: 1, historial: [] } }) || true;
+  if (sub === 'messages/71') return json({ ok: true, message: MESSAGE }) || true;
   if (sub === 'messages' && sim.messages === '403') return json({ ok: false, mensaje: 'No tienes permiso para realizar esta operación.' }, 403) || true;
   if (sub === 'messages' && sim.messages === '401') return json({ message: 'Unauthorized' }, 401) || true;
   if (sub === 'stats') return json({ ok: true, stats: { mensajes: { total: 0, nuevos: 0, enProceso: 0, atendidos: 0, archivados: 0 }, contenido: { total: 0 }, catalogo: {} }, actividadReciente: { mensajes: [] } }) || true;
@@ -130,7 +133,7 @@ const READ_CONTEXT = `(() => {
   }
   // El filtrado por rol se comprueba en smoke-panel-access.cjs; aquí, que la cuenta sin rol conserva el panel heredado completo.
   const first = menus.norol;
-  ck(first.includes('Resumen') && first.includes('Mensajes') && first.includes('Cotizaciones') && first.includes('Biblioteca de contenido'),
+  ck(first.includes('Resumen') && first.includes('Estudiantes') && first.includes('Mensajes') && first.includes('Cotizaciones') && first.includes('Consultas del chatbot'),
     'modo heredado: la cuenta sin rol ve el panel completo de siempre, sin filtrar', menus);
 
   // ===== 2. Backend antiguo =====
@@ -263,7 +266,7 @@ const READ_CONTEXT = `(() => {
     const c = await ctx(p);
     ck(c.auth && c.token === 'tk-coord' && c.access.rol === 'SECRETARIA' && same(c.access.permisos, PERMS.sec) && (await stored(p)) === 'tk-coord' && (await p.path()) === '/admin/messages',
       'cambio de rol informado por el backend: se adopta sin cerrar la sesión ni salir de la sección abierta', c);
-    ck(!(await navLabels(p)).includes('Educación') && (await navLabels(p)).includes('Mensajes'), 'el menú se adapta a los permisos nuevos', await navLabels(p));
+    ck(!(await navLabels(p)).includes('Resumen') && (await navLabels(p)).includes('Mensajes'), 'el menú se adapta a los permisos nuevos', await navLabels(p));
     await perm('tk-coord', { rol: 'SECRETARIA', permisos: ['mensajes:crear'] });
     await skew(p, 31000); await p.send('Page.bringToFront'); await p.evaluate("document.dispatchEvent(new Event('visibilitychange')); 1");
     await p.wait("document.querySelector('[data-panel-access=denegado]')", 'aviso de acceso no autorizado');
@@ -292,17 +295,18 @@ const READ_CONTEXT = `(() => {
     await p.evaluate("document.querySelectorAll('.hw-insights button')[1].click(); 1");
     await p.wait("document.querySelector('[data-panel-access=denegado]')", 'aviso tras la revalidación'); const c = await ctx(p);
     ck(c.auth && same(c.access.permisos, ['mensajes:crear']) && (await stored(p)) === 'tk-sec', '403 cuya revalidación confirma la retirada del permiso: la sección se desmonta y la sesión sigue abierta', c); }
-  await clean(); await perm('tk-coord', { permisos: [...PERMS.coord, 'configuracion:leer'] }); await ctl('settings', '403');
-  { // En el backend ya se retiró configuracion:editar, pero esta pestaña aún lo tenía: el guardado recibe 403.
+  await clean(); await ctl('seguimiento', '403');
+  { // En el backend ya se retiró seguimiento_mensajes:editar, pero esta pestaña aún lo tenía: el guardado recibe 403.
+    const FOLLOW = '.hw-inbox-detail form';
     const p = await open(); await p.go('/__empty'); await p.evaluate('localStorage.setItem(' + JSON.stringify(KEY) + ", 'tk-coord'); 1");
-    await perm('tk-coord', { permisos: [...PERMS.coord, 'configuracion:leer', 'configuracion:editar'] });
-    await p.go('/admin/dashboard?section=ajustes'); await p.wait("document.querySelector('.hp-settings-card input:not(:disabled)')", 'formulario de empresa editable');
-    await perm('tk-coord', { permisos: [...PERMS.coord, 'configuracion:leer'] });
-    await p.type('.hp-settings-card input', 0, 'Nombre en edición'); await skew(p, 6000); await p.click('button', 'Guardar configuración');
-    await p.wait("document.querySelector('[data-panel-readonly]')", 'modo consulta tras la revalidación');
-    const state = await p.evaluate("({ value: document.querySelector('.hp-settings-card input').value, error: document.querySelector('.hp-error')?.innerText || '', disabled: document.querySelector('.hp-settings-card fieldset').disabled })");
+    await perm('tk-coord', { permisos: [...PERMS.coord, 'seguimiento_mensajes:leer', 'seguimiento_mensajes:editar'] });
+    await p.go('/admin/messages?id=71'); await p.wait("document.querySelector('" + FOLLOW + " fieldset:not(:disabled) textarea')", 'seguimiento editable');
+    await perm('tk-coord', { permisos: [...PERMS.coord, 'seguimiento_mensajes:leer'] });
+    await p.type(FOLLOW + ' textarea', 0, 'Nota en edición'); await skew(p, 6000); await p.click(FOLLOW + ' button', 'Guardar seguimiento');
+    await p.wait("document.querySelector('.hw-inbox-detail [data-panel-readonly]')", 'modo consulta tras la revalidación');
+    const state = await p.evaluate("({ value: document.querySelector('" + FOLLOW + " textarea').value, error: document.querySelector('" + FOLLOW + " .hp-error')?.innerText || '', disabled: document.querySelector('" + FOLLOW + " fieldset').disabled })");
     const c = await ctx(p);
-    ck(state.value === 'Nombre en edición' && state.error.startsWith(DENIED) && state.disabled && c.auth && (await stored(p)) === 'tk-coord',
+    ck(state.value === 'Nota en edición' && state.error.startsWith(DENIED) && state.disabled && c.auth && (await stored(p)) === 'tk-coord',
       '403 al guardar: el borrador se conserva a la vista, se informa sin datos técnicos y, revalidado el permiso, la sección pasa a modo consulta', state);
     ck(!/ER_SECRET|venció/.test(await p.text()), 'sin texto del servidor ni «sesión vencida»'); }
 

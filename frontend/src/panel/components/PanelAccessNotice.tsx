@@ -7,7 +7,7 @@ import PanelIcon from './PanelIcon';
 type Kind = 'denegado' | 'sin-secciones';
 const TEXT: Record<Kind, { kicker: string; title: string; body: string }> = {
   denegado: { kicker: 'PERMISOS ADICIONALES', title: 'Esta sección requiere permisos adicionales', body: 'Tu cuenta puede iniciar sesión y usar su espacio básico, pero no tiene permiso para abrir esta parte del panel. Si la necesitas, solicítala a la gerencia.' },
-  'sin-secciones': { kicker: 'SIN SECCIONES', title: 'Tu cuenta no tiene secciones disponibles', body: 'Ninguna sección del panel está habilitada para tu cuenta. Puedes cambiar tu contraseña en Ajustes o cerrar sesión; si necesitas acceso, consúltalo con la gerencia.' },
+  'sin-secciones': { kicker: 'SIN SECCIONES', title: 'Tu cuenta no tiene secciones disponibles', body: 'Ninguna sección del panel está habilitada para tu cuenta. Puedes cambiar tu contraseña en Mi cuenta o cerrar sesión; si necesitas acceso, consúltalo con la gerencia.' },
 };
 
 // Sección que la cuenta puede consultar pero no modificar (o una dirección que pide una operación sin permiso, como ?crear=1).
@@ -24,7 +24,7 @@ export default function PanelAccessNotice({ kind, homeTarget, hasHome }: { kind:
       <p>{text.body}</p>
       {kind === 'denegado' && hasHome
         ? <Link className="hp-btn hp-btn-primary" to={homeTarget}>Ir a mi inicio</Link>
-        : <Link className="hp-btn" to={kind === 'denegado' ? '/admin/dashboard' : '/admin/dashboard?section=configuracion'}>{kind === 'denegado' ? 'Volver a mi espacio' : 'Ir a Ajustes'}</Link>}
+        : <Link className="hp-btn" to={kind === 'denegado' ? '/admin/dashboard' : '/admin/dashboard?section=configuracion'}>{kind === 'denegado' ? 'Volver a mi espacio' : 'Ir a Mi cuenta'}</Link>}
     </div></section>
   </>;
 }

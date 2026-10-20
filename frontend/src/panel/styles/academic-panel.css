@@ -56,6 +56,12 @@
 .hp-dialog .hs-field-error { color: #a0352b; }
 .hs-conflict { padding: 0 28px 20px; font-size: 13px; line-height: 1.7; }
 .hs-conflict .hp-details { padding: 10px 0; }
+.hm-filter-grid { display: grid; gap: 24px; padding-top: 16px; }
+.hm-history { padding: 0 28px 24px; overflow-wrap: anywhere; }
+.hm-history ol { padding-left: 22px; }
+.hm-history li { padding: 10px 0; border-bottom: 1px solid #e2e9f3; }
+.hm-history p { font-size: 13px; color: #5a6c85; line-height: 1.6; }
+.hm-enrollments .hp-table td { white-space: normal; }
 .hp-dialog:has([data-student-form]) input[aria-invalid=true] { border-color: #b84236; }
 @media (max-width: 760px) {
   .hs-summary { padding: 20px; flex-wrap: wrap; gap: 14px; }

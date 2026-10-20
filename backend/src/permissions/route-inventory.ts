@@ -68,7 +68,16 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('DELETE', 'admin/convenios/:id/fotos/:fotoId', 'convenios:editar', 'Quitar una foto se trata como edición del convenio.'),
   perm('POST', 'admin/uploads', 'archivos:crear', 'Solo imágenes del sitio; documentos de estudiantes requerirán almacenamiento privado.'),
 
-  // --- Gestión académica: estudiantes (sin borrado físico) ---
+  // --- Gestión académica (sin borrado físico) ---
+  perm('GET', 'admin/importaciones/ediciones', 'importaciones:previsualizar'),
+  perm('POST', 'admin/importaciones/archivo', 'importaciones:previsualizar'),
+  perm('POST', 'admin/importaciones/vista-previa', 'importaciones:previsualizar'),
+  perm('POST', 'admin/importaciones/confirmacion', 'importaciones:aplicar'),
+  perm('GET', 'admin/importaciones/resultado/:id', 'importaciones:previsualizar'),
+  perm('GET', 'admin/matriculas', 'matriculas:leer'), perm('GET', 'admin/matriculas/ediciones', 'matriculas:leer'),
+  perm('GET', 'admin/matriculas/:id', 'matriculas:leer'), perm('GET', 'admin/matriculas/:id/historial', 'matriculas:leer'),
+  perm('POST', 'admin/matriculas', 'matriculas:crear'), perm('PUT', 'admin/matriculas/:id/anulacion', 'matriculas:anular'),
+  perm('PUT', 'admin/matriculas/:id/reactivacion', 'matriculas:anular', 'Revertir una anulación exige anular; el servicio exige además editar.'),
   perm('GET', 'admin/estudiantes', 'estudiantes:leer'), perm('GET', 'admin/estudiantes/:id', 'estudiantes:leer'),
   perm('GET', 'admin/convocatorias', 'convocatorias:leer'), perm('GET', 'admin/convocatorias/cursos', 'convocatorias:leer'),
   perm('GET', 'admin/convocatorias/:id', 'convocatorias:leer'), perm('POST', 'admin/convocatorias', 'convocatorias:crear'),

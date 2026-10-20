@@ -449,26 +449,23 @@ async function main() {
     await wait('document.querySelector(".nav-drop > button").getAttribute("aria-expanded")==="false"')
     console.log('Motion: dropdowns y navegación por teclado: OK.')
 
-    // Una segunda pestaña guarda desde el panel real contra los fixtures aislados.
+    // Información de empresa ya no se edita desde el panel (separación del contenido institucional): una segunda pestaña con la
+    // dirección antigua muestra el aviso, no monta el formulario ni guarda, y Home conserva sus datos. El refresco por
+    // `horus:content-updated` se sigue comprobando más abajo, con el fallo y la recuperación de /api/settings.
     await evaluate('localStorage.setItem("horus-admin-token","isolated-home-ui-token")')
+    const homeAddress = await evaluate('document.querySelector(".home-loc-items").textContent')
     const adminTarget = await fetch('http://127.0.0.1:' + port + '/json/new?' + encodeURIComponent(origin + '/admin/dashboard?section=ajustes'), { method: 'PUT' }).then(response => response.json())
     const admin = connect(adminTarget.webSocketDebuggerUrl)
     await admin.ready
     try {
-      await admin.wait('document.querySelectorAll(".hp-settings-card input").length > 0')
-      await admin.evaluate('(()=>{for(const [name,value] of Object.entries({direccion:"Dirección actualizada desde el panel",telefono_principal:"+51 900 000 002",horario_atencion:"Martes: 10:00–14:00"})){const input=Array.from(document.querySelectorAll(".hp-settings-card label")).find(label=>label.textContent===name).querySelector("input");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));}})()')
-      await sleep(100)
-      await admin.evaluate('document.querySelector(".hp-settings-card").closest("form").requestSubmit()')
-      await admin.wait('document.body.innerText.includes("La información de la empresa se guardó correctamente.")')
-      await wait('document.querySelector(".home-loc-items").textContent.includes("Dirección actualizada desde el panel")')
-      assert.equal(settingsSaves, 1)
-      assert.equal(await evaluate('document.querySelector(".home-loc-items").textContent.includes("Martes: 10:00–14:00")'), true)
-      assert.equal(await evaluate('document.querySelector(".home-loc-items").textContent.includes("+51 900 000 002")'), true)
-      assert.equal(await evaluate('document.querySelector(".footer").textContent.includes("Dirección actualizada desde el panel")'), true)
-      assert.equal(await evaluate('document.querySelector(".footer").textContent.includes("+51 900 000 002")'), true)
+      await admin.wait('!!document.querySelector("[data-panel-editorial-retired]")')
+      assert.equal(await admin.evaluate('!!document.querySelector(".hp-settings-card, main form")'), false, 'La dirección antigua no monta el formulario de empresa.')
+      await sleep(300)
+      assert.equal(settingsSaves, 0)
+      assert.equal(await evaluate('document.querySelector(".home-loc-items").textContent'), homeAddress)
     } finally { await admin.send('Page.close').catch(() => {}); admin.socket.close() }
     await send('Page.bringToFront')
-    console.log('Home: edición de dirección, teléfono y horario desde otra pestaña del panel reflejada sin recargar: OK.')
+    console.log('Home: Información de empresa retirada del panel (aviso, sin formulario ni guardado) y datos públicos intactos: OK.')
 
 
     // Convenios: información completa, fotos, teclado y estados de API.
@@ -713,162 +710,19 @@ async function main() {
     await viewport(1440)
     console.log('Convenios: tarjetas simples, marca de agua, nombres largos, 3+centro+3, paginación, visor único, indicadores y movimiento reducido: OK.')
 
-    // CRUD mediante el panel real; los endpoints usan únicamente fixtures en memoria.
-    const convenioAdminTarget = await fetch('http://127.0.0.1:' + port + '/json/new?' + encodeURIComponent(origin + '/admin/dashboard?section=convenios'), { method: 'PUT' }).then(response => response.json())
+    // La administración editorial ya no se monta, ni por dirección antigua.
+    const convenioAdminTarget = await fetch('http://127.0.0.1:' + port + '/json/new?' + encodeURIComponent(origin + '/admin/dashboard?section=convenios&crear=1'), { method: 'PUT' }).then(response => response.json())
     const convenioAdmin = connect(convenioAdminTarget.webSocketDebuggerUrl)
     await convenioAdmin.ready
-    const fillConvenio = async values => {
-      await convenioAdmin.evaluate('(()=>{for(const [name,value] of Object.entries(' + JSON.stringify(values) + ')){const input=document.querySelector(".hp-convenio-form [name="+name+"]");const proto=input.tagName==="TEXTAREA"?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,"value").set.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));}})()')
-      await sleep(50)
-    }
-    const photoUpload = async count => {
-      await convenioAdmin.evaluate('(()=>{const input=document.querySelector(".hp-convenio-photos input[type=file]"),data=new DataTransfer();for(let i=0;i<' + count + ';i++)data.items.add(new File([Uint8Array.from(atob("' + fixturePng.toString('base64') + '"),c=>c.charCodeAt(0))],"test-"+i+".png",{type:"image/png"}));input.files=data.files;input.dispatchEvent(new Event("change",{bubbles:true}));})()')
-    }
-
-    const adminViewport = (width, height = 1000) => convenioAdmin.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 768 })
-    const captureAdmin = async name => {
-      if (!screenshots) return
-      const result = await convenioAdmin.send('Page.captureScreenshot', { format: 'png' })
-      fs.mkdirSync(screenshots, { recursive: true })
-      fs.writeFileSync(path.join(screenshots, name + '.png'), Buffer.from(result.data, 'base64'))
-    }
-    const assertEditorScroll = async width => {
-      const result = await convenioAdmin.evaluate('(()=>{const d=document.querySelector(".hp-convenio-dialog"),s=document.querySelector(".hp-convenio-editor-scroll"),r=d.getBoundingClientRect();s.scrollTop=s.scrollHeight;const h=d.querySelector("header").getBoundingClientRect(),f=d.querySelector("footer").getBoundingClientRect();return {fits:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,range:s.scrollHeight-s.clientHeight,overflow:getComputedStyle(s).overflowY,extra:[d,d.querySelector("form"),d.querySelector("header"),d.querySelector("footer")].filter(e=>e.scrollHeight>e.clientHeight+1).map(e=>e.tagName),fixed:h.top>=0&&f.bottom<=innerHeight,body:document.body.style.overflow,root:getComputedStyle(document.documentElement).overflowY,columns:Math.abs(d.querySelector("[name=nombre]").getBoundingClientRect().top-d.querySelector("[name=sigla]").getBoundingClientRect().top)<1?2:1,photosInForm:!!d.querySelector("form .hp-convenio-photos")}})()')
-      assert.equal(result.fits, true, 'Modal dentro de pantalla: ' + width)
-      assert.ok(result.range > 0, 'El contenido conserva scroll: ' + width)
-      assert.equal(result.overflow, 'auto')
-      assert.deepEqual(result.extra, [], 'Un único scroll interno: ' + width)
-      assert.equal(result.fixed, true, 'Encabezado y acciones visibles al llegar al final: ' + width)
-      assert.equal(result.body, 'hidden', 'El documento permanece bloqueado mientras se edita.')
-      assert.equal(result.root, 'hidden', 'La barra del documento desaparece mientras el modal está abierto.')
-      assert.equal(result.columns, width <= 900 ? 1 : 2)
-      assert.equal(result.photosInForm, true)
-    }
-
     try {
       await convenioAdmin.send('Runtime.enable')
-      await convenioAdmin.send('Page.bringToFront')
-      await adminViewport(1440)
-      await convenioAdmin.wait('document.querySelectorAll(".hp-convenios tbody tr").length === 5')
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll(".hp-heading button")).find(b=>b.textContent.includes("Nuevo convenio")).click()')
-      await convenioAdmin.wait('!!document.querySelector(".hp-convenio-form")')
-      await fillConvenio({ nombre: 'Alianza creada en prueba UI', sigla: 'UI', descripcion_corta: 'Descripción de la alianza de prueba', descripcion_completa: 'Información completa editada en el panel', informacion_adicional: 'Información adicional editada', orden: '0' })
-
-      await assertEditorScroll(1440)
-      await convenioAdmin.evaluate('document.querySelector(".hp-convenio-editor-scroll").scrollTop=0')
-      await captureAdmin('panel-convenio-desktop-new')
-      convenioSaveFailure = true
-      const savesBefore = convenioSaveCount
-      await convenioAdmin.evaluate('document.querySelector(".hp-convenio-form").requestSubmit();document.querySelector(".hp-convenio-form").requestSubmit()')
-      await convenioAdmin.wait('document.querySelector(".hp-convenio-feedback [role=alert]")?.textContent.includes("Fallo aislado") && !document.querySelector(".hp-convenio-dialog button[type=submit]").disabled')
-      assert.equal(convenioSaveCount - savesBefore, 1, 'No hay doble envío.')
-      assert.equal(await convenioAdmin.evaluate('document.querySelector(".hp-convenio-form [name=nombre]").value'), 'Alianza creada en prueba UI', 'Se conserva el nombre tras un error.')
-      assert.equal(await convenioAdmin.evaluate('document.querySelector(".hp-convenio-form [name=informacion_adicional]").value'), 'Información adicional editada', 'Se conservan los textos tras un error.')
-      assert.equal(convenioFixtures.length, 5)
-      convenioSaveFailure = false
-      await convenioAdmin.evaluate('document.querySelector(".hp-convenio-form [name=visible]").click();document.querySelector(".hp-convenio-form").requestSubmit()')
-      await convenioAdmin.wait('!!document.querySelector(".hp-convenio-photos input[type=file]")')
-      await wait('document.querySelectorAll(".home-conv-card").length === 6')
-      assert.equal(await evaluate('Array.from(document.querySelectorAll(".home-metric")).find(e=>e.textContent.includes("Convenios activos")).querySelector("strong").textContent'), '6')
-      const uploadsBefore = uploadCount
-      await photoUpload(2)
-      await convenioAdmin.wait('document.querySelectorAll(".hp-convenio-photo-grid li").length === 2 && !document.querySelector(".hp-convenio-dialog button[type=submit]").disabled')
-      assert.equal(uploadCount - uploadsBefore, 2)
-      const created = convenioFixtures.find(r => r.nombre === 'Alianza creada en prueba UI')
-      assert.ok(created); assert.equal(created.fotos.length, 2)
-      const firstPhoto = created.fotos[0].id
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.getAttribute("aria-label")==="Mover fotografía 1 después").click()')
-      await convenioAdmin.wait('document.querySelector(".hp-convenio-photos [role=status]")?.textContent.includes("Orden")')
-      assert.equal([...created.fotos].sort((a,b)=>a.orden-b.orden)[1].id, firstPhoto)
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.getAttribute("aria-label")==="Quitar fotografía 1").click()')
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll(".hp-convenio-photo-grid button")).find(b=>b.textContent==="Confirmar retirada").click()')
-      await convenioAdmin.wait('document.querySelectorAll(".hp-convenio-photo-grid li").length === 1 && !document.querySelector(".hp-convenio-dialog button[type=submit]").disabled')
-
-      // Un lote contiene una foto demasiado grande, un fallo HTTP y dos válidas.
-      const partialBefore = uploadCount
-      await convenioAdmin.evaluate('(()=>{const input=document.querySelector(".hp-convenio-photos input[type=file]"),data=new DataTransfer(),png=Uint8Array.from(atob("PNG_BASE64"),c=>c.charCodeAt(0));data.items.add(new File([new Uint8Array(5*1024*1024+1)],"large.png",{type:"image/png"}));data.items.add(new File([png],"good-before.png",{type:"image/png"}));data.items.add(new File([png],"failure.png",{type:"image/png"}));data.items.add(new File([png],"good-after.png",{type:"image/png"}));input.files=data.files;input.dispatchEvent(new Event("change",{bubbles:true}));})()'.replace('PNG_BASE64', fixturePng.toString('base64')))
-      await convenioAdmin.wait('document.querySelectorAll(".hp-convenio-photo-grid li").length === 3 && !document.querySelector(".hp-convenio-dialog button[type=submit]").disabled')
-      assert.equal(uploadCount - partialBefore, 3, 'El archivo de más de 5 MB no llega al servidor.')
-      assert.equal(created.fotos.length, 3, 'Fotos anteriores y cargas válidas conservadas.')
-      assert.equal(await convenioAdmin.evaluate('document.querySelectorAll(".hp-upload-results .is-error").length'), 2)
-      assert.equal(await convenioAdmin.evaluate('document.querySelector(".hp-upload-results").textContent.includes("large.png") && document.querySelector(".hp-upload-results").textContent.includes("5 MB") && document.querySelector(".hp-upload-results").textContent.includes("failure.png")'), true)
-      await assertEditorScroll(1440)
-      await captureAdmin('panel-convenio-desktop-photos-errors')
-      await fillConvenio({ nombre: 'Alianza editada en prueba UI', orden: '100' })
-      await convenioAdmin.evaluate('document.querySelector(".hp-convenio-form").requestSubmit()')
-      await convenioAdmin.wait('!document.querySelector(".hp-convenio-dialog button[type=submit]").disabled && document.querySelector(".hp-convenio-feedback [role=status]")?.textContent.includes("guardado")')
-      await wait('Array.from(document.querySelectorAll(".home-conv-card")).some(e=>e.textContent.includes("Alianza editada en prueba UI"))')
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll(".hp-convenio-dialog button")).find(b=>b.textContent==="Cerrar").click()')
-      await convenioAdmin.wait('!document.querySelector(".hp-dialog")')
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll(".hp-convenios tbody tr")).find(r=>r.textContent.includes("Alianza editada")).querySelectorAll("button")[1].click()')
-      await wait('document.querySelectorAll(".home-conv-card").length === 5')
-      await convenioAdmin.wait('Array.from(document.querySelectorAll(".hp-convenios tbody tr")).find(r=>r.textContent.includes("Alianza editada")).textContent.includes("Oculto")')
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll(".hp-convenios tbody tr")).find(r=>r.textContent.includes("Alianza editada")).querySelectorAll("button")[1].click()')
-      await wait('document.querySelectorAll(".home-conv-card").length === 6')
-      await convenioAdmin.wait('!document.querySelector(".hp-convenios tbody tr button").disabled')
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.getAttribute("aria-label")==="Eliminar Alianza editada en prueba UI").click()')
-      await convenioAdmin.wait('document.querySelector(".hp-dialog")?.textContent.includes("Eliminar convenio")')
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll(".hp-dialog button")).find(b=>b.textContent==="Eliminar convenio").click()')
-      await convenioAdmin.wait('!document.querySelector(".hp-dialog")')
-      await wait('document.querySelectorAll(".home-conv-card").length === 5')
-      assert.equal(convenioFixtures.some(r=>r.id===created.id), false)
-      await captureAdmin('panel-convenios-table')
-      // Verifica que el uploader del logo conserve selección simple.
-      await convenioAdmin.evaluate('document.querySelector(".hp-heading button").click()')
-      await convenioAdmin.wait('!!document.querySelector(".hp-convenio-form")')
-      assert.equal(await convenioAdmin.evaluate('document.querySelector(".hp-convenio-form input[type=file]").multiple'), false)
-      await convenioAdmin.evaluate('(()=>{const input=document.querySelector(".hp-convenio-form input[type=file]"),data=new DataTransfer();data.items.add(new File([Uint8Array.from(atob("' + fixturePng.toString('base64') + '"),c=>c.charCodeAt(0))],"logo.png",{type:"image/png"}));input.files=data.files;input.dispatchEvent(new Event("change",{bubbles:true}));})()')
-      await convenioAdmin.wait('document.querySelector(".hp-convenio-form [name=logo_url]").value.includes("/api/uploads/") && !document.querySelector(".hp-convenio-dialog button[type=submit]").disabled')
-      const oldLogo = await convenioAdmin.evaluate('document.querySelector(".hp-convenio-form [name=logo_url]").value')
-      assert.equal(await convenioAdmin.evaluate('document.querySelector(".hp-convenio-logo-controls").textContent.includes("Cambiar logo")'), true)
-      await convenioAdmin.evaluate('(()=>{const input=document.querySelector(".hp-convenio-form input[type=file]"),data=new DataTransfer();data.items.add(new File([new Uint8Array(5*1024*1024+1)],"large-logo.png",{type:"image/png"}));input.files=data.files;input.dispatchEvent(new Event("change",{bubbles:true}));})()')
-      await convenioAdmin.wait('document.querySelector(".hp-convenio-logo-controls [role=alert]")?.textContent.includes("5 MB")')
-      assert.equal(await convenioAdmin.evaluate('document.querySelector(".hp-convenio-form [name=logo_url]").value'), oldLogo, 'El logo anterior se conserva si falla el cambio.')
-      await convenioAdmin.evaluate('(()=>{const input=document.querySelector(".hp-convenio-form input[type=file]"),data=new DataTransfer();data.items.add(new File([Uint8Array.from(atob("PNG_BASE64"),c=>c.charCodeAt(0))],"changed-logo.png",{type:"image/png"}));input.files=data.files;input.dispatchEvent(new Event("change",{bubbles:true}));})()'.replace('PNG_BASE64', fixturePng.toString('base64')))
-      await convenioAdmin.wait('!document.querySelector(".hp-convenio-dialog button[type=submit]").disabled')
-      assert.notEqual(await convenioAdmin.evaluate('document.querySelector(".hp-convenio-form [name=logo_url]").value'), oldLogo)
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll(".hp-convenio-logo-controls button")).find(b=>b.textContent==="Quitar logo").click()')
-      assert.equal(await convenioAdmin.evaluate('document.querySelector(".hp-convenio-form [name=logo_url]").value'), '')
-      await fillConvenio({ nombre: 'Texto conservado en móvil', descripcion_corta: 'Descripción de prueba para revisar el modal', descripcion_completa: 'Texto extenso '.repeat(200), informacion_adicional: 'Condiciones de prueba '.repeat(100) })
-      for (const width of [768, 390, 320]) {
-        await adminViewport(width, 844)
-        await sleep(100)
-        await assertEditorScroll(width)
-        await captureAdmin('panel-convenio-' + width + '-photos')
-        await convenioAdmin.evaluate('document.querySelector(".hp-convenio-editor-scroll").scrollTop=0')
-        await captureAdmin('panel-convenio-' + width + '-header')
-        assert.equal(await convenioAdmin.evaluate('document.querySelector(".hp-convenio-form [name=nombre]").value'), 'Texto conservado en móvil', 'Cambiar el tamaño no pierde campos.')
-      }
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll(".hp-convenio-dialog button")).find(b=>b.textContent==="Cerrar").click()')
-      // El nombre editado en esta prueba no se guardó: cerrar pide confirmar el descarte (cambios sin guardar).
-      await convenioAdmin.wait('!!document.querySelector("dialog.hp-unsaved-dialog[open]")')
-      await convenioAdmin.evaluate('document.querySelector("dialog.hp-unsaved-dialog[open] .hp-btn-danger").click()')
-      await convenioAdmin.wait('!document.querySelector(".hp-convenio-dialog")')
-      assert.equal(await convenioAdmin.evaluate('document.body.style.overflow'), '')
-      assert.equal(await convenioAdmin.evaluate('document.documentElement.style.overflow'), '')
-
-      // La continuación de cargas parciales nunca continúa después de un 401 al asociar la foto.
-      await adminViewport(1440)
-      await convenioAdmin.evaluate('Array.from(document.querySelectorAll("button")).find(b=>b.getAttribute("aria-label")==="Editar Entidad de prueba 3").click()')
-      await convenioAdmin.wait('!!document.querySelector(".hp-convenio-photos input[type=file]")')
-
-      await adminViewport(390, 844)
-      await assertEditorScroll(390)
-      await captureAdmin('panel-convenio-390-existing-photos')
-      assert.equal(await convenioAdmin.evaluate('Array.from(document.querySelectorAll(".hp-convenio-photo-grid li"),e=>e.getBoundingClientRect()).every(r=>r.left>=0&&r.right<=innerWidth)'), true, 'Miniaturas y acciones dentro del modal móvil.')
-      await adminViewport(1440)
-      const expiredBefore = uploadCount, photosBeforeExpiry = convenioFixtures.find(r=>r.id===3).fotos.length
-      await convenioAdmin.evaluate('(()=>{const input=document.querySelector(".hp-convenio-photos input[type=file]"),data=new DataTransfer(),png=Uint8Array.from(atob("PNG_BASE64"),c=>c.charCodeAt(0));for(const name of ["expired-association.png","should-not-upload.png"])data.items.add(new File([png],name,{type:"image/png"}));input.files=data.files;input.dispatchEvent(new Event("change",{bubbles:true}));})()'.replace('PNG_BASE64', fixturePng.toString('base64')))
-      await convenioAdmin.wait('location.pathname === "/admin/login"')
-      await sleep(100)
-      assert.equal(uploadCount - expiredBefore, 1, '401 detiene las fotos pendientes.')
-      assert.equal(convenioFixtures.find(r=>r.id===3).fotos.length, photosBeforeExpiry)
-      assert.equal(await convenioAdmin.evaluate('document.documentElement.style.overflow'), '')
-      assert.equal(await convenioAdmin.evaluate('document.body.style.overflow'), '')
+      await convenioAdmin.wait('!!document.querySelector("[data-panel-editorial-retired]")')
+      assert.equal(await convenioAdmin.evaluate('!!document.querySelector(".hp-convenios, dialog[open], main form")'), false)
+      assert.equal(await convenioAdmin.evaluate('document.querySelector("main").textContent.includes("se retiró del panel")'), true)
       assert.deepEqual(convenioAdmin.exceptions, [])
     } finally { await convenioAdmin.send('Page.close').catch(() => {}); convenioAdmin.socket.close() }
     await send('Page.bringToFront')
-    console.log('Convenios panel: crear/editar, logo simple, uploads múltiples, ordenar/retirar fotos, publicar/ocultar, eliminar y actualización de Home entre pestañas: OK.')
+    console.log('Convenios: consulta pública conservada; ruta de gestión retirada sin formulario: OK.')
 
     for (const width of [1920, 1366, 1280, 1024, 768, 540, 390, 375, 320]) {
       await viewport(width, width < 768 ? 844 : 1000)
@@ -1043,6 +897,7 @@ async function main() {
     assert.equal(await evaluate('document.querySelector(".footer").textContent.includes("Horus Group SRL")'), true)
     assert.equal(await evaluate('document.querySelectorAll(".home-conv-card").length'), 5)
     settingsFailure = false
+    settings.horario_atencion = 'Martes: 10:00–14:00' // cambio hecho fuera de esta página: el aviso debe traer el valor nuevo
     await evaluate('window.dispatchEvent(new CustomEvent("horus:content-updated",{detail:"settings"}))')
     await wait('document.querySelector(".home-loc-items").textContent.includes("Martes: 10:00–14:00")')
     assert.deepEqual(connection.exceptions, [], 'Errores JavaScript en la revisión.')

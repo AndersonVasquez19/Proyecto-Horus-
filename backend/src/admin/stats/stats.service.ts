@@ -13,6 +13,34 @@ export class StatsService {
     private readonly prisma: PrismaService,
   ) {}
 
+  // La vista operativa evita las consultas editoriales. El contrato sin ?vista se conserva para otros consumidores.
+  async getOperationalStats() {
+    const [estudiantes, edicionesActivas, matriculas, mensajes, ultimosMensajes] = await Promise.all([
+      this.prisma.estudiante.count(),
+      this.prisma.convocatoria.count({ where: { estado: 'abierta', archivado_at: null } }),
+      this.prisma.matricula.groupBy({ by: ['estado'], _count: { _all: true } }),
+      messageTotals(this.prisma),
+      recentMessages(this.prisma),
+    ]);
+    return {
+      ok: true,
+      stats: {
+        academico: {
+          estudiantes,
+          edicionesActivas,
+          matriculasRegistradas: matriculas.reduce((total, row) => total + row._count._all, 0),
+          matriculasVigentes: matriculas.find(row => row.estado === 'activa')?._count._all ?? 0,
+        },
+        mensajes: {
+          total: mensajes.total, nuevos: mensajes.nuevo, enProceso: mensajes.en_proceso,
+          atendidos: mensajes.atendido, archivados: mensajes.archivado,
+          pendientes: mensajes.nuevo + mensajes.en_proceso,
+        },
+      },
+      actividadReciente: { mensajes: ultimosMensajes },
+    };
+  }
+
   async getDashboardStats() {
     const [
       mensajes,

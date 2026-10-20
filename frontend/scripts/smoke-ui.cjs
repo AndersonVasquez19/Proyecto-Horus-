@@ -183,265 +183,22 @@ async function main(){
  const adminWait=async expression=>{for(let i=0;i<100;i++){if(await adminEval(expression))return;await sleep(100)}const detail=await adminEval('document.querySelector(".hp-error")?.textContent||""').catch(()=>'');throw new Error('Panel: '+expression+(detail?' :: '+detail:''))};
  await adminSend('Page.enable');await adminSend('Fetch.enable',{patterns:[{urlPattern:'*'}]});await adminSend('Page.navigate',{url:origin+'/admin/dashboard?section=servicios'});
  try{
-  await adminWait('document.querySelectorAll(".hw-resource").length===8');
-  await adminEval('document.querySelector(".hw-resource footer button").click()');await adminWait('!!document.getElementById("field-nombre_corto")');
-  await adminEval(`(()=>{for(const [name,value] of Object.entries({titulo:'Servicio actualizado desde el panel',nombre_corto:'Cat editable',etiquetas:'Etiqueta actualizada'})){const el=document.getElementById('field-'+name);Object.getOwnPropertyDescriptor(el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));}})()`);
-  await sleep(100);await adminEval('document.querySelector("dialog form").requestSubmit()');await adminWait('document.body.innerText.includes("Cambios guardados correctamente.")&&!document.querySelector("dialog[open]")');
-  await wait('document.querySelector(".cable-panel-info h3")?.textContent==="Servicio actualizado desde el panel"');assert.equal(await evaluate('document.querySelector("[role=tab]").textContent.includes("Cat editable")'),true);assert.equal(await evaluate('document.querySelector(".cable-panel-info .tech-chips li").textContent'),"Etiqueta actualizada");
-  await adminEval('Array.from(document.querySelectorAll("button")).find(x=>x.textContent.trim()==="Recuperar contenido original").click()');
-  await adminWait('document.querySelector(".original-import-list")?.children.length===19');
-  await adminEval('Array.from(document.querySelectorAll("dialog button")).find(x=>x.textContent.trim()==="Recuperar registros").click()');
-  await adminWait('document.body.innerText.includes("0 registros recuperados.")');assert.deepEqual(importBodies,[{estado:'publicado'}]);
-  assert.equal(serviceEntries[0].titulo,'Servicio actualizado desde el panel');
-  // A fresh load of the services panel: the 12 technology records, 8 per page.
-  await adminSend('Page.navigate',{url:origin+'/admin/dashboard?section=servicios'});
-  await adminWait('document.querySelectorAll(".hw-resource").length===8');
-  const typeInto=(id,value)=>adminEval('(()=>{const el=document.getElementById('+JSON.stringify(id)+');Object.getOwnPropertyDescriptor(el.tagName==="TEXTAREA"?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,"value").set.call(el,'+JSON.stringify(value)+');el.dispatchEvent(new Event("input",{bubbles:true}))})()');
-  // Regression: a record created on a page other than the first one used to look lost. The slug also follows the title.
-  await adminEval('Array.from(document.querySelectorAll(".hp-heading button")).find(x=>x.textContent.includes("Crear servicio")).click()');
-  await adminWait('!!document.getElementById("field-titulo")');
-  await typeInto('field-titulo','Servicio al final de la lista');
-  await adminWait('document.getElementById("field-slug").value==="servicio-al-final-de-la-lista"');
-  await typeInto('field-descripcion','Servicio de prueba creado desde el panel');
-  await sleep(100);await adminEval('document.querySelector("dialog form").requestSubmit()');
-  await adminWait('document.body.innerText.includes("Se creó «Servicio al final de la lista»")&&document.body.innerText.includes("página 2")');
-  await adminWait('Array.from(document.querySelectorAll(".hw-resource h3")).some(h=>h.textContent==="Servicio al final de la lista")');
-  assert.equal(await adminEval('document.querySelector(".hp-pagination").textContent.includes("2 / 2")'),true,'El panel abre la página donde quedó el servicio nuevo.');
-  // The services menu opens from the section and splits the records by section.
-  assert.equal(await adminEval('Array.from(document.querySelectorAll(".hp-nav-item")).find(x=>x.textContent.includes("Servicios tecnológicos")).getAttribute("aria-expanded")'),'true');
-  assert.deepEqual(await adminEval('Array.from(document.querySelectorAll(".hp-nav-subitem"),x=>x.textContent)'),['Cableado estructurado','Cámaras de seguridad','Soporte y mantenimiento']);
-  await adminEval('Array.from(document.querySelectorAll(".hp-nav-subitem")).find(x=>x.textContent==="Cableado estructurado").click()');
-  await adminWait('location.search.includes("seccion=cableado")&&document.querySelector("h1").textContent==="Cableado estructurado"&&document.querySelectorAll(".hw-resource").length===5');
-  assert.equal(await adminEval('document.querySelector(".hp-nav-subitem.is-active").getAttribute("aria-current")'),'page');
-  // Creating inside a section keeps the record in that section.
-  await adminEval('Array.from(document.querySelectorAll(".hp-nav-subitem")).find(x=>x.textContent==="Soporte y mantenimiento").click()');
-  await adminWait('location.search.includes("seccion=soporte")&&document.querySelectorAll(".hw-resource").length===4');
-  await adminEval('Array.from(document.querySelectorAll(".hp-heading button")).find(x=>x.textContent.includes("Crear servicio")).click()');
-  await adminWait('!!document.getElementById("field-titulo")');
-  assert.equal(await adminEval('!!document.getElementById("field-categoria")'),false,'La categoría de la sección queda fijada: no hay selector.');
-  await adminEval('document.querySelector("dialog header button").click()');await adminWait('!document.querySelector("dialog[open]")');
-  // Deleting a service removes it for real (it does not stay archived) and asks for confirmation first.
-  const parent='Array.from(document.querySelectorAll(".hp-nav-item")).find(x=>x.textContent.includes("Servicios tecnológicos"))';
-  await adminEval(parent+'.click()');await adminWait(parent+'.getAttribute("aria-expanded")==="false"&&!document.querySelector(".hp-nav-subitem")');
-  await adminEval(parent+'.click()');await adminWait(parent+'.getAttribute("aria-expanded")==="true"&&document.querySelectorAll(".hp-nav-subitem").length===3');
-  await adminEval('Array.from(document.querySelectorAll(".hp-nav-subitem")).find(x=>x.textContent==="Cableado estructurado").click()');
-  await adminWait('location.search.includes("seccion=cableado")&&document.querySelectorAll(".hw-resource").length===5');
-  const created=serviceEntries.find(x=>x.titulo==='Servicio al final de la lista');assert.ok(created&&created.categoria==='cableado');
-  await adminEval('(()=>{const card=Array.from(document.querySelectorAll(".hw-resource")).find(x=>x.querySelector("h3").textContent==="Servicio al final de la lista");card.querySelector("button[aria-label^=Eliminar]").click()})()');
-  await adminWait('document.body.innerText.includes("Se eliminará definitivamente")&&document.body.innerText.includes("Servicio al final de la lista")');
-  assert.equal(serviceDeletes.length,0,'Nada se elimina antes de confirmar.');
-  await adminEval('Array.from(document.querySelectorAll("dialog button")).find(x=>x.textContent.trim()==="Eliminar definitivamente").click()');
-  await adminWait('document.body.innerText.includes("Servicio eliminado definitivamente.")&&document.querySelectorAll(".hw-resource").length===4');
-  assert.deepEqual(serviceDeletes,[created.id]);assert.equal(serviceEntries.some(x=>x.id===created.id),false);
-  // The three technology categories are the only ones the panel offers: create, edit, publish and delete in each.
-  assert.equal(await adminEval('Array.from(document.querySelectorAll("button, a, option")).some(x=>/otros/i.test(x.textContent))'),false,'Otros servicios ya no aparece en el panel.');
-  for(const [name,key] of [['Cableado estructurado','cableado'],['Cámaras de seguridad','camaras'],['Soporte y mantenimiento','soporte']]){
-   const title='Prueba '+key,pick=(id,value)=>adminEval('(()=>{const s=document.getElementById('+JSON.stringify(id)+');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set.call(s,'+JSON.stringify(value)+');s.dispatchEvent(new Event("change",{bubbles:true}))})()');
-   const card=(text)=>'Array.from(document.querySelectorAll(".hw-resource")).find(x=>x.querySelector("h3").textContent==='+JSON.stringify(text)+')';
-   await adminEval('Array.from(document.querySelectorAll(".hp-nav-subitem")).find(x=>x.textContent==='+JSON.stringify(name)+').click()');
-   await adminWait('location.search.includes("seccion='+key+'")&&document.querySelector("h1").textContent==='+JSON.stringify(name));
-   await adminEval('Array.from(document.querySelectorAll(".hp-heading button")).find(x=>x.textContent.includes("Crear servicio")).click()');
-   await adminWait('!!document.getElementById("field-titulo")');
-   assert.equal(await adminEval('!!document.getElementById("field-categoria")'),false,name+': la categoría ya está fijada.');
-   await typeInto('field-titulo',title);await typeInto('field-descripcion','Descripción de '+title);
-   await sleep(100);await adminEval('document.querySelector("dialog form").requestSubmit()');
-   await adminWait('document.body.innerText.includes("Se creó «'+title+'»")&&!!'+card(title));
-   const record=serviceEntries.find(x=>x.titulo===title);assert.ok(record&&record.categoria===key&&record.estado==='borrador','Se crea como borrador en '+name+'.');
-   await adminEval(card(title)+'.querySelector("footer button").click()');
-   await adminWait('document.getElementById("field-titulo")?.value===' + JSON.stringify(title));
-   assert.equal(await adminEval('!!document.getElementById("field-categoria")'),false,'Editar tampoco muestra la categoría.');
-   await typeInto('field-titulo',title+' editada');await pick('field-estado','publicado');
-   await sleep(100);await adminEval('document.querySelector("dialog form").requestSubmit()');
-   await adminWait('(()=>{const c='+card(title+' editada')+';return !!c&&c.textContent.includes("Publicado")})()');
-   assert.ok(record.titulo===title+' editada'&&record.estado==='publicado'&&record.categoria===key,'La edición publica sin cambiar de categoría.');
-   assert.ok(!('categoria' in serviceBodies.at(-1).body),'Editar no reenvía la categoría fijada.');
-   await adminEval(card(title+' editada')+'.querySelector("button[aria-label^=Eliminar]").click()');
-   await adminWait('document.body.innerText.includes("Se eliminará definitivamente")');
-   await adminEval('Array.from(document.querySelectorAll("dialog button")).find(x=>x.textContent.trim()==="Eliminar definitivamente").click()');
-   await adminWait('document.body.innerText.includes("Servicio eliminado definitivamente.")&&!'+card(title+' editada'));
-   assert.ok(serviceDeletes.includes(record.id)&&!serviceEntries.some(x=>x.id===record.id),'Se elimina de verdad.');
+  for(const section of ['educacion','cursos','servicios','galeria','faq','contenido','convenios','ajustes']){
+   await adminSend('Page.navigate',{url:origin+'/admin/dashboard?section='+section+'&crear=1'});
+   await adminWait('!!document.querySelector("[data-panel-editorial-retired]")');
+   assert.equal(await adminEval('!!document.querySelector("main form,dialog[open]")'),false,'Gestor retirado: '+section);
   }
-  // ---- Forms show only the fields of each kind of content; hidden stored values are never overwritten ----
-  const fieldIds=()=>adminEval('Array.from(document.querySelectorAll("dialog form [id^=field-]"),x=>x.id.slice(6)).sort()');
-  const sorted=list=>[...list].sort();
-  const pickValue=(id,value)=>adminEval('(()=>{const s=document.getElementById('+JSON.stringify(id)+');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,"value").set.call(s,'+JSON.stringify(value)+');s.dispatchEvent(new Event("change",{bubbles:true}))})()');
-  const submitForm=async()=>{await sleep(100);await adminEval('document.querySelector("dialog form").requestSubmit()')};
-  const openCreate=async text=>{await adminEval('Array.from(document.querySelectorAll(".hp-heading button")).find(x=>x.textContent.includes('+JSON.stringify(text)+')).click()');await adminWait('!!document.getElementById("field-titulo")')};
-  const openEdit=async title=>{
-   // Records can sit on another page of the list (8 per page): go to the first page that holds it.
-   const has='Array.from(document.querySelectorAll(".hw-resource h3")).some(h=>h.textContent==='+JSON.stringify(title)+')';
-   const turn=label=>adminEval('(()=>{const b=Array.from(document.querySelectorAll(".hp-pagination button")).find(x=>x.textContent==='+JSON.stringify(label)+');if(b&&!b.disabled){b.click();return true}return false})()');
-   for(let n=0;n<4&&await turn('Anterior');n++)await sleep(400);
-   for(let n=0;n<4&&!(await adminEval(has));n++){await adminEval('(()=>{const b=Array.from(document.querySelectorAll(".hp-pagination button")).find(x=>x.textContent==="Siguiente");if(b&&!b.disabled)b.click()})()');await sleep(400)}
-   await adminEval('(()=>{const card=Array.from(document.querySelectorAll(".hw-resource")).find(x=>x.querySelector("h3").textContent==='+JSON.stringify(title)+');card.querySelector("footer button").click()})()');await adminWait('document.getElementById("field-titulo")?.value==='+JSON.stringify(title))};
-  const goSub=async(label,key)=>{await adminEval('Array.from(document.querySelectorAll(".hp-nav-subitem")).find(x=>x.textContent==='+JSON.stringify(label)+').click()');await adminWait('location.search.includes("seccion='+key+'")&&document.querySelector("h1").textContent==='+JSON.stringify(label))};
-  const hidden=['color','presentacion','categoria','contenido_tipo','tipo'];
-  const common=['titulo','descripcion','imagen_url','orden','estado','slug'];
-  await adminEval('Array.from(document.querySelectorAll(".hp-nav-item")).find(x=>x.textContent.includes("Servicios tecnológicos")).getAttribute("aria-expanded")==="true"||Array.from(document.querySelectorAll(".hp-nav-item")).find(x=>x.textContent.includes("Servicios tecnológicos")).click()');
-  await adminWait('document.querySelectorAll(".hp-nav-subitem").length===3');
-  const expected={cableado:[...common,'nombre_corto','icono','destacado','dato_principal','dato_secundario','etiquetas','alcance'],camaras:[...common,'icono','destacado','etiquetas','alcance'],soporte:[...common,'icono','destacado','etiquetas','alcance']};
-  const labels={cableado:'Cableado estructurado',camaras:'Cámaras de seguridad',soporte:'Soporte y mantenimiento'};
-  for(const key of ['cableado','camaras','soporte']){
-   await goSub(labels[key],key);
-   await openCreate('Crear servicio');
-   assert.deepEqual(await fieldIds(),sorted(expected[key]),key+': campos del formulario.');
-   assert.equal(await adminEval('document.querySelector(".hp-advanced summary").textContent'),'Opciones avanzadas');
-   assert.equal(await adminEval('document.querySelector(".hp-advanced").open'),false,'El slug queda en opciones avanzadas, cerrado.');
-   if(key!=='cableado')assert.equal(await adminEval('document.querySelector("label[for=field-destacado]").textContent.includes("Insignia de la imagen")'),true);
-   assert.equal(await adminEval('document.querySelector("#field-icono option:first-child").textContent'),'Sin icono');
-   // UX: Guardar is always in view (sticky footer) and the sections are titled.
-   assert.equal(await adminEval('document.querySelector(".hp-dialog-footer").getBoundingClientRect().bottom<=innerHeight'),true,key+': Guardar siempre a la vista.');
-   assert.deepEqual(await adminEval('Array.from(document.querySelectorAll(".hp-form-section > h3"),x=>x.textContent)'),['Información principal','Contenido','Publicación'],key+': secciones del formulario.');
-   if(key==='cableado'){
-    // A slug that cannot be built from the title opens "Opciones avanzadas" and the error shows next to Guardar.
-    await typeInto('field-titulo','!!');await typeInto('field-descripcion','x');await submitForm();
-    await adminWait('!!document.querySelector(".hp-dialog-footer .hp-error")&&document.querySelector(".hp-advanced").open');
-    assert.equal(await adminEval('document.querySelector(".hp-dialog-footer .hp-error").textContent.includes("slug")'),true);
-   }
-   const title='Forma '+key;await typeInto('field-titulo',title);await typeInto('field-descripcion','Descripción de '+title);
-   if(key==='camaras'){await typeInto('field-destacado','NUEVO');}
-   await submitForm();await adminWait('document.body.innerText.includes("Se creó «'+title+'»")');
-   const posted=serviceBodies.at(-1);assert.equal(posted.method,'POST');
-   assert.equal(posted.body.categoria,key,'La categoría fijada se envía al crear.');assert.equal(posted.body.slug,'forma-'+key,'El slug sale del título.');
-   for(const name of ['color','presentacion','contenido_tipo','nombre_corto','dato_principal','dato_secundario'])assert.ok(!(name in posted.body),key+': no se envía '+name+' si está vacío o oculto.');
-   if(key==='camaras')assert.equal(posted.body.destacado,'NUEVO');else assert.ok(!('destacado' in posted.body),'La insignia es opcional.');
-  }
-  // Editing keeps hidden values: they are not part of the form, so they are not sent (and never sent empty).
-  const camHidden=serviceEntries.find(x=>x.categoria==='camaras'&&!x.titulo.startsWith('Forma'));
-  Object.assign(camHidden,{color:'coral',presentacion:'camara',nombre_corto:'Pestaña oculta',dato_principal:'99',dato_secundario:'Mbps ocultos'});
-  await goSub(labels.camaras,'camaras');await adminWait('document.querySelectorAll(".hw-resource").length>0');
-  const editTarget=camHidden.titulo;
-  await openEdit(editTarget);
-  await typeInto('field-etiquetas','Etiqueta nueva');await submitForm();await adminWait('document.body.innerText.includes("Cambios guardados correctamente.")&&!document.querySelector("dialog[open]")');
-  const edited=serviceBodies.at(-1);assert.equal(edited.method,'PUT');
-  for(const name of ['color','presentacion','nombre_corto','dato_principal','dato_secundario','categoria','limpiar'])assert.ok(!(name in edited.body),'Editar no envía el campo oculto '+name+'.');
-  assert.equal(edited.body.etiquetas,'Etiqueta nueva');
-  assert.deepEqual([camHidden.color,camHidden.presentacion,camHidden.nombre_corto,camHidden.dato_principal,camHidden.dato_secundario],['coral','camara','Pestaña oculta','99','Mbps ocultos'],'Los valores ocultos siguen guardados.');
-  // Clearing a visible optional field does clear it, and only that one.
-  await openEdit(editTarget);await typeInto('field-etiquetas','');await submitForm();await adminWait('document.body.innerText.includes("Cambios guardados correctamente.")&&!document.querySelector("dialog[open]")');
-  assert.deepEqual(serviceBodies.at(-1).body.limpiar,['etiquetas']);assert.equal(camHidden.etiquetas,null);assert.equal(camHidden.color,'coral');
-  // Asesoramiento: line / benefit, stored internally in presentacion.
-  await adminEval('Array.from(document.querySelectorAll(".hp-nav-item")).find(x=>x.textContent.includes("Educación")).click()');
-  await adminWait('document.querySelectorAll(".hp-nav-subitem").length===3&&Array.from(document.querySelectorAll(".hp-nav-subitem"),x=>x.textContent).includes("Asesoramiento")');
-  await goSub('Asesoramiento','asesoramiento');
-  await openCreate('Crear servicio');
-  assert.deepEqual(await fieldIds(),sorted([...common,'contenido_tipo','icono','alcance']),'Asesoramiento (línea): campos.');
-  assert.deepEqual(await adminEval('Array.from(document.getElementById("field-contenido_tipo").options,x=>x.textContent)'),['Línea de asesoramiento','Beneficio (Por qué elegirnos)']);
-  assert.equal(await adminEval('document.querySelector("label[for=field-alcance]").textContent.includes("Alcance / Qué incluye")'),true);
-  await typeInto('field-titulo','Línea de prueba');await typeInto('field-descripcion','Descripción de la línea');await typeInto('field-alcance','Incluye uno\nIncluye dos');
-  await submitForm();await adminWait('document.body.innerText.includes("Se creó «Línea de prueba»")');
-  let sent=serviceBodies.at(-1).body;assert.equal(sent.categoria,'asesoramiento');assert.equal(sent.presentacion,'asesoria');assert.ok(!('color' in sent)&&!('etiquetas' in sent));
-  await openCreate('Crear servicio');
-  await pickValue('field-contenido_tipo','beneficio');
-  await adminWait('!document.getElementById("field-alcance")');
-  assert.deepEqual(await fieldIds(),sorted(['titulo','contenido_tipo','descripcion','icono','orden','estado','slug']),'Beneficio: sin imagen ni alcance.');
-  await typeInto('field-titulo','Beneficio de prueba');await typeInto('field-descripcion','Por qué elegirnos de prueba');
-  await submitForm();await adminWait('document.body.innerText.includes("Se creó «Beneficio de prueba»")');
-  sent=serviceBodies.at(-1).body;assert.equal(sent.presentacion,'beneficio');assert.equal(sent.categoria,'asesoramiento');assert.ok(!('alcance' in sent)&&!('imagen_url' in sent));
-  // Editing a line without touching the type does not rewrite presentacion; changing it does.
-  await openEdit('Línea de prueba');assert.equal(await adminEval('document.getElementById("field-contenido_tipo").value'),'linea');
-  await typeInto('field-descripcion','Descripción editada');await submitForm();await adminWait('document.body.innerText.includes("Cambios guardados correctamente.")&&!document.querySelector("dialog[open]")');
-  assert.ok(!('presentacion' in serviceBodies.at(-1).body),'Sin cambiar el tipo no se toca presentacion.');
-  await openEdit('Beneficio de prueba');assert.equal(await adminEval('document.getElementById("field-contenido_tipo").value'),'beneficio');
-  await pickValue('field-contenido_tipo','linea');await submitForm();await adminWait('document.body.innerText.includes("Cambios guardados correctamente.")&&!document.querySelector("dialog[open]")');
-  assert.equal(serviceBodies.at(-1).body.presentacion,'asesoria');
-  await openEdit('Beneficio de prueba');await pickValue('field-contenido_tipo','beneficio');await submitForm();await adminWait('document.body.innerText.includes("Cambios guardados correctamente.")&&!document.querySelector("dialog[open]")');
-  assert.equal(serviceBodies.at(-1).body.presentacion,'beneficio');
-  // Courses and capacitaciones.
-  const courseFields=['titulo','descripcion','imagen_url','modalidad','duracion','fecha_inicio','area','certificacion','temario','orden','estado','slug'];
-  await goSub('Cursos','cursos');await openCreate('Crear');
-  assert.deepEqual(await fieldIds(),sorted(courseFields),'Cursos: campos.');
-  assert.equal(await adminEval('document.querySelector("label[for=field-modalidad]").textContent.includes("*")&&document.querySelector("label[for=field-duracion]").textContent.includes("*")'),true,'Curso: modalidad y duración obligatorias.');
-  await typeInto('field-titulo','Curso de forma');await typeInto('field-descripcion','Descripción del curso');await pickValue('field-modalidad','virtual');await typeInto('field-duracion','10 horas');await typeInto('field-area','Ofimática');
-  await submitForm();await adminWait('document.body.innerText.includes("Se creó «Curso de forma»")');
-  let course=courseBodies.at(-1).body;assert.equal(course.tipo,'curso');assert.equal(course.slug,'curso-de-forma');assert.equal(course.area,'Ofimática');
-  for(const name of ['color','icono','certificacion','temario','fecha_inicio'])assert.ok(!(name in course),'Curso: no se envía '+name+' vacío.');
-  await goSub('Capacitaciones','capacitaciones');await openCreate('Crear');
-  assert.deepEqual(await fieldIds(),sorted(courseFields),'Capacitaciones: mismos campos.');
-  assert.equal(await adminEval('document.querySelector("label[for=field-modalidad]").textContent.includes("*")'),false,'Capacitación: modalidad opcional.');
-  await typeInto('field-titulo','Capacitación de forma');await typeInto('field-descripcion','Descripción de la capacitación');
-  await submitForm();await adminWait('document.body.innerText.includes("Se creó «Capacitación de forma»")');
-  course=courseBodies.at(-1).body;assert.equal(course.tipo,'capacitacion');assert.ok(!('modalidad' in course)&&!('duracion' in course));
-  fixtureCap.icono='star';fixtureCap.color='coral';fixtureCap.area='Área guardada';
-  await openEdit('Capacitación de prueba');await typeInto('field-certificacion','Certificado oficial');await submitForm();await adminWait('document.body.innerText.includes("Cambios guardados correctamente.")&&!document.querySelector("dialog[open]")');
-  course=courseBodies.at(-1).body;assert.equal(course.certificacion,'Certificado oficial');
-  for(const name of ['icono','color','tipo','limpiar'])assert.ok(!(name in course),'Editar no envía '+name+'.');
-  assert.deepEqual([fixtureCap.icono,fixtureCap.color,fixtureCap.area],['star','coral','Área guardada'],'Los valores ocultos de la capacitación siguen guardados.');
-  // The public pages render what the panel just created, with and without the optional extras.
-  await navigate('/tecnologias/camaras-seguridad');await wait('Array.from(document.querySelectorAll(".cam-card h3")).some(h=>h.textContent==="Forma camaras")');
-  assert.equal(await evaluate('(()=>{const c=Array.from(document.querySelectorAll(".cam-card")).find(x=>x.querySelector("h3").textContent==="Forma camaras");return c.querySelector(".tech-badge")?.textContent})()'),'Nuevo','La insignia se muestra (en mayúsculas por estilo).');
-  assert.equal(await evaluate('Array.from(document.querySelectorAll(".cam-card")).filter(c=>!c.querySelector(".tech-badge")).length>0'),true,'Las tarjetas sin insignia se ven completas.');
-  await navigate('/educacion/asesoramiento');await wait('Array.from(document.querySelectorAll(".edu-card h3")).some(h=>h.textContent==="Línea de prueba")&&Array.from(document.querySelectorAll(".edu-benefit h3")).some(h=>h.textContent==="Beneficio de prueba")');
-  await navigate('/educacion/cursos');await wait('Array.from(document.querySelectorAll(".edu-card h3")).some(h=>h.textContent==="Curso de forma")');
-  assert.equal(await evaluate('Array.from(document.querySelectorAll(".edu-card")).find(c=>c.querySelector("h3").textContent==="Curso de forma").textContent.includes("Por confirmar")'),true,'Inicio por confirmar en el curso nuevo.');
-  await navigate('/educacion/capacitaciones');await wait('Array.from(document.querySelectorAll(".edu-card h3")).some(h=>h.textContent==="Capacitación de forma")');
-  // Leave the fixtures as they were for the checks that follow.
-  for(const list of [serviceEntries,courseEntries])for(let i=list.length-1;i>=0;i--)if(/^(Forma |Línea de prueba|Beneficio de prueba|Curso de forma|Capacitación de forma)/.test(list[i].titulo))list.splice(i,1);
-  for(const name of ['color','presentacion','nombre_corto','dato_principal','dato_secundario'])delete camHidden[name];
-  delete fixtureCap.icono;delete fixtureCap.color;delete fixtureCap.area;delete fixtureCap.certificacion;
-  // Back to the technology services group, as the Education menu check below expects.
-  await adminEval('Array.from(document.querySelectorAll(".hp-nav-item")).find(x=>x.textContent.includes("Servicios tecnológicos")).click()');
-  await adminWait('location.search.includes("section=servicios")&&document.querySelectorAll(".hp-nav-subitem").length===3&&Array.from(document.querySelectorAll(".hp-nav-subitem"),x=>x.textContent).includes("Soporte y mantenimiento")');
-  fixtureCap.estado='archivado'; // archived records remain available for editing and republication
-  // Education menu: Asesoramiento, Capacitaciones and Cursos are separate sections of one group.
-  await adminEval('Array.from(document.querySelectorAll(".hp-nav-item")).find(x=>x.textContent.includes("Educación")).click()');
-  await adminWait('location.search.includes("section=educacion")&&location.search.includes("seccion=asesoramiento")&&document.querySelectorAll(".hp-nav-subitem").length===3');
-  assert.deepEqual(await adminEval('Array.from(document.querySelectorAll(".hp-nav-subitem"),x=>x.textContent)'),['Asesoramiento','Capacitaciones','Cursos'],'El menú de servicios se pliega al cambiar de grupo.');
-  await adminEval('Array.from(document.querySelectorAll(".hp-nav-subitem")).find(x=>x.textContent==="Asesoramiento").click()');
-  await adminWait('location.search.includes("seccion=asesoramiento")&&document.querySelector("h1").textContent==="Asesoramiento"&&document.querySelectorAll(".hw-resource").length===7');
-  assert.equal(await adminEval('document.querySelector(".hp-kicker").textContent'),'EDUCACIÓN');
-  for(const [name,key,tipo] of [['Capacitaciones','capacitaciones','capacitacion'],['Cursos','cursos','curso']]){
-   await sleep(600);adminCourseRequests.length=0; // let requests still in flight from the previous section arrive first
-   await adminEval('Array.from(document.querySelectorAll(".hp-nav-subitem")).find(x=>x.textContent==='+JSON.stringify(name)+').click()');
-   await adminWait('location.search.includes("seccion='+key+'")&&document.querySelector("h1").textContent==='+JSON.stringify(name)+'&&document.querySelectorAll(".hw-resource").length>0');
-   assert.ok(adminCourseRequests.length>0&&adminCourseRequests.every(search=>new URLSearchParams(search).get('tipo')===tipo),name+' solo consulta registros de su tipo.');
-   await adminEval('Array.from(document.querySelectorAll(".hp-heading button")).find(x=>x.textContent.includes("Crear")).click()');
-   await adminWait('!!document.getElementById("field-titulo")');
-   assert.equal(await adminEval('!!document.getElementById("field-tipo")'),false,name+': el tipo ya está fijado por la sección.');
-   await adminEval('document.querySelector("dialog header button").click()');await adminWait('!document.querySelector("dialog[open]")');
-   // Editing cannot move a record to the other section: the type is fixed.
-   await adminEval('(()=>{const card=Array.from(document.querySelectorAll(".hw-resource")).find(x=>x.querySelector("h3").textContent===' + JSON.stringify(tipo==='curso'?'Curso de prueba':'Capacitación de prueba') + ');card.querySelector("footer button").click()})()');
-   await adminWait('!!document.getElementById("field-titulo")');
-   assert.equal(await adminEval('!!document.getElementById("field-tipo")'),false,name+': editar tampoco permite cambiar el tipo.');
-   await adminEval('document.querySelector("dialog header button").click()');await adminWait('!document.querySelector("dialog[open]")');
-   // There is no DELETE action. Archive and republish the same record through the existing editor.
-   const sample=tipo==='curso'?fixtureCourse:fixtureCap;
-   const slug=sample.slug;
-   assert.equal(await adminEval('!!document.querySelector(".hw-resource button[aria-label^=Eliminar], .hw-resource button[aria-label^=Archivar]")'),false,name+': sin acción DELETE.');
-   for(const estado of ['archivado','publicado']){
-    await openEdit(sample.titulo);await pickValue('field-estado',estado);await submitForm();
-    await adminWait('!document.querySelector("dialog[open]")&&document.body.innerText.includes("Cambios guardados correctamente.")');
-    assert.equal(courseBodies.at(-1).method,'PUT');assert.equal(courseBodies.at(-1).id,sample.id);assert.equal(courseBodies.at(-1).body.estado,estado);
-    assert.equal(courseEntries.find(x=>x.id===sample.id).slug,slug);assert.equal(sample.estado,estado);
-   }
-   assert.deepEqual(courseDeletes,[],name+': no se envía DELETE y se conserva el registro.');
-  }
-  // The old address no longer mixes both: it opens Cursos only.
-  adminCourseRequests.length=0;
-  await adminSend('Page.navigate',{url:origin+'/admin/dashboard?section=cursos'});
-  await adminWait('document.querySelector("h1")?.textContent==="Cursos"&&document.querySelectorAll(".hp-nav-subitem").length===3');
-  // The list must have finished loading (no "Cargando" status, footer rendered) before the request log is read; the h1 and the menu appear earlier.
-  await adminWait('location.search==="?section=cursos"&&!document.querySelector(".hp-empty[role=status]")&&!!document.querySelector(".hp-pagination")&&!document.querySelector(".hp-empty[role=alert]")');
-  assert.ok(adminCourseRequests.length>0&&adminCourseRequests.every(search=>new URLSearchParams(search).get('tipo')==='curso'),'La dirección antigua solo muestra cursos. Solicitudes registradas: '+JSON.stringify(adminCourseRequests));
-  // Sidebar: Ajustes replaces "Cuentas y acceso" and "Crear administrador".
+  assert.equal(serviceBodies.length,0,'Las rutas retiradas no escriben servicios.');
+  assert.equal(courseBodies.length,0,'Las rutas retiradas no escriben cursos.');
+  assert.equal(importBodies.length,0,'Las rutas retiradas no restauran contenido.');
   await adminSend('Page.navigate',{url:origin+'/admin/dashboard?section=resumen'});
-  await adminWait('!!document.querySelector(".hp-sidebar-bottom")');
+  await adminWait('!!document.querySelector(".hp-sidebar")');
   const sidebarText=await adminEval('document.querySelector("#panel-sidebar").textContent');
-  assert.ok(!/Cuentas y acceso|Crear administrador/.test(sidebarText),'Cuentas y acceso y Crear administrador ya no están en el menú.');
-  assert.ok(sidebarText.includes('Información de empresa'));assert.equal(await adminEval('!!document.querySelector("#panel-sidebar a[href=\\"/admin/register\\"]")'),false);
-  assert.deepEqual(await adminEval('Array.from(document.querySelectorAll(".hp-sidebar-bottom > *"),x=>x.textContent.trim())'),['Ajustes','Visitar sitio web','Cerrar sesión']);
-  // The overview keeps courses and capacitaciones apart.
-  await adminWait('document.querySelectorAll(".hp-distribution-row").length>0');
-  const rows=await adminEval('Array.from(document.querySelectorAll(".hp-distribution-row"),x=>x.textContent)');
-  assert.ok(rows.some(x=>x.startsWith('Capacitaciones')&&x.includes('2'))&&rows.some(x=>x.startsWith('Cursos')&&x.includes('1')),'Capacitaciones y Cursos aparecen por separado en el resumen.');
-  assert.ok(!(await adminEval('document.querySelector(".hp-distribution").textContent')).includes('Cursos y capacitaciones'));
-  await adminSend('Page.navigate',{url:origin+'/admin/dashboard?section=cuentas'});
-  await adminWait('document.querySelector("h1")&&document.querySelector("h1").textContent!==""');
-  assert.notEqual(await adminEval('document.querySelector("h1").textContent'),'Cuentas y acceso','La dirección antigua ya no abre la pantalla de cuentas.');
-  await adminEval('Array.from(document.querySelectorAll(".hp-sidebar-bottom button")).find(x=>x.textContent.includes("Ajustes")).click()');
-  await adminWait('location.search.includes("section=configuracion")&&document.querySelector("h1").textContent==="Ajustes"');
-  assert.equal(await adminEval('document.querySelector(".hp-sidebar-bottom button").getAttribute("aria-current")'),'page');
-  assert.equal(await adminEval('document.querySelector(".hp-heading p:not(.hp-kicker)").textContent'),'Configura las preferencias de tu cuenta y del panel.');
+  assert.ok(!/Educación|Galería de proyectos|Convenios|Biblioteca de contenido|Información de empresa/.test(sidebarText));
+  await adminEval('Array.from(document.querySelectorAll("aside nav button")).find(x=>x.textContent.includes("Mi cuenta")).click()');
+  await adminWait('location.search.includes("section=configuracion")&&document.querySelector("h1").textContent==="Mi cuenta"');
+  assert.equal(await adminEval('Array.from(document.querySelectorAll("aside nav button")).find(x=>x.textContent.includes("Mi cuenta")).getAttribute("aria-current")'),'page');
+  assert.equal(await adminEval('document.querySelector(".hp-heading p:not(.hp-kicker)").textContent'),'Gestiona el acceso de tu propia cuenta.');
   assert.equal(await adminEval('document.querySelectorAll(".hp-password-card input[type=password]").length'),3);
   await adminEval('window.__fill=(values)=>{const inputs=document.querySelectorAll(".hp-password-card input");values.forEach((value,i)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(inputs[i],value);inputs[i].dispatchEvent(new Event("input",{bubbles:true}))})}');
   await adminEval('window.__fill(["Clave-correcta-1","Nueva-clave-segura-1","Otra-clave-distinta-1"])');await sleep(100);
@@ -455,7 +212,7 @@ async function main(){
   assert.equal(await adminEval('localStorage.getItem("horus-admin-token")'),null,'Cambiar la contraseña cierra la sesión.');
   await evaluate('localStorage.setItem("horus-admin-token","isolated-ui-test-token")');
  }finally{await adminSend('Page.close').catch(()=>{});adminSocket.close()}
- console.log('UI: diseño original, pestañas con teclado, carrusel, filtros, móvil, importación y edición del panel reflejada en otra pestaña: OK.');
+ console.log('UI: páginas públicas, teclado, carrusel, filtros, móvil, rutas editoriales retiradas y cuenta personal: OK.');
 
  await navigate('/admin/dashboard?section=cotizaciones');await wait('Array.from(document.querySelectorAll("button")).some(x=>x.textContent.trim()==="Ver propuesta"&&!x.disabled)');await click('Ver propuesta');await wait('!!document.querySelector(".hq-document")');assert.ok(await evaluate('document.querySelector(".hq-document").textContent.includes("118.00")'));await click('Enviar por correo');await wait('document.body.innerText.includes("No se pudo enviar el correo de prueba.")');await evaluate('document.querySelector("dialog header button").click()');
  await navigate('/admin/messages');await wait('document.body.innerText.includes("Consulta de prueba")');await evaluate('document.querySelector(".hw-inbox-list button").click()');await wait('document.body.innerText.includes("Seguimiento de atención")');await wait('document.querySelector(".hw-inbox-detail textarea")!==null');
