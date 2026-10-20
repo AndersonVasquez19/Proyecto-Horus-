@@ -2,7 +2,9 @@
 
 Fase backend 2 de NestJS/Prisma/MySQL. **Solo API**: no hay pantallas React todavía. Un docente es una entidad académica propia; **no es una cuenta de acceso**: no tiene contraseña, rol ni relación con `admin_users`, y registrarlo nunca crea ni habilita un usuario. Las cuentas se siguen gestionando únicamente en «Roles y usuarios».
 
-Estado de activación: **código y migración listos y probados en MySQL 8.4 desechable; no aplicados en `horus_db`, `horus_local` ni ninguna base habitual.** La activación real es una tarea posterior con autorización expresa (ver «Activación»).
+Estado de activación: **la migración `20261020-docentes` ya fue aplicada a `horus_db` (20 de octubre de 2026)**, tras un respaldo verificado y un ensayo en un clon aislado; el registro completo está en [Activación real en horus_db](activacion-docentes-mysql-real.md). **Cualquier otra base o entorno** (`horus_local`, Railway, instalaciones nuevas, copias restauradas) **debe verificar su propio historial de migraciones** (`npm run db:check`) y seguir el orden de «Migración y activación»: no se debe asumir que está migrada. El código con `DocentesModule` está probado en MySQL 8.4 desechable, pero **aún no se ha desplegado ni arrancado contra `horus_db`**.
+
+Limitaciones de la validación real: los permisos por rol (Gerencia/Coordinación 200, Secretaría y cuenta básica 403) se comprobaron solo con cuentas ficticias en el clon; contra `horus_db` solo se verificaron respuestas 401 sin sesión y lecturas públicas. Falta confirmar `GET /api/admin/docentes` = 200 con lista vacía usando la sesión administrativa real de Gerencia. Los respaldos de la activación no están cifrados.
 
 ## Modelo de datos
 
@@ -129,7 +131,7 @@ Ninguna respuesta incluye SQL, nombres de índices, trazas ni valores de otros r
 
 Como MySQL no hace DDL transaccional, una ejecución interrumpida deja un prefijo de las tres sentencias; **repetir `npm run db:migrate` la completa** (probado con cada prefijo, con datos previos intactos). Si una tabla homónima preexistente tiene otra forma, `CREATE TABLE IF NOT EXISTS` no la corrige: `db:check` la rechaza.
 
-Orden de activación en un destino habitual, en una tarea posterior con autorización explícita (ninguno de estos pasos se ha ejecutado):
+Orden de activación en un destino habitual, con autorización explícita. Este procedimiento se ejecutó en `horus_db` (pasos 1 a 5, ver [la activación real](activacion-docentes-mysql-real.md)); **se conserva para futuras instalaciones y otros entornos**, y los pasos 6 y 7 siguen pendientes:
 
 1. Confirmar el destino (`DB_HOST`, `DB_NAME`) sin mostrar credenciales y que nadie más esté migrando.
 2. `npm run db:backup` (más `uploads:backup` si corresponde) y `--verify-only` sobre el archivo.
@@ -168,7 +170,7 @@ El job «Integración (MySQL efímero)» de `.github/workflows/ci.yml` ejecuta `
 - `docentes.integration.cjs`: 16 de 16 aprobadas; contenedor retirado al terminar.
 - Regresiones, cada una en su MySQL 8.4 desechable (todas con 0 fallos y contenedor retirado): AccessGuard HTTP 28/28, estructura académica 20/20, Ediciones 10/10, Estudiantes 8/8, Matrículas 16/16, Reportes 10/10, Importaciones CSV 15/15.
 - Frontend (contratos de permisos, sin cambios visuales): `test:panel-access` 23/23 y `test:session-access` 15/15.
-- La migración `20261020-docentes` **no se aplicó** a ninguna base habitual.
+- Estas pruebas se hicieron antes de la activación: la migración `20261020-docentes` se aplicó después a `horus_db` (ver [Activación real](activacion-docentes-mysql-real.md)), no a ninguna otra base.
 
 ## Integración posterior con React (no implementada)
 
