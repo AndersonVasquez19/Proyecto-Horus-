@@ -30,6 +30,7 @@ import { ConvocatoriasController } from '../src/convocatorias/convocatorias.cont
 import { EstudiantesController } from '../src/estudiantes/estudiantes.controller';
 import { MatriculasController } from '../src/matriculas/matriculas.controller';
 import { AsignacionesDocentesController, DocentesController } from '../src/docentes/docentes.controller';
+import { EdicionSesionesController, SesionesController } from '../src/sesiones/sesiones.controller';
 import { ReportesController } from '../src/reportes/reportes.controller';
 import { ImportacionesController } from '../src/importaciones/importaciones.controller';
 import { AdminNewsletterController } from '../src/newsletter/admin-newsletter.controller';
@@ -64,7 +65,7 @@ test('cada permiso tiene un identificador único con el formato recurso:operacio
 
 test('los permisos de recursos futuros están separados de los actuales', () => {
   for (const resource of FUTURE_RESOURCES) assert.ok(resource in RESOURCE_OPERATIONS);
-  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones', 'certificados', 'sesiones']);
+  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones', 'certificados'], 'sesiones dejó de ser futuro: ya tiene rutas (Horarios y Sesiones)');
   // Reportes académicos ya tienen rutas (src/reportes): consultar con reportes_academicos:leer y exportar con reportes_academicos:exportar.
   assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('reportes_academicos'));
 });
@@ -224,6 +225,39 @@ test('docentes: cada ruta exige el permiso previsto, según los decoradores real
   for (const route of inventory) assert.equal(can(S, (route.access as { permission: string }).permission), false, 'secretaria ' + route.path);
 });
 
+test('sesiones: catálogo exacto sin cambios, gerente y coordinadora completos, secretaría y cuenta sin rol denegadas, sin eliminación física', () => {
+  assert.deepEqual([...RESOURCE_OPERATIONS.sesiones], ['leer', 'crear', 'editar'], 'no se añadió un permiso «programar»: reprogramar y cambiar de estado es editar');
+  const all = ['sesiones:leer', 'sesiones:crear', 'sesiones:editar'];
+  for (const id of all) { assert.ok(isPermission(id), id); assert.equal(can(G, id), true, 'gerente ' + id); assert.equal(can(C, id), true, 'coordinadora ' + id); }
+  for (const id of all) assert.equal(can(S, id), false, 'secretaria ' + id);
+  for (const sinRol of [null, undefined, '', 'ADMIN', 'docente']) for (const id of all) assert.equal(can(sinRol, id), false, String(sinRol) + ' ' + id);
+  for (const id of ['sesiones:eliminar', 'sesiones:programar', 'sesiones:archivar', 'sesiones:*', 'sesiones']) assert.equal(isPermission(id), false, id);
+  assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('sesiones'), 'sesiones es un módulo implementado');
+  assert.deepEqual(permissionsOf(C).filter(id => id.startsWith('sesiones:')), [...all].sort());
+  assert.deepEqual(permissionsOf(S).filter(id => id.startsWith('sesiones:')), []);
+  assert.equal(permissionsOf(C).length, 68, 'la matriz de la coordinadora no cambió');
+});
+
+test('sesiones: cada ruta exige el permiso previsto, según los decoradores reales y el inventario', () => {
+  const expected: Record<string, string> = {
+    'GET admin/sesiones': 'sesiones:leer', 'GET admin/sesiones/:id': 'sesiones:leer', 'GET admin/convocatorias/:id/sesiones': 'sesiones:leer',
+    'POST admin/sesiones': 'sesiones:crear', 'PATCH admin/sesiones/:id': 'sesiones:editar', 'PUT admin/sesiones/:id/estado': 'sesiones:editar',
+  };
+  const isSessionRoute = (path: string) => /^admin\/sesiones(\/|$)/.test(path) || /^admin\/convocatorias\/:id\/sesiones$/.test(path);
+  const inventory = ROUTE_INVENTORY.filter(route => isSessionRoute(route.path));
+  assert.deepEqual(inventory.map(route => route.method + ' ' + route.path).sort(), Object.keys(expected).sort());
+  for (const route of inventory) assert.deepEqual(route.access, { kind: 'permiso', permission: expected[route.method + ' ' + route.path] }, route.path);
+  const declared = routeHandlers().filter(route => isSessionRoute(route.key.split(' ')[1]));
+  assert.equal(declared.length, Object.keys(expected).length);
+  for (const route of declared) assert.deepEqual(Reflect.getMetadata(ACCESS_METADATA, route.handler), { kind: 'permiso', permission: expected[route.key] }, route.key);
+  assert.ok(!declared.some(route => route.key.startsWith('DELETE ')), 'no existe ninguna ruta DELETE: una sesión se cancela y se conserva');
+  for (const route of inventory) if (route.method !== 'GET') assert.notEqual((route.access as { permission: string }).permission, 'sesiones:leer', route.path);
+  for (const route of inventory) assert.equal(can(S, (route.access as { permission: string }).permission), false, 'secretaria ' + route.path);
+  // La ruta anidada de ediciones no cambia el permiso de las rutas de ediciones: seguirán exigiendo convocatorias:*.
+  const editions = ROUTE_INVENTORY.filter(route => /^admin\/convocatorias/.test(route.path) && !isSessionRoute(route.path));
+  assert.ok(editions.length >= 8 && editions.every(route => (route.access as { permission: string }).permission.startsWith('convocatorias:')));
+});
+
 test('la coordinadora no administra cuentas ni configuración crítica', () => {
   for (const id of ALL_PERMISSIONS) if (id.startsWith('cuentas:')) assert.equal(can(C, id), false, id);
   assert.equal(can(C, 'configuracion:editar'), false);
@@ -272,7 +306,7 @@ const CONTROLLERS: Function[] = [
   AttentionController, CursoController, AdminCursoController, ServicioController, AdminServicioController, PreguntaFrecuenteController,
   AdminPreguntaFrecuenteController, ChatbotController, ContactoController, OriginalContentController, ConveniosController, AdminConveniosController,
   CotizacionesController, AdminGaleriaController, GaleriaController, HealthController, AdminNewsletterController, NewsletterController,
-  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController, DocentesController, AsignacionesDocentesController, ReportesController,
+  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController, DocentesController, AsignacionesDocentesController, SesionesController, EdicionSesionesController, ReportesController,
 ];
 
 function normalize(...parts: string[]) { return parts.join('/').split('/').filter(Boolean).join('/'); }

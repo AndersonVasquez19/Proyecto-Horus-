@@ -194,6 +194,9 @@ jobs:
       # el ejecutor lo retira en su bloque finally y devuelve código distinto de 0 si falla cualquier aserción, migración, permiso o restricción.
       - name: Integración de Docentes y ponentes (HTTP, permisos, asignaciones, sustituciones y migración)
         run: node test/run-academic-isolated.cjs docentes
+      # Horarios y sesiones (20261020-sesiones-academicas): mismo ejecutor aislado y desechable que Docentes; nunca horus_db ni horus_local.
+      - name: Integración de Horarios y sesiones (HTTP, solapamientos, concurrencia, zona horaria y migración)
+        run: node test/run-academic-isolated.cjs sesiones
       - name: Integración de importación CSV (HTTP, atomicidad y concurrencia)
         run: node test/run-importaciones-disposable.cjs importaciones.integration.cjs
       - name: Retirar MySQL

@@ -218,3 +218,32 @@ test('migraciones: la 20261020-docentes crea dos tablas restrictivas y solo ampl
   for (const name of [...all.matchAll(/(?:KEY|CONSTRAINT) `(\w+)`/g)].map(match => match[1])) assert.ok(check.includes("'" + name + "'"), 'db:check debe verificar ' + name);
   assert.ok(check.includes("'20261020-docentes'"), 'db:check recorre la migración');
 });
+
+test('migraciones: la 20261020-sesiones-academicas crea una tabla restrictiva y solo amplía dos ENUM del historial, sin datos, reflejada en schema.prisma y db:check', () => {
+  const sql = statements(read('20261020-sesiones-academicas'));
+  assert.deepEqual(sql.map(s => (s.match(/^(?:CREATE TABLE IF NOT EXISTS|ALTER TABLE) `(\w+)`/) ?? [])[1]), ['sesiones', 'academico_historial', 'academico_historial'], 'cada sentencia es idempotente y atómica');
+  assert.equal(versions.at(-1), '20261020-sesiones-academicas', 'va al final de la sucesión, después de docentes (referencia docente_asignaciones)');
+  assert.ok(versions.indexOf('20261020-sesiones-academicas') > versions.indexOf('20261020-docentes'));
+  const [table, entidad, operacion] = sql;
+  assert.ok(!/ON (DELETE|UPDATE) (CASCADE|SET NULL|SET DEFAULT)/i.test(table), 'ninguna relación borra ni modifica en cascada');
+  assert.equal((table.match(/FOREIGN KEY/g) ?? []).length, 2); assert.equal((table.match(/ON DELETE RESTRICT ON UPDATE RESTRICT/g) ?? []).length, 2);
+  assert.match(table, /FOREIGN KEY \(`asignacion_id`, `convocatoria_id`\) REFERENCES `docente_asignaciones` \(`id`, `convocatoria_id`\)/, 'el docente de la sesión pertenece al equipo de ESA edición');
+  assert.match(table, /`fecha` DATE NOT NULL/); assert.match(table, /`hora_inicio` TIME NOT NULL/); assert.match(table, /`hora_fin` TIME NOT NULL/);
+  assert.ok(!/TIMESTAMP|DATETIME\(3\) NOT NULL,\s*\n\s*`hora/i.test(table.replace(/`(createdAt|updatedAt|cancelada_at)`[^\n]*/g, '')), 'la hora local de Lima no se guarda en tipos que dependan de la zona');
+  assert.match(table, /CONSTRAINT `sesiones_horas_chk` CHECK \(`hora_inicio` >= '00:00:00' AND `hora_inicio` < `hora_fin` AND `hora_fin` <= '23:59:00'/, 'intervalo [inicio, fin) dentro del día');
+  assert.match(table, /`estado` ENUM\('programada','realizada','cancelada'\) NOT NULL DEFAULT 'programada'/);
+  assert.ok(!/UNIQUE KEY `[^`]*` \(`(fecha|hora_inicio|asignacion_id)`/.test(table), 'ningún UNIQUE sobre fecha, hora o docente: MySQL no expresa solapamientos; lo impide el servicio con bloqueos');
+  assert.ok(!/`(password|rol|email|telefono|doc_numero|docente_id|estudiante_id)`/.test(table), 'sin datos personales ni vínculo con estudiantes');
+  assert.equal(entidad, "ALTER TABLE `academico_historial` MODIFY `entidad` ENUM('estudiante','convocatoria','matricula','certificado','docente','asignacion_docente','sesion') NOT NULL", 'solo se AÑADE un valor al final del ENUM');
+  assert.equal(operacion, "ALTER TABLE `academico_historial` MODIFY `operacion` ENUM('creacion','edicion','archivado','restauracion','cambio_estado','anulacion','confirmacion','emision','sustitucion','reprogramacion') NOT NULL");
+  assert.ok(!/DROP|DELETE|TRUNCATE|RENAME|UPDATE |INSERT /i.test(sql.join('\n').replace(/ON (UPDATE|DELETE) (RESTRICT|CURRENT_TIMESTAMP\(3\))/g, '')), 'sin sentencias destructivas ni de datos');
+  const schema = readFileSync(join(__dirname, '..', 'prisma', 'schema.prisma'), 'utf8'), check = readFileSync(join(__dirname, '..', 'scripts', 'check-database.cjs'), 'utf8');
+  assert.match(schema, /model Sesion \{[\s\S]*?@@map\("sesiones"\)/); assert.ok(check.includes('sesiones: ['), 'db:check debe comprobar las columnas de sesiones');
+  assert.match(schema, /enum AcademicoEntidad \{[^}]*asignacion_docente[^}]*sesion[^}]*\}/); assert.match(schema, /enum AcademicoOperacion \{[^}]*sustitucion[^}]*reprogramacion[^}]*\}/);
+  assert.match(schema, /hora_inicio DateTime @db\.Time\(0\)/); assert.match(schema, /fecha DateTime @db\.Date/);
+  const model = schema.match(/model Sesion \{([\s\S]*?)\n\}/)![1];
+  assert.ok(!/onDelete: (Cascade|SetNull)|onUpdate: (Cascade|SetNull)/.test(model), 'relaciones restrictivas también en Prisma');
+  for (const name of [...table.matchAll(/(?:KEY|CONSTRAINT) `(\w+)`/g)].map(match => match[1])) assert.ok(check.includes("'" + name + "'"), 'db:check debe verificar ' + name);
+  assert.ok(check.includes("'20261020-sesiones-academicas'"), 'db:check recorre la migración');
+  assert.ok(check.includes("'asignacion_docente','sesion')") && check.includes("'sustitucion','reprogramacion')"), 'db:check espera los ENUM ampliados del historial');
+});

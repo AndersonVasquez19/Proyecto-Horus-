@@ -38,7 +38,7 @@ const statementsOf = name => readFileSync(join(backend, 'migrations', name + '.s
 
 test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actualización, recuperación, restricciones y Prisma)', async t => {
   if (process.env.ACADEMICO_SCHEMA_TEST_DB !== 'true') return t.skip('Requiere ACADEMICO_SCHEMA_TEST_DB=true y un MySQL desechable identificado.');
-  assert.deepEqual(VERSIONS.slice(VERSIONS.indexOf(MIGRATION)), [MIGRATION, SOLO_DNI, '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes'], 'las migraciones académicas conservan su orden y añaden importaciones y docentes al final');
+  assert.deepEqual(VERSIONS.slice(VERSIONS.indexOf(MIGRATION)), [MIGRATION, SOLO_DNI, '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas'], 'las migraciones académicas conservan su orden y añaden importaciones, docentes y sesiones al final');
   const host = process.env.DB_HOST || '', port = Number(process.env.DB_PORT || 0);
   const expectedUuid = String(process.env.ACADEMICO_SCHEMA_TEST_SERVER_UUID ?? '').trim().toLowerCase();
   assert.ok(['localhost', '127.0.0.1', '::1'].includes(host) && port > 0, 'DB_HOST de bucle local y DB_PORT explícito');
@@ -98,12 +98,12 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
   const databaseAtE41 = () => databaseBefore(MIGRATION); // sin tablas académicas
   const databaseAtE42 = async () => {
     const name = await databaseBefore(SOLO_DNI);
-    // Aislar las pruebas históricas de DNI: capacidad, importaciones y docentes son independientes y ya están en su línea base.
+    // Aislar las pruebas históricas de DNI: capacidad, importaciones, docentes y sesiones son independientes y ya están en su línea base.
     // La actualización natural E4.3b → capacidad, con datos y sin esta preparación, se prueba en convocatorias.integration.cjs;
-    // la de docentes (desde una base previa con datos, con fallos parciales) en docentes.integration.cjs.
+    // la de docentes (desde una base previa con datos, con fallos parciales) en docentes.integration.cjs y la de sesiones en sesiones.integration.cjs.
     const db = await connectTo(name);
     try {
-      for (const version of ['20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes']) {
+      for (const version of ['20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas']) {
         for (const statement of statementsOf(version)) await db.query(statement);
         await db.execute('INSERT INTO horus_migrations (name, applied_at) VALUES (?, ?)', [version, new Date()]);
       }
@@ -230,7 +230,7 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
       const before = await snapshot(name, ['horus_migrations']);
       assert.ok(before.cursos && before.admin_users && before.cotizaciones, 'instantánea de las tablas habituales');
       await migrateAndCheck(name);
-      const after = await snapshot(name, ['horus_migrations', ...ACADEMIC_TABLES, 'importaciones_academicas', 'docentes', 'docente_asignaciones']);
+      const after = await snapshot(name, ['horus_migrations', ...ACADEMIC_TABLES, 'importaciones_academicas', 'docentes', 'docente_asignaciones', 'sesiones']);
       assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort(), 'no se crean ni eliminan otras tablas');
       for (const table of Object.keys(before)) {
         assert.equal(after[table].ddl, before[table].ddl, table + ': definición sin cambios');
@@ -862,9 +862,9 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
       const declaredKeys = await connectTo(source).then(async c => { try { return (await c.query('SELECT CONSTRAINT_NAME AS n FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() ORDER BY TABLE_NAME, CONSTRAINT_NAME'))[0].map(r => r.n); } finally { await c.end(); } });
       const verified = restore.output.match(/Integridad referencial verificada: (\d+) claves foráneas \((\d+) compuestas\), sin filas huérfanas: (.*)\./);
       assert.ok(verified, restore.output);
-      assert.deepEqual([Number(verified[1]), Number(verified[2])], [declaredKeys.length, 2], 'dos claves compuestas: sustitución de certificados y de asignaciones docentes (20261020)');
+      assert.deepEqual([Number(verified[1]), Number(verified[2])], [declaredKeys.length, 3], 'tres claves compuestas: sustitución de certificados, sustitución de asignaciones docentes (20261020) y asignación de una sesión a su edición (20261020-sesiones-academicas)');
       assert.deepEqual(verified[3].split(', ').sort(), [...declaredKeys].sort(), 'se comprueba cada clave foránea declarada');
-      for (const key of ['convocatorias_curso_fk', 'matriculas_confirmado_por_fk', 'certificados_anulado_por_fk', 'certificados_emitido_por_fk', 'certificados_sustituye_fk', 'docente_asignaciones_docente_fk', 'docente_asignaciones_convocatoria_fk', 'docente_asignaciones_sustituye_fk', 'attention_contact_fk', 'cotizaciones_contacto_fk', 'convenio_fotos_convenio_id_fkey']) assert.ok(declaredKeys.includes(key), key);
+      for (const key of ['convocatorias_curso_fk', 'matriculas_confirmado_por_fk', 'certificados_anulado_por_fk', 'certificados_emitido_por_fk', 'certificados_sustituye_fk', 'docente_asignaciones_docente_fk', 'docente_asignaciones_convocatoria_fk', 'docente_asignaciones_sustituye_fk', 'sesiones_convocatoria_fk', 'sesiones_asignacion_fk', 'attention_contact_fk', 'cotizaciones_contacto_fk', 'convenio_fotos_convenio_id_fkey']) assert.ok(declaredKeys.includes(key), key);
       t.diagnostic('restauración válida: ' + verified[0]);
 
       // Todas las tablas (anteriores y académicas): misma definición y mismas filas, incluida la columna generada recalculada.

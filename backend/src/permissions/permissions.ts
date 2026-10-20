@@ -32,7 +32,7 @@ export const RESOURCE_OPERATIONS = {
   convocatorias: ['leer', 'crear', 'editar', 'cerrar', 'archivar'],
   matriculas: ['leer', 'crear', 'editar', 'anular', 'confirmar'], // confirmar = declarar administrativamente que se completó o no la capacitación (no es una calificación)
   docentes: ['leer', 'crear', 'editar', 'asignar'], // editar incluye activar/desactivar; asignar = vincular, retirar, reactivar y sustituir docentes en una edición. Sin eliminar: un docente se desactiva.
-  sesiones: ['leer', 'crear', 'editar'],
+  sesiones: ['leer', 'crear', 'editar'], // editar incluye reprogramar y cambiar de estado (realizada, cancelada, reabrir). Sin eliminar: una sesión se cancela y se conserva.
   asistencia: ['leer', 'registrar'],
   calificaciones: ['leer', 'registrar', 'corregir_cerradas'],
   certificados: ['leer', 'emitir', 'anular'],
@@ -46,7 +46,7 @@ export type Permission = { [R in Resource]: `${R}:${(typeof RESOURCE_OPERATIONS)
 
 // Recursos cuyos módulos todavía no existen: sus permisos están definidos pero ninguna ruta actual los exige.
 export const FUTURE_RESOURCES = [
-  'sesiones', 'asistencia', 'calificaciones', 'certificados',
+  'asistencia', 'calificaciones', 'certificados',
   'auditoria',
 ] as const satisfies readonly Resource[];
 

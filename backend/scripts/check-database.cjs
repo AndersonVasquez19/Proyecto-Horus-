@@ -56,7 +56,7 @@ function expectedColumns() {
 // E4.3b (20261016-academico-solo-dni): el documento académico es solo DNI peruano; un esquema que aún admita CE o PASAPORTE se rechaza.
 const DOC = "ENUM('DNI')", CONFIRMADOR = "ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL')";
 // Migraciones que definen el esquema académico, en su orden de aplicación (el de `versions` en migrate.cjs).
-const ACADEMIC_MIGRATIONS = ['20261015-academico-estructura', '20261016-academico-solo-dni', '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes'];
+const ACADEMIC_MIGRATIONS = ['20261015-academico-estructura', '20261016-academico-solo-dni', '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas'];
 // Esquema efectivo tras aplicar en orden las migraciones académicas: cada CHECK o columna generada redefinida en una migración
 // posterior sustituye a la anterior, y un DROP CHECK sin redefinición en esa misma migración la elimina de lo esperado.
 function academicDefinitions() {
@@ -90,8 +90,11 @@ const ACADEMIC = {
   docente_asignaciones: [['id','int',false],['docente_id','int',false],['convocatoria_id','int',false],['rol',"ENUM('principal','participante')",false],['estado',"ENUM('activa','retirada')",false],
     ['principal_activo_convocatoria_id','int',true],['sustituye_a_id','int',true],['retirado_at','datetime(3)',true],['retiro_motivo','varchar(300)',true],['revision','int',false],
     ['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
-  academico_historial: [['id','int',false],['createdAt','datetime(3)',false],['entidad',"ENUM('estudiante','convocatoria','matricula','certificado','docente','asignacion_docente')",false],['entidad_id','int',false],
-    ['operacion',"ENUM('creacion','edicion','archivado','restauracion','cambio_estado','anulacion','confirmacion','emision','sustitucion')",false],['origen',"ENUM('panel','terminal')",false],
+  sesiones: [['id','int',false],['convocatoria_id','int',false],['asignacion_id','int',true],['titulo','varchar(160)',false],['fecha','date',false],['hora_inicio','time',false],['hora_fin','time',false],
+    ['modalidad',"ENUM('presencial','virtual','hibrida')",false],['lugar','varchar(200)',true],['enlace_url','varchar(2048)',true],['estado',"ENUM('programada','realizada','cancelada')",false],
+    ['cancelada_at','datetime(3)',true],['cancelacion_motivo','varchar(300)',true],['observaciones','varchar(500)',true],['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
+  academico_historial: [['id','int',false],['createdAt','datetime(3)',false],['entidad',"ENUM('estudiante','convocatoria','matricula','certificado','docente','asignacion_docente','sesion')",false],['entidad_id','int',false],
+    ['operacion',"ENUM('creacion','edicion','archivado','restauracion','cambio_estado','anulacion','confirmacion','emision','sustitucion','reprogramacion')",false],['origen',"ENUM('panel','terminal')",false],
     ['actor_id','int',true],['actor_rol',"ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL','SECRETARIA')",true],['operador','varchar(100)',true],['estado_anterior','varchar(30)',true],
     ['estado_nuevo','varchar(30)',true],['campos','json',true],['revision','int',true],['motivo','varchar(300)',true]],
 };
@@ -110,6 +113,8 @@ const ACADEMIC_INDEXES = [
   ['docente_asignaciones','docente_asignaciones_docente_edicion_uq',['docente_id','convocatoria_id'],true], ['docente_asignaciones','docente_asignaciones_principal_uq',['principal_activo_convocatoria_id'],true],
   ['docente_asignaciones','docente_asignaciones_id_edicion_uq',['id','convocatoria_id'],true], ['docente_asignaciones','docente_asignaciones_edicion_idx',['convocatoria_id','estado'],false],
   ['docente_asignaciones','docente_asignaciones_sustituye_idx',['sustituye_a_id','convocatoria_id'],false],
+  ['sesiones','sesiones_id_edicion_uq',['id','convocatoria_id'],true], ['sesiones','sesiones_edicion_idx',['convocatoria_id','fecha','hora_inicio'],false],
+  ['sesiones','sesiones_asignacion_idx',['asignacion_id','convocatoria_id','fecha'],false], ['sesiones','sesiones_fecha_idx',['fecha','hora_inicio'],false],
   ['academico_historial','academico_historial_entidad_idx',['entidad','entidad_id','createdAt'],false], ['academico_historial','academico_historial_actor_idx',['actor_id','createdAt'],false],
 ];
 // [tabla, clave foránea, columnas, tabla referenciada, columnas referenciadas]; todas RESTRICT al borrar y al actualizar.
@@ -125,6 +130,8 @@ const ACADEMIC_FOREIGN_KEYS = [
   ['docente_asignaciones','docente_asignaciones_docente_fk',['docente_id'],'docentes',['id']],
   ['docente_asignaciones','docente_asignaciones_convocatoria_fk',['convocatoria_id'],'convocatorias',['id']],
   ['docente_asignaciones','docente_asignaciones_sustituye_fk',['sustituye_a_id','convocatoria_id'],'docente_asignaciones',['id','convocatoria_id']],
+  ['sesiones','sesiones_convocatoria_fk',['convocatoria_id'],'convocatorias',['id']],
+  ['sesiones','sesiones_asignacion_fk',['asignacion_id','convocatoria_id'],'docente_asignaciones',['id','convocatoria_id']],
 ];
 const ACADEMIC_CHECKS = {
   importaciones_academicas: ['importaciones_conteos_ck'],
@@ -135,6 +142,7 @@ const ACADEMIC_CHECKS = {
   academico_historial: ['academico_historial_origen_chk','academico_historial_campos_chk'],
   docentes: ['docentes_nombres_chk','docentes_texto_chk','docentes_documento_completo_chk','docentes_documento_formato_chk','docentes_activo_chk','docentes_revision_chk'],
   docente_asignaciones: ['docente_asignaciones_retiro_chk','docente_asignaciones_revision_chk'],
+  sesiones: ['sesiones_titulo_chk','sesiones_texto_chk','sesiones_fecha_chk','sesiones_horas_chk','sesiones_modalidad_chk','sesiones_enlace_chk','sesiones_cancelacion_chk','sesiones_revision_chk'],
 };
 function academicColumns() {
   return Object.entries(ACADEMIC).flatMap(([table, columns]) => columns.map(([name, type, nullable]) => ({ table, name, type, nullable, unique: ['id','codigo_verificacion'].includes(name) })));

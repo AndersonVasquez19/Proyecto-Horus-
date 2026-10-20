@@ -183,7 +183,9 @@ El job «Integración (MySQL efímero)» de `.github/workflows/ci.yml` ejecuta `
 - Desactivar: mostrar `asignaciones_activas` y ofrecer retirarlas o sustituirlas, sin hacerlo por sí solo.
 - No guardar datos de docentes en `localStorage`/`sessionStorage`; mensajes en español sin texto técnico del servidor.
 
-## Dependencias con el futuro módulo de Horarios y Sesiones
+## Dependencias con el módulo de Horarios y Sesiones
+
+> Actualización: el backend de Horarios y Sesiones ya está implementado y probado (migración `20261020-sesiones-academicas`, **pendiente de activar**; ver [Horarios y sesiones académicas](horarios-sesiones-academicas.md)). Referencia `docente_asignaciones.id` como se propone abajo, valida docente activo y asignación activa al programar y detecta solapamientos del docente. Este módulo de Docentes **no se modificó**: retirar o desactivar a un docente sigue sin avisar ni bloquear por sus sesiones futuras (pendiente de decisión). El texto que sigue conserva el razonamiento original.
 
 - Una sesión debería referenciar `docente_asignaciones.id` (no `docentes.id`): así el docente de una sesión pertenece, por clave foránea, al equipo de esa edición, y retirar a un docente con sesiones pendientes se puede detectar. Es la razón de conservar las asignaciones retiradas y de que la clave sea `RESTRICT`.
 - Los permisos `sesiones:*`, `asistencia:*` y `calificaciones:*` ya existen y aún no se exigen en ninguna ruta.

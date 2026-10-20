@@ -23,6 +23,10 @@ const versions = JSON.parse(readFileSync(join(backend, 'scripts/migrate.cjs'), '
 const MIGRATION = '20261020-docentes';
 const SYSTEM = ['mysql', 'information_schema', 'performance_schema', 'sys'];
 const NEW_TABLES = ['docentes', 'docente_asignaciones'];
+// Migraciones registradas DESPUÉS de la de docentes (db:migrate las aplica también): sus tablas y la ampliación posterior de los ENUM del
+// historial (20261020-sesiones-academicas) no son parte de lo que esta prueba verifica de la migración de docentes.
+const LATER_TABLES = ['sesiones'];
+const laterHistoryDdl = ddl => ddl.replace("'asignacion_docente')", "'asignacion_docente','sesion')").replace("'sustitucion')", "'sustitucion','reprogramacion')");
 const statementsOf = name => readFileSync(join(backend, 'migrations', name + '.sql'), 'utf8').split(';').map(s => s.trim()).filter(Boolean); // criterio de migrate.cjs
 
 test('Docentes: migración, restricciones, HTTP, permisos, concurrencia, historial y compatibilidad en MySQL desechable', { timeout: 900000 }, async t => {
@@ -104,10 +108,10 @@ test('Docentes: migración, restricciones, HTTP, permisos, concurrencia, histori
       assert.equal(applied.code, 0, applied.output);
       const schema = await runScript('check-database.cjs', name);
       assert.equal(schema.code, 0, schema.output); assert.match(schema.output, /Esquema compatible/);
-      const after = await snapshot(db, ['horus_migrations', ...NEW_TABLES]);
+      const after = await snapshot(db, ['horus_migrations', ...NEW_TABLES, ...LATER_TABLES]);
       assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort(), 'no se crean ni eliminan otras tablas');
       for (const table of Object.keys(before)) {
-        const expectedDdl = table === 'academico_historial' ? before[table].ddl.replace("'certificado')", "'certificado','docente','asignacion_docente')") : before[table].ddl;
+        const expectedDdl = table === 'academico_historial' ? laterHistoryDdl(before[table].ddl.replace("'certificado')", "'certificado','docente','asignacion_docente')")) : before[table].ddl;
         assert.equal(after[table].ddl, expectedDdl, table + ': definición sin cambios (salvo el ENUM ampliado del historial)');
         assert.equal(after[table].rows, before[table].rows, table + ': filas idénticas');
       }
@@ -116,7 +120,7 @@ test('Docentes: migración, restricciones, HTTP, permisos, concurrencia, histori
       assert.equal(again.code, 0, again.output);
       const [registered] = await db.query('SELECT name FROM horus_migrations ORDER BY name');
       assert.deepEqual(registered.map(r => r.name), [...versions].sort(), 'cada migración registrada una sola vez');
-      assert.deepEqual(await snapshot(db, ['horus_migrations', ...NEW_TABLES]), after, 'repetir db:migrate no cambia nada');
+      assert.deepEqual(await snapshot(db, ['horus_migrations', ...NEW_TABLES, ...LATER_TABLES]), after, 'repetir db:migrate no cambia nada');
     });
 
     await t.test('estructura real: InnoDB, claves RESTRICT, únicos, CHECK aplicados y columna generada STORED', async () => {
@@ -192,7 +196,7 @@ test('Docentes: migración, restricciones, HTTP, permisos, concurrencia, histori
         assert.equal((await runScript('migrate.cjs', partial.name)).code, 0);
         const check = await runScript('check-database.cjs', partial.name);
         assert.equal(check.code, 0, check.output);
-        const after = await snapshot(partial.db, ['horus_migrations', ...NEW_TABLES, 'academico_historial']);
+        const after = await snapshot(partial.db, ['horus_migrations', ...NEW_TABLES, ...LATER_TABLES, 'academico_historial']);
         const { academico_historial, ...rest } = before;
         assert.deepEqual(after, rest, 'los datos previos no cambian en la recuperación');
         assert.equal((await snapshot(partial.db, ['horus_migrations', ...NEW_TABLES])).academico_historial.rows, academico_historial.rows, 'el historial previo conserva sus filas');
