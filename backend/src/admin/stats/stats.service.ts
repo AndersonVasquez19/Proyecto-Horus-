@@ -4,7 +4,9 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { messageTotals, recentMessages } from '../../attention/message-state';
 
-const LIMA_OFFSET_HOURS = 5;
+// Compartidos con los reportes académicos (src/reportes) para que «ediciones activas» y los días de Lima signifiquen lo mismo.
+export const LIMA_OFFSET_HOURS = 5;
+export const OPEN_EDITIONS_WHERE = { estado: 'abierta', archivado_at: null } as const satisfies Prisma.ConvocatoriaWhereInput;
 
 @Injectable()
 export class StatsService {
@@ -17,7 +19,7 @@ export class StatsService {
   async getOperationalStats() {
     const [estudiantes, edicionesActivas, matriculas, mensajes, ultimosMensajes] = await Promise.all([
       this.prisma.estudiante.count(),
-      this.prisma.convocatoria.count({ where: { estado: 'abierta', archivado_at: null } }),
+      this.prisma.convocatoria.count({ where: OPEN_EDITIONS_WHERE }),
       this.prisma.matricula.groupBy({ by: ['estado'], _count: { _all: true } }),
       messageTotals(this.prisma),
       recentMessages(this.prisma),

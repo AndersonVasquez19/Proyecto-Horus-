@@ -1,4 +1,9 @@
 // Revisión de Home con fixtures HTTP y Edge; no usa MySQL, SMTP ni cuentas reales.
+// Inicio, convenios, cursos y ajustes se leen de src/institutional/catalog.ts (sin API). Para poder probar sus casos visuales (convenio sin
+// logo, texto largo, 1 y 2 fotos, 6 y 7 instituciones, paginación de cursos) este smoke compila un sitio de revisión en
+// .artifacts/home-fixture/dist donde catalog.ts se sustituye por scripts/fixtures/home-catalog.mjs; el smoke sirve y muta ese catálogo de
+// prueba y recarga la página para aplicarlo. El contenido REAL lo cubren smoke-institutional-static, smoke-ui, smoke-global-content y
+// tests/institutional-content.test.mjs. Los fallos/reintentos de API de convenios y ajustes ya no existen y no se comprueban.
 const http = require('node:http')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -6,7 +11,9 @@ const os = require('node:os')
 const assert = require('node:assert/strict')
 const { spawn } = require('node:child_process')
 
-const root = path.resolve(__dirname, '../dist')
+const frontendRoot = path.resolve(__dirname, '..')
+const root = path.join(frontendRoot, '.artifacts/home-fixture/dist')
+const fixtureCatalog = path.join(__dirname, 'fixtures/home-catalog.mjs')
 const browser = process.env.SMOKE_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 const screenshots = process.env.SMOKE_SCREENSHOTS
 const settings = {
@@ -27,12 +34,13 @@ const convenioFixtures = Array.from({ length: 5 }, (_, i) => ({
     id: i * 10 + j, convenio_id: i + 1, imagen_url: '/fixture-photo.png?photo=' + i + '-' + j, orden: j, createdAt: '2026-10-02T00:00:00Z',
   })) : [],
 }))
-let convenioSequence = 100, photoSequence = 1000, uploadCount = 0, convenioSaveFailure = false, convenioSaveCount = 0, conveniosFailure = false, convenioDetailFailure = false
-let convenioDetailDelay = 0
-const convenioRequests = []
-
-const courseRequests = []
-let settingsRequests = 0, settingsSaves = 0, chatRequests = 0, settingsFailure = false
+let uploadCount = 0, settingsEmpty = false, chatRequests = 0
+// 13 elementos por tipo (12 por página): la segunda página debe existir para comprobar que la paginación conserva el tipo.
+const courseFixtures = ['curso', 'capacitacion'].flatMap(tipo => Array.from({ length: 13 }, (_, i) => ({
+  id: (tipo === 'curso' ? 100 : 200) + i, slug: tipo + '-de-prueba-' + (i + 1), tipo, orden: i + 1,
+  titulo: (tipo === 'curso' ? 'Curso' : 'Capacitacion') + ' de prueba ' + String(i + 1).padStart(2, '0'),
+  descripcion: 'Contenido aislado de prueba.', modalidad: 'presencial', duracion: '12 horas', fecha_inicio: null, imagen_url: null, temario: null,
+})))
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost'), route = url.pathname
@@ -58,74 +66,15 @@ const server = http.createServer(async (req, res) => {
       if (raw.includes('filename=\"expired-association.png\"')) return json({ ok: true, path: '/uploads/session-expired.png' })
       return json({ ok: true, path: '/uploads/00000000-0000-0000-0000-' + String(uploadCount).padStart(12, '0') + '.png' })
     }
-    if (/^\/api\/(?:admin\/)?convenios(?:\/|$)/.test(route)) {
-      const adminRoute = route.startsWith('/api/admin/')
-      if (adminRoute && !req.headers.authorization) return json({ message: 'Sin sesión' }, 401)
-      const segments = route.replace(/^\/api\/(?:admin\/)?convenios\/?/, '').split('/').filter(Boolean)
-      const id = segments.length ? Number(segments[0]) : null
-      const item = convenioFixtures.find(row => row.id === id && (adminRoute || row.visible))
-      if (req.method === 'GET') {
-        convenioRequests.push(route + url.search)
-        if (!adminRoute && ((id === null && conveniosFailure) || (id !== null && convenioDetailFailure))) return json({ message: 'Fallo aislado de convenios' }, 503)
-        if (id !== null && !adminRoute && convenioDetailDelay) await new Promise(resolve => setTimeout(resolve, convenioDetailDelay))
-        if (id !== null) return item ? json({ ok: true, item: { ...item, fotos: [...item.fotos].sort((a, b) => a.orden - b.orden || a.id - b.id) } }) : json({ message: 'Convenio no encontrado.' }, 404)
-        const search = (url.searchParams.get('search') || '').toLowerCase(), estado = url.searchParams.get('estado')
-        const all = convenioFixtures.filter(row => (adminRoute || row.visible) && (!adminRoute || !estado || row.visible === (estado === 'visible')) && row.nombre.toLowerCase().includes(search))
-          .sort((a, b) => a.orden - b.orden || a.id - b.id)
-        const page = Number(url.searchParams.get('page') || 1), limit = Number(url.searchParams.get('limit') || 20)
-        return json({ ok: true, items: all.slice((page - 1) * limit, page * limit), pagination: { page, limit, total: all.length, pages: Math.ceil(all.length / limit) } })
-      }
-      let raw = ''; for await (const chunk of req) raw += chunk
-      const body = raw ? JSON.parse(raw) : {}
-      if (!adminRoute) return json({ message: 'No permitido' }, 405)
-      if ((req.method === 'POST' && id === null) || (req.method === 'PUT' && segments.length === 1)) {
-        convenioSaveCount++
-        await new Promise(resolve => setTimeout(resolve, 150))
-        if (convenioSaveFailure) return json({ message: 'Fallo aislado al guardar; los datos no se modificaron.' }, 503)
-      }
-      if (id === null && req.method === 'POST') {
-        const created = { id: ++convenioSequence, ...body, fotos: [] }; convenioFixtures.push(created)
-        return json({ ok: true, item: created }, 201)
-      }
-      if (!item) return json({ message: 'Convenio no encontrado.' }, 404)
-      if (segments[1] === 'fotos') {
-        if (segments[2] === 'orden') { for (const foto of body.fotos) Object.assign(item.fotos.find(f => f.id === foto.id), { orden: foto.orden }); return json({ ok: true }) }
-        if (req.method === 'POST' && body.imagen_url.includes('/uploads/session-expired.png')) return json({ message: 'Sesión de prueba expirada.' }, 401)
-        if (req.method === 'POST') { const foto = { id: ++photoSequence, convenio_id: id, ...body, createdAt: '2026-10-02T00:00:00Z' }; item.fotos.push(foto); return json({ ok: true, item: foto }, 201) }
-        const photoId = Number(segments[2])
-        if (req.method === 'DELETE') { item.fotos = item.fotos.filter(f => f.id !== photoId); return json({ ok: true }) }
-        Object.assign(item.fotos.find(f => f.id === photoId), body); return json({ ok: true })
-      }
-      if (req.method === 'DELETE') { convenioFixtures.splice(convenioFixtures.indexOf(item), 1); return json({ ok: true }) }
-      Object.assign(item, body); return json({ ok: true, item })
-    }
-    if (route === '/api/settings') {
-      settingsRequests++
-      return settingsFailure ? json({ message: 'Fallo aislado de prueba' }, 503) : json({ ok: true, settings })
+    if (route === '/__smoke/catalog.json') {
+      return json({ cursos: courseFixtures, servicios: [], galeria: [], preguntasFrecuentes: [],
+        convenios: convenioFixtures.map(row => ({ ...row, fotos: [...row.fotos].sort((a, b) => a.orden - b.orden || a.id - b.id) })),
+        settings: settingsEmpty ? {} : settings })
     }
     if (route === '/api/admin/me') return json({ ok: true, user: { id: 1, nombre: 'Administrador de prueba', email: 'admin@example.com' } })
-    if (route === '/api/admin/settings') {
-      if (req.method === 'PUT') {
-        let body = ''
-        for await (const chunk of req) body += chunk
-        Object.assign(settings, JSON.parse(body).ajustes)
-        settingsSaves++
-        return json({ ok: true, mensaje: 'Ajustes guardados correctamente.' })
-      }
-      return json({ ok: true, settings: Object.entries(settings).map(([clave, valor]) => ({ clave, valor, descripcion: clave, grupo: 'general' })) })
-    }
     if (route === '/api/chatbot/message') {
       chatRequests++
       return json({ ok: true, answer: 'Respuesta de prueba del asistente.', sources: [], mode: 'catalogo' })
-    }
-    if (route === '/api/cursos') {
-      const tipo = url.searchParams.get('tipo'), page = Number(url.searchParams.get('page') || 1)
-      courseRequests.push(url.search)
-      const title = (tipo === 'capacitacion' ? 'Capacitacion' : 'Curso') + ' de prueba pagina ' + page
-      return json({ ok: true, items: [{ id: (tipo === 'capacitacion' ? 200 : 100) + page,
-        titulo: title, descripcion: 'Contenido aislado de prueba.', tipo: tipo || 'curso',
-        modalidad: 'presencial', duracion: '12 horas', fecha_inicio: null, imagen_url: null, temario: null,
-      }], pagination: { page, limit: 12, total: 13, pages: 2 } })
     }
     if (route.startsWith('/api/')) return json({ ok: true, items: [], pagination: { page: 1, limit: 12, total: 0, pages: 0 } })
     let filename = path.resolve(root, '.' + decodeURIComponent(route))
@@ -136,9 +85,17 @@ const server = http.createServer(async (req, res) => {
   } catch { res.writeHead(500); res.end('Fixture failure') }
 })
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+async function buildFixtureSite() {
+  const { build } = await import('vite')
+  const catalogSwap = { name: 'home-fixture-catalog', enforce: 'pre',
+    resolveId(source, importer) { if (source === './catalog' && importer?.replaceAll('\\', '/').endsWith('/src/institutional/source.ts')) return fixtureCatalog } }
+  await build({ root: frontendRoot, configFile: path.join(frontendRoot, 'vite.config.js'), logLevel: 'warn', plugins: [catalogSwap],
+    build: { outDir: root, emptyOutDir: true, target: 'esnext' } })
+}
 async function main() {
   assert.ok(fs.existsSync(browser), 'Configura SMOKE_BROWSER con Edge/Chromium.')
-  assert.ok(fs.existsSync(path.join(root, 'index.html')), 'Compila frontend antes de la revisión.')
+  await buildFixtureSite()
+  assert.ok(fs.existsSync(path.join(root, 'index.html')), 'No se pudo compilar el sitio de revisión.')
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const origin = 'http://127.0.0.1:' + server.address().port
   const reserve = http.createServer()
@@ -243,7 +200,6 @@ async function main() {
     await wait('document.querySelector(".home-loc-items").textContent.includes("Dirección de prueba 123")')
     await wait('document.querySelector(".home-slide.is-active img").naturalWidth > 0')
     await assertSinglePageScroll()
-    assert.equal(settingsRequests, 1, 'Home debe reutilizar la petición de CompanySettingsProvider.')
     await wait('document.querySelectorAll(".home-conv-card").length === 5')
     assert.equal(await evaluate('document.querySelectorAll(".home-conv-card").length'), 5)
     assert.equal(await evaluate('document.querySelectorAll(".home-metric").length'), 4)
@@ -451,7 +407,7 @@ async function main() {
 
     // Información de empresa ya no se edita desde el panel (separación del contenido institucional): una segunda pestaña con la
     // dirección antigua muestra el aviso, no monta el formulario ni guarda, y Home conserva sus datos. El refresco por
-    // `horus:content-updated` se sigue comprobando más abajo, con el fallo y la recuperación de /api/settings.
+    // Los ajustes vienen del catálogo en código: el cambio de horario se comprueba más abajo recargando la página.
     await evaluate('localStorage.setItem("horus-admin-token","isolated-home-ui-token")')
     const homeAddress = await evaluate('document.querySelector(".home-loc-items").textContent')
     const adminTarget = await fetch('http://127.0.0.1:' + port + '/json/new?' + encodeURIComponent(origin + '/admin/dashboard?section=ajustes'), { method: 'PUT' }).then(response => response.json())
@@ -461,7 +417,6 @@ async function main() {
       await admin.wait('!!document.querySelector("[data-panel-editorial-retired]")')
       assert.equal(await admin.evaluate('!!document.querySelector(".hp-settings-card, main form")'), false, 'La dirección antigua no monta el formulario de empresa.')
       await sleep(300)
-      assert.equal(settingsSaves, 0)
       assert.equal(await evaluate('document.querySelector(".home-loc-items").textContent'), homeAddress)
     } finally { await admin.send('Page.close').catch(() => {}); admin.socket.close() }
     await send('Page.bringToFront')
@@ -476,18 +431,9 @@ async function main() {
     assert.ok(cardNames.every(name => !name.includes('Logo de') && !name.includes('Sin imagen disponible')), 'Logos y fallback no contaminan el nombre accesible de las tarjetas.')
     assert.equal(await evaluate('Array.from(document.querySelectorAll(".home-conv-logo img")).every(img=>img.getAttribute("alt")==="")'), true)
     assert.equal(await evaluate('document.querySelector(".home-conv-card .home-conv-logo").textContent.includes("Sin imagen disponible")'), true, 'Fallback visual conservado.')
-    convenioDetailDelay = 1800
     await evaluate('document.querySelectorAll(".home-conv-card")[2].focus();document.querySelectorAll(".home-conv-card")[2].click()')
-    await wait('!!document.querySelector(".home-conv-loading-media")')
-    const loadingHeight = await evaluate('document.querySelector("#home-conv-center").getBoundingClientRect().height')
-    assert.ok(loadingHeight >= 350, 'La carga reserva espacio de medios y texto.')
-    assert.equal(await evaluate('document.querySelector("#home-conv-center [role=status]").textContent.includes("Cargando")'), true)
-    await capture('convenios-carga-reservada', '#home-conv-center')
     await wait('!!document.querySelector("#convDesc")')
-    convenioDetailDelay = 0
     await sleep(650)
-    const detailHeight = await evaluate('document.querySelector("#home-conv-center").getBoundingClientRect().height')
-    assert.ok(Math.abs(detailHeight-loadingHeight)<130, 'Carga y detalle de una foto mantienen tamaños próximos.')
     assert.equal(await evaluate('!!document.querySelector(".home-conv-loading-media,.home-conv-loading-lines")'), false)
     await evaluate('document.querySelector(".home-conv-card.is-selected").scrollIntoView({block:"center",behavior:"instant"})')
     await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
@@ -590,42 +536,27 @@ async function main() {
     await key('Tab')
     assert.equal(await evaluate('document.querySelector("#home-conv-center").contains(document.activeElement)'), true)
     await key('Escape'); await wait('!document.querySelector("#convDesc")')
-    convenioDetailFailure = true
-    await evaluate('document.querySelector(".home-conv-card").click()')
-    // El texto técnico del servidor ("Fallo aislado de convenios") no llega al visitante: se muestra el mensaje fijo en español.
-    await wait('document.querySelector("#home-conv-center [role=alert]")?.textContent.includes("Ocurrió un problema al cargar el contenido. Inténtalo más tarde.")')
-    assert.equal(await evaluate('document.querySelector("#home-conv-center").textContent.includes("Fallo aislado")'), false)
-    assert.equal(await evaluate('!!document.querySelector("#convDesc,.home-conv-gallery")'), false)
-    convenioDetailFailure = false
-    await evaluate('document.querySelector("#home-conv-center .home-button").click()')
-    await wait('!!document.querySelector("#convDesc")')
-    await key('Escape'); await wait('!document.querySelector("#convDesc")')
-    conveniosFailure = true
-    await evaluate('window.dispatchEvent(new CustomEvent("horus:content-updated",{detail:"convenios"}))')
-    await wait('document.querySelector(".home-conv-notice")?.textContent.includes("Ocurrió un problema al cargar el contenido. Inténtalo más tarde.")')
-    assert.equal(await evaluate('document.querySelector(".home-conv-notice").textContent.includes("Fallo aislado")'), false)
-    assert.equal(await evaluate('document.querySelectorAll(".home-conv-card").length'), 0, 'Sin fallback estático')
-    conveniosFailure = false
-    await evaluate('document.querySelector(".home-conv-notice button").click()')
-    await wait('document.querySelectorAll(".home-conv-card").length === 5')
+    // El catálogo es de código: un cambio se aplica al recargar. Se espera a que termine la bienvenida antes de seguir.
+    const reloadCatalog = async () => { await send('Page.reload'); await wait('document.readyState === "complete"'); await sleep(1700) }
     const fixtureCopy = structuredClone(convenioFixtures)
     for (const row of convenioFixtures) row.visible = false
-    await evaluate('window.dispatchEvent(new CustomEvent("horus:content-updated",{detail:"convenios"}))')
+    await reloadCatalog()
     await wait('document.querySelector(".home-conv-notice")?.textContent.includes("No hay convenios visibles")')
     assert.equal(await evaluate('Array.from(document.querySelectorAll(".home-metric")).find(e=>e.textContent.includes("Convenios activos")).querySelector("strong").textContent'), '0')
     convenioFixtures.splice(0, convenioFixtures.length, ...fixtureCopy)
-    await evaluate('window.dispatchEvent(new CustomEvent("horus:content-updated",{detail:"convenios"}))')
+    await reloadCatalog()
     await wait('document.querySelectorAll(".home-conv-card").length === 5')
-    assert.equal(await evaluate('Array.from(document.querySelectorAll(".home-metric")).find(e=>e.textContent.includes("Convenios activos")).querySelector("strong").textContent'), '5')
-    assert.equal(convenioRequests.some(route => /convenios\/\d+\/fotos/.test(route)), false, 'Detalle y fotos en una petición')
-    console.log('Convenios: descripción corta/completa, información adicional, 0/1/varias fotos, imagen fallida, teclado, error/reintento, vacío y contador: OK.')
+    // Tras recargar, el contador vuelve a animarse desde 0 al hacerse visible: se desplaza hasta él y se espera al valor final.
+    await evaluate('Array.from(document.querySelectorAll(".home-metric")).find(e=>e.textContent.includes("Convenios activos")).scrollIntoView({block:"center",behavior:"instant"})')
+    await wait('Array.from(document.querySelectorAll(".home-metric")).find(e=>e.textContent.includes("Convenios activos")).querySelector("strong").textContent === "5"')
+    console.log('Convenios: descripción corta/completa, información adicional, 0/1/varias fotos, teclado, vacío y contador: OK.')
 
     // Public layout with six institutions and additional pages, never real data.
     const longName = 'Colegio Regional de Licenciados en Administración y Desarrollo Institucional de Cajamarca'
     const extra = { ...structuredClone(convenioFixtures[0]), id: 90, orden: 90,
       nombre: longName, sigla: 'TEST LARGO', descripcion_corta: longName.toLowerCase() + '.', logo_url: '/fixture-photo.png' }
     convenioFixtures.push(extra)
-    const refreshConvenios = () => evaluate('window.dispatchEvent(new CustomEvent("horus:content-updated",{detail:"convenios"}))')
+    const refreshConvenios = reloadCatalog
     await refreshConvenios()
     await wait('document.querySelectorAll(".home-conv-card").length === 6')
     assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".home-conv-side"),e=>e.children.length)'), [3,3], 'Seis convenios: tres por cada lado.')
@@ -664,6 +595,7 @@ async function main() {
     convenioFixtures[3].fotos[0].imagen_url = '/fixture-portrait.svg'
     convenioFixtures[3].fotos[1].imagen_url = '/fixture-landscape.svg'
     convenioFixtures[3].fotos.push({ ...originalFotos[0], id: 999, orden: 2 })
+    await refreshConvenios()
     await openConvenio(3)
     await wait('document.querySelector(".home-conv-photo img")?.naturalHeight === 480')
     assert.equal(await evaluate('getComputedStyle(document.querySelector(".home-conv-photo img")).objectFit'), 'contain')
@@ -685,6 +617,7 @@ async function main() {
     await key('Escape'); await wait('!!document.querySelector(".home-conv-identity")')
     await send('Emulation.setEmulatedMedia', { features: [] })
     convenioFixtures[3].fotos = originalFotos
+    await refreshConvenios()
     for (const width of [320,375,768,1024,1366,1920]) {
       await viewport(width, width < 768 ? 844 : 1000)
       if (width <= 540) assert.equal(await evaluate('(()=>{const grid=document.querySelector(".home-conv-grid"),card=document.querySelector(".home-conv-card");return Math.abs(grid.getBoundingClientRect().width-card.getBoundingClientRect().width)<2})()'), true, 'Tarjetas móviles legibles a una columna: '+width)
@@ -861,27 +794,27 @@ async function main() {
     assert.equal(await evaluate('getComputedStyle(document.querySelector(".nav")).height'), '78px')
     assert.equal(await evaluate('window.__homeWelcomeReview.appearances'), 1, 'La bienvenida no se repite en navegación interna.')
     await navigate('/educacion/cursos')
-    await wait('document.querySelector(".edu-card")?.textContent.includes("Curso de prueba pagina 1")')
-    await evaluate('Array.from(document.querySelectorAll(".tech-pagination button")).find(button=>button.textContent==="Siguiente").click()')
-    await wait('document.querySelector(".edu-card")?.textContent.includes("Curso de prueba pagina 2")')
-    assert.equal(courseRequests.some(query=>{const params=new URLSearchParams(query);return params.get("tipo")==="curso"&&params.get("page")==="2"}), true)
+    await wait('document.querySelector(".edu-card")?.textContent.includes("Curso de prueba 01")')
+    assert.equal(await evaluate('document.querySelectorAll(".edu-card").length'), 9, 'Se muestran 9 y el resto queda tras Ver más.')
+    await evaluate('Array.from(document.querySelectorAll("button")).find(button=>button.textContent.includes("Ver más")).click()')
+    await wait('document.querySelectorAll(".edu-card").length === 13 && Array.from(document.querySelectorAll(".edu-card")).some(card=>card.textContent.includes("Curso de prueba 13"))')
     await evaluate('document.querySelector(".nav-logo").click()')
     await wait('!!document.querySelector(".home-layout")')
     await sleep(800)
     assert.equal(await evaluate('window.__homeWelcomeReview.appearances'), 0, 'Entrar por una página interna no muestra bienvenida al volver a Home.')
     await navigate('/educacion/capacitaciones')
-    await wait('document.querySelector(".edu-card")?.textContent.includes("Capacitacion de prueba pagina 1")')
+    await wait('document.querySelector(".edu-card")?.textContent.includes("Capacitacion de prueba 01")')
     assert.equal(await evaluate('document.querySelector(".edu-grid").textContent.includes("Curso de prueba")'), false)
-    await evaluate('Array.from(document.querySelectorAll(".tech-pagination button")).find(button=>button.textContent==="Siguiente").click()')
-    await wait('document.querySelector(".edu-card")?.textContent.includes("Capacitacion de prueba pagina 2")')
-    assert.equal(courseRequests.some(query=>{const params=new URLSearchParams(query);return params.get("tipo")==="capacitacion"&&params.get("page")==="2"}), true)
+    assert.equal(await evaluate('document.querySelectorAll(".edu-card").length'), 9, 'Se muestran 9 y el resto queda tras Ver más.')
+    await evaluate('Array.from(document.querySelectorAll("button")).find(button=>button.textContent.includes("Ver más")).click()')
+    await wait('document.querySelectorAll(".edu-card").length === 13 && Array.from(document.querySelectorAll(".edu-card")).some(card=>card.textContent.includes("Capacitacion de prueba 13"))')
     console.log('CourseCatalog: filtros curso/capacitacion conservados en la paginacion: OK.')
     await evaluate('localStorage.removeItem("horus-admin-token")')
     await navigate('/admin/dashboard')
     await wait('location.pathname === "/admin/login"')
     assert.equal(await evaluate('!!document.querySelector(".home-layout")'), false)
 
-    settingsFailure = true
+    settingsEmpty = true // sin ajustes publicados: Inicio usa sus textos por defecto
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
     await viewport(320, 844)
     await navigate('/')
@@ -896,9 +829,9 @@ async function main() {
     await wait('document.querySelector(".home-loc-items").textContent.includes("Horario por confirmar")')
     assert.equal(await evaluate('document.querySelector(".footer").textContent.includes("Horus Group SRL")'), true)
     assert.equal(await evaluate('document.querySelectorAll(".home-conv-card").length'), 5)
-    settingsFailure = false
-    settings.horario_atencion = 'Martes: 10:00–14:00' // cambio hecho fuera de esta página: el aviso debe traer el valor nuevo
-    await evaluate('window.dispatchEvent(new CustomEvent("horus:content-updated",{detail:"settings"}))')
+    settingsEmpty = false
+    settings.horario_atencion = 'Martes: 10:00–14:00' // cambio de catálogo: se aplica al recargar
+    await reloadCatalog()
     await wait('document.querySelector(".home-loc-items").textContent.includes("Martes: 10:00–14:00")')
     assert.deepEqual(connection.exceptions, [], 'Errores JavaScript en la revisión.')
     console.log('Home: movimiento reducido, estilos aislados, React Router, guard administrativo y recuperación de ajustes: OK.')

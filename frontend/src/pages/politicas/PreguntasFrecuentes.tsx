@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SubmitEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { usePublicResource } from '../../hooks/usePublicResource'
+import { useInstitutionalResource as usePublicResource } from '../../institutional/useInstitutionalResource'
 import PageHero from '../../components/PageHero'
 import SectionHead from '../../components/SectionHead'
 import FaqItem from '../../components/faq/FaqItem'

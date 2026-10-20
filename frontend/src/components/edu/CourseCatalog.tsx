@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { usePublicResource } from '../../hooks/usePublicResource'
+import { useInstitutionalResource as usePublicResource } from '../../institutional/useInstitutionalResource'
 import type { CursoPublico, PublicList } from '../../types/public'
 import SectionHead from '../SectionHead'
 import CourseCard from './CourseCard'

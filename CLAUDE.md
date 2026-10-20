@@ -84,6 +84,7 @@ Scripts de `frontend/package.json` (comprueba que existan antes de citarlos): `c
 - Router, páginas públicas, Home: `smoke-home`, `smoke-ui`, `smoke-global-content`, `test:deploy`.
 - Errores públicos y formularios públicos: `test:errors`, `smoke-ui`.
 - Backend (autenticación, correo, límites de frecuencia): `npm test` y `tsc --noEmit` en `backend/` (comando de `AGENTS.md`); `build` si cambia código compilado.
+- Reportes académicos (`backend/src/reportes/`): `npm test` (`test/reportes.test.ts`) y, con Docker y la imagen local `mysql:8.4`, `npm run build` seguido de `node test/run-academic-isolated.cjs reportes` (contenedor propio y desechable).
 
 Los smokes sirven `frontend/dist`: compila antes (`npm run build`) si cambió el código; los más recientes lo exigen y fallan si `dist` está desactualizado. Los scripts `smoke:*` con prefijo `npm run build &&` ya lo hacen.
 

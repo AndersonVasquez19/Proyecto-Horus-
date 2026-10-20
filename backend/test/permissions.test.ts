@@ -29,6 +29,7 @@ import { HealthController } from '../src/health.controller';
 import { ConvocatoriasController } from '../src/convocatorias/convocatorias.controller';
 import { EstudiantesController } from '../src/estudiantes/estudiantes.controller';
 import { MatriculasController } from '../src/matriculas/matriculas.controller';
+import { ReportesController } from '../src/reportes/reportes.controller';
 import { ImportacionesController } from '../src/importaciones/importaciones.controller';
 import { AdminNewsletterController } from '../src/newsletter/admin-newsletter.controller';
 import { NewsletterController } from '../src/newsletter/newsletter.controller';
@@ -62,7 +63,9 @@ test('cada permiso tiene un identificador único con el formato recurso:operacio
 
 test('los permisos de recursos futuros están separados de los actuales', () => {
   for (const resource of FUTURE_RESOURCES) assert.ok(resource in RESOURCE_OPERATIONS);
-  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones', 'certificados', 'reportes_academicos', 'sesiones']);
+  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones', 'certificados', 'sesiones']);
+  // Reportes académicos ya tienen rutas (src/reportes): consultar con reportes_academicos:leer y exportar con reportes_academicos:exportar.
+  assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('reportes_academicos'));
 });
 
 test('no existe ningún permiso de eliminación física del historial académico', () => {
@@ -235,7 +238,7 @@ const CONTROLLERS: Function[] = [
   AttentionController, CursoController, AdminCursoController, ServicioController, AdminServicioController, PreguntaFrecuenteController,
   AdminPreguntaFrecuenteController, ChatbotController, ContactoController, OriginalContentController, ConveniosController, AdminConveniosController,
   CotizacionesController, AdminGaleriaController, GaleriaController, HealthController, AdminNewsletterController, NewsletterController,
-  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController,
+  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController, ReportesController,
 ];
 
 function normalize(...parts: string[]) { return parts.join('/').split('/').filter(Boolean).join('/'); }
