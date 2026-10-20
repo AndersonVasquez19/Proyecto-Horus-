@@ -1,6 +1,6 @@
 // Navegación del panel por permisos (H-BACK-01, E3.4.3, fase 1) con API simulada: nada real (ni cuentas, ni datos, ni correo). Edge por DevTools.
-// Cubre: menú e inicio de los tres roles en modo heredado y por_roles, backend antiguo, cuenta sin rol (heredado y por_roles), Biblioteca
-// solo con items:leer, enlaces directos a secciones sin permiso (aviso, sin redirección y sin solicitudes a la API), «Roles y usuarios»
+// Cubre: menú e inicio de los tres roles en modo heredado y por_roles, backend antiguo, cuenta sin rol y Biblioteca retirada
+// incluso con items:leer, enlaces directos sin permiso o retirados (aviso, sin solicitudes a su API), «Roles y usuarios»
 // solo para el gerente en por_roles, 401 frente a 403 (también en el cambio de contraseña), direcciones y navegación atrás/adelante conservadas.
 // Las listas de permisos de cada rol se leen del código del backend (como hace el servidor real); el panel solo recibe la lista.
 const fs = require('node:fs');
@@ -58,11 +58,11 @@ const handler = async (req, res, { route, json, body }) => {
   if (route === '/api/admin/me') return json({ ok: true, ...shape(ACCOUNTS[token]) }) || true;
   const sub = route.slice('/api/admin/'.length).split('/')[0];
   if (sim.status[sub]) return json({ ok: false, mensaje: 'Respuesta simulada.' }, sim.status[sub]) || true;
-  if (sub === 'stats') return json({ ok: true, stats: { mensajes: { total: 0, nuevos: 0, enProceso: 0, atendidos: 0, archivados: 0 }, contenido: { total: 0 }, catalogo: {} }, actividadReciente: { mensajes: [] } }) || true;
+  if (sub === 'stats') return json({ ok: true, stats: { academico: { estudiantes: 0, edicionesActivas: 0, matriculasRegistradas: 0, matriculasVigentes: 0 }, mensajes: { total: 0, nuevos: 0, enProceso: 0, atendidos: 0, archivados: 0, pendientes: 0 } }, actividadReciente: { mensajes: [] } }) || true;
   return json({ ok: true, items: [], messages: [], settings: [], sections: [], pagination: { page: 1, total: 0, pages: 1, limit: 20 }, metrics: {} }) || true;
 };
 
-const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Importar desde Excel', 'Educación', 'Servicios tecnológicos', 'Galería de proyectos', 'Preguntas frecuentes', 'Biblioteca de contenido', 'Convenios', 'Mensajes', 'Cotizaciones', 'Consultas del chatbot', 'Información de empresa'];
+const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Importación académica CSV', 'Mensajes', 'Cotizaciones', 'Consultas del chatbot', 'Mi cuenta'];
 
 (async () => {
   const k = await start({ prefix: 'permisos', handler, browserArgs: ['--disable-extensions'] });
@@ -87,7 +87,7 @@ const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Impo
   const expected = {
     'tk-gerente': { home: '/admin/dashboard', h1: 'Hola', menu: LEGACY_MENU },
     'tk-coord': { home: '/admin/dashboard', h1: 'Hola', menu: LEGACY_MENU.filter(item => item !== 'Biblioteca de contenido') },
-    'tk-sec': { home: '/admin/messages', h1: 'Centro de consultas', menu: ['Estudiantes', 'Ediciones', 'Matrículas', 'Educación', 'Mensajes', 'Consultas del chatbot', 'Información de empresa'] },
+    'tk-sec': { home: '/admin/messages', h1: 'Centro de consultas', menu: ['Estudiantes', 'Ediciones', 'Matrículas', 'Mensajes', 'Consultas del chatbot', 'Mi cuenta'] },
   };
   for (const mode of ['heredado', 'por_roles']) {
     for (const [token, want] of Object.entries(expected)) {
@@ -96,9 +96,9 @@ const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Impo
       ck((await p.evaluate('location.pathname')) === want.home && (await heading(p)).includes(want.h1), who + ': inicio en ' + (want.home.endsWith('messages') ? 'la Bandeja de mensajes' : 'el Resumen'), { path: await p.path(), h1: await heading(p) });
       // «Roles y usuarios» solo existe con AccessGuard (por_roles) y cuentas:leer: hoy, solo para el gerente.
       const withRoles = mode === 'por_roles' && token === 'tk-gerente';
-      ck(same(await menu(p), withRoles ? [...want.menu, 'Roles y usuarios'] : want.menu), who + ': el menú muestra solo sus secciones', await menu(p));
+      ck(same(await menu(p), withRoles ? [...want.menu.slice(0, -1), 'Roles y usuarios', 'Mi cuenta'] : want.menu), who + ': el menú muestra solo sus secciones', await menu(p));
       const extra = await bottom(p);
-      ck(extra.includes('Ajustes') && extra.some(t => t.includes('Cerrar sesión')) && (await p.text('aside')).includes('Roles y usuarios') === withRoles, who + ': conserva Ajustes y Cerrar sesión; «Roles y usuarios» ' + (withRoles ? 'aparece' : 'no aparece'), extra);
+      ck((await menu(p)).includes('Mi cuenta') && extra.some(t => t.includes('Cerrar sesión')) && (await p.text('aside')).includes('Roles y usuarios') === withRoles, who + ': conserva Mi cuenta y Cerrar sesión; «Roles y usuarios» ' + (withRoles ? 'aparece' : 'no aparece'), extra);
       const bad = await forbiddenCalls(token);
       ck(bad.length === 0, who + ': ninguna consulta a datos que no puede leer', bad);
     }
@@ -106,21 +106,20 @@ const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Impo
   await clean();
   { const p = await restore('tk-sec');
     ck((await calls('tk-sec', 'stats')).length === 0, 'secretaria: el inicio no consulta /admin/stats (ni la actividad del resumen)');
-    await p.go('/admin/dashboard?section=educacion'); await p.wait('document.querySelector(".hp-nav-sub")', 'submenú de Educación');
-    const sub = await p.evaluate('[...document.querySelectorAll(".hp-nav-sub button")].map(b => b.textContent.trim())');
-    ck(same(sub, ['Capacitaciones', 'Cursos']) && (await p.path()) === '/admin/dashboard?section=educacion' && (await p.text('main')).includes('Capacitaciones'), 'secretaria: Educación abre Capacitaciones y oculta Asesoramiento (es un servicio)', sub);
-    ck((await calls('tk-sec', 'servicios')).length === 0 && (await calls('tk-sec', 'cursos')).length > 0, 'secretaria: lee cursos y no consulta servicios'); }
+    await p.go('/admin/dashboard?section=educacion'); await p.wait('document.querySelector("[data-panel-editorial-retired]")', 'aviso editorial');
+    ck((await p.text('main')).includes('se retiró del panel'), 'secretaria: la ruta antigua de Educación muestra el aviso editorial');
+    ck((await calls('tk-sec', 'servicios')).length === 0 && (await calls('tk-sec', 'cursos')).length === 0, 'secretaria: el aviso no consulta cursos ni servicios'); }
 
   // ===== 2. Biblioteca de contenido =====
   console.log('\n== BIBLIOTECA DE CONTENIDO (items:leer)');
   await clean();
   { const p = await restore('tk-items');
-    ck((await menu(p)).includes('Biblioteca de contenido') && !(await menu(p)).includes('Resumen'), 'con items:leer aparece la Biblioteca (y sin estadisticas:leer no aparece el Resumen)', await menu(p));
-    await p.click('aside nav .hp-nav-item', 'Biblioteca'); await p.wait('location.search.includes("section=contenido")', 'Biblioteca'); await sleep(500);
-    ck((await calls('tk-items', 'items')).length > 0 && (await notice(p)) === null, 'la Biblioteca se abre y carga sus registros'); }
+    ck(!(await menu(p)).includes('Biblioteca de contenido') && !(await menu(p)).includes('Resumen'), 'items:leer no reintroduce la Biblioteca editorial', await menu(p));
+    await p.go('/admin/dashboard?section=contenido'); await p.wait('document.querySelector("[data-panel-editorial-retired]")', 'aviso de Biblioteca');
+    ck((await calls('tk-items', 'items')).length === 0, 'la Biblioteca retirada no carga registros'); }
   await clean();
   { const p = await restore('tk-coord', '/admin/dashboard?section=contenido');
-    ck((await notice(p)) === 'denegado' && (await calls('tk-coord', 'items')).length === 0, 'coordinadora: el enlace directo a la Biblioteca muestra el aviso y no consulta /admin/items'); }
+    ck(await p.evaluate('!!document.querySelector("[data-panel-editorial-retired]")') && (await calls('tk-coord', 'items')).length === 0, 'coordinadora: el enlace directo a la Biblioteca muestra el aviso y no consulta /admin/items'); }
 
   // ===== 3. Enlaces directos a secciones sin permiso =====
   console.log('\n== ENLACES DIRECTOS SIN PERMISO');
@@ -138,7 +137,8 @@ const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Impo
     ck((await calls('tk-sec', 'cotizaciones')).length === 0, 'adelante vuelve a la bandeja; en ningún momento se consultaron cotizaciones'); }
   for (const [route, api, what] of [['/admin/dashboard?section=resumen', 'stats', 'Resumen'], ['/admin/dashboard?section=educacion&seccion=asesoramiento', 'servicios', 'Asesoramiento'], ['/admin/dashboard?section=servicios&seccion=camaras', 'servicios', 'Cámaras'], ['/admin/dashboard?section=convenios', 'convenios', 'Convenios'], ['/admin/dashboard?section=faq&crear=1', 'preguntas-frecuentes', 'crear pregunta']]) {
     await clean(); const p = await restore('tk-sec', route);
-    ck((await notice(p)) === 'denegado' && (await calls('tk-sec', api)).length === 0 && !(await p.evaluate('!!document.querySelector("dialog[open], form.hp-form")')), 'secretaria → ' + what + ': aviso, sin formulario y sin consultar /admin/' + api, { notice: await notice(p), calls: await calls('tk-sec', api), path: await p.path() });
+    const retired = api !== 'stats';
+    ck((retired ? await p.evaluate('!!document.querySelector("[data-panel-editorial-retired]")') : (await notice(p)) === 'denegado') && (await calls('tk-sec', api)).length === 0 && !(await p.evaluate('!!document.querySelector("dialog[open], form.hp-form")')), 'secretaria → ' + what + ': aviso, sin formulario y sin consultar /admin/' + api, { notice: await notice(p), calls: await calls('tk-sec', api), path: await p.path() });
   }
   await clean();
   { const p = await restore('tk-gerente', '/admin/dashboard?section=cuentas');
@@ -163,7 +163,7 @@ const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Impo
   await clean(); await ctl('mode', 'por_roles');
   { const p = await restore('tk-norol');
     const text = await p.text('main');
-    ck((await notice(p)) === 'sin-rol' && text.includes('Cuenta básica') && !text.includes('pendiente de autorización') && same(await menu(p), ['Mi espacio']), 'cuenta sin rol en por_roles: espacio básico (sin bloqueo de autorización) y ninguna sección de trabajo', { text, menu: await menu(p) });
+    ck((await notice(p)) === 'sin-rol' && text.includes('Cuenta básica') && !text.includes('pendiente de autorización') && same(await menu(p), ['Mi espacio', 'Mi cuenta']), 'cuenta sin rol en por_roles: espacio básico y autoservicio, sin secciones de trabajo', { text, menu: await menu(p) });
     ck((await p.evaluate('document.title')).startsWith('Mi espacio'), 'el título de la cuenta básica es «Mi espacio»');
     const bad = (await requests()).filter(r => r.token === 'tk-norol' && r.route !== '/api/admin/me');
     ck(bad.length === 0, 'sin ninguna consulta de datos', bad);
@@ -172,7 +172,7 @@ const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Impo
     ck((await p.text('main')).includes('requiere permisos adicionales'), 'el aviso explica que la sección requiere permisos adicionales');
     await p.click('main a', 'Volver a mi espacio'); await p.wait("location.pathname === '/admin/dashboard' && !location.search && document.querySelector('[data-panel-access=sin-rol]')", 'vuelta al espacio básico');
     ck((await calls('tk-norol', 'messages')).length === 0, '«Volver a mi espacio» regresa al espacio básico sin consultar secciones');
-    await p.click('.hp-sidebar-bottom button', 'Ajustes'); await p.wait('location.search.includes("section=configuracion")', 'Ajustes');
+    await p.click('aside nav button', 'Mi cuenta'); await p.wait('location.search.includes("section=configuracion")', 'Mi cuenta');
     ck((await p.text('main')).includes('Cambiar contraseña'), 'conserva el autoservicio: Ajustes y cambio de contraseña');
     await p.click('.hp-sidebar-bottom button', 'Cerrar sesión'); await p.wait("location.pathname === '/admin/login'", 'login');
     ck((await p.evaluate('localStorage.getItem(' + JSON.stringify(KEY) + ')')) === null, 'y puede cerrar sesión'); }
@@ -205,14 +205,14 @@ const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Impo
   console.log('\n== DIRECCIONES Y NAVEGACIÓN CONSERVADAS');
   await clean();
   { const p = await restore('tk-gerente', '/admin/dashboard?section=cursos');
-    ck((await p.text('main')).includes('Cursos') && (await notice(p)) === null, 'la dirección antigua ?section=cursos sigue abriendo Cursos');
-    await p.go('/admin/dashboard?section=educacion'); await p.wait('document.querySelector(".hp-nav-sub")', 'Educación');
-    ck((await p.text('.hp-nav-sub .is-active')) === 'Asesoramiento', 'gerente: Educación sigue abriendo Asesoramiento');
+    ck(await p.evaluate('!!document.querySelector("[data-panel-editorial-retired]")'), 'la dirección antigua ?section=cursos muestra el aviso editorial');
+    await p.go('/admin/dashboard?section=educacion'); await p.wait('document.querySelector("[data-panel-editorial-retired]")', 'Educación retirada');
+    ck((await calls('tk-gerente', 'cursos')).length === 0, 'gerente: las rutas retiradas no cargan gestores');
     await p.click('aside nav .hp-nav-item', 'Mensajes'); await p.wait("location.pathname === '/admin/messages'", 'bandeja');
     await p.click('aside nav .hp-nav-item', 'Cotizaciones'); await p.wait('location.search.includes("section=cotizaciones")', 'cotizaciones');
     await p.evaluate('history.back(); 1'); await p.wait("location.pathname === '/admin/messages'", 'atrás');
     await p.evaluate('history.back(); 1'); await p.wait('location.search.includes("section=educacion")', 'atrás 2');
-    ck((await notice(p)) === null, 'atrás/adelante recorre las secciones como antes'); }
+    ck(await p.evaluate('!!document.querySelector("[data-panel-editorial-retired]")'), 'atrás vuelve al aviso editorial sin montar un gestor'); }
 
   await k.closePages();
   k.finish('Navegación del panel por permisos');

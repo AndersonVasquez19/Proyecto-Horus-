@@ -12,9 +12,9 @@ export default function PanelBasicHome() {
     <div className="hp-heading"><div><p className="hp-kicker">MI ESPACIO</p><h1>{name ? 'Hola, ' + name : 'Bienvenido'}</h1><p>Tu cuenta está activa y lista para usar.</p></div></div>
     <section className="hp-card" data-panel-access="sin-rol"><div className="hp-empty">
       <span className="hp-empty-icon"><PanelIcon name="user" size={28} /></span>
-      <p><strong>Cuenta básica.</strong> Puedes consultar tus datos de acceso y cambiar tu contraseña desde Ajustes.</p>
+      <p><strong>Cuenta básica.</strong> Puedes consultar tus datos de acceso y cambiar tu contraseña desde Mi cuenta.</p>
       <p>Las herramientas de administración (contenido, mensajes, cotizaciones y cuentas) requieren permisos adicionales. Si las necesitas, solicítalas a la gerencia: no hace falta que vuelvas a registrarte.</p>
-      <Link className="hp-btn hp-btn-primary" to="/admin/dashboard?section=configuracion">Ir a Ajustes de mi cuenta</Link>
+      <Link className="hp-btn hp-btn-primary" to="/admin/dashboard?section=configuracion">Ir a Mi cuenta</Link>
     </div></section>
   </>;
 }

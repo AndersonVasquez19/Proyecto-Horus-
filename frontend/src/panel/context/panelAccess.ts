@@ -50,6 +50,7 @@ export const RESOURCE_WRITE: Readonly<Record<string, ResourceWrite>> = Object.fr
 
 // Resto de operaciones del panel, con la ruta que las exige.
 export const PANEL_ACTIONS = Object.freeze({
+  importarAcademico: 'importaciones:previsualizar',
   crearEdicion: 'convocatorias:crear', editarEdicion: 'convocatorias:editar', cerrarEdicion: 'convocatorias:cerrar', archivarEdicion: 'convocatorias:archivar',
   crearMatricula: 'matriculas:crear', anularMatricula: 'matriculas:anular', reactivarMatricula: 'matriculas:anular',
   crearEstudiante: 'estudiantes:crear', editarEstudiante: 'estudiantes:editar', archivarEstudiante: 'estudiantes:archivar',
@@ -71,16 +72,16 @@ export const PANEL_SECTIONS: readonly PanelSectionRule[] = Object.freeze([
   { key: 'ediciones', group: 'academico', anyOf: ['convocatorias:leer'], target: '/admin/dashboard?section=ediciones', note: 'GET /admin/convocatorias' },
   { key: 'matriculas', group: 'academico', anyOf: ['matriculas:leer'], target: '/admin/dashboard?section=matriculas', note: 'GET /admin/matriculas' },
   { key: 'importacion-excel', group: 'academico', anyOf: ['importaciones:previsualizar'], target: '/admin/dashboard?section=importacion-excel', note: 'GET /admin/importaciones/ediciones' },
-  { key: 'cursos', group: 'contenido', anyOf: ['cursos:leer', 'servicios:leer'], target: '/admin/dashboard?section=educacion', note: 'Educación: Asesoramiento usa servicios; Capacitaciones y Cursos, cursos. Cada subsección se comprueba con RESOURCE_READ' },
-  { key: 'servicios', group: 'contenido', anyOf: ['servicios:leer'], target: '/admin/dashboard?section=servicios' },
-  { key: 'galeria', group: 'contenido', anyOf: ['galeria:leer'], target: '/admin/dashboard?section=galeria' },
-  { key: 'faq', group: 'contenido', anyOf: ['preguntas_frecuentes:leer'], target: '/admin/dashboard?section=faq' },
-  { key: 'contenido', group: 'contenido', anyOf: ['items:leer'], target: '/admin/dashboard?section=contenido', note: 'Biblioteca de contenido (GET /admin/items)' },
-  { key: 'convenios', group: 'contenido', anyOf: ['convenios:leer'], target: '/admin/dashboard?section=convenios' },
+  { key: 'cursos', group: 'contenido', available: false, anyOf: ['cursos:leer', 'servicios:leer'], target: '/admin/dashboard?section=educacion', note: 'Gestión editorial retirada; los cursos académicos se conservan en MySQL' },
+  { key: 'servicios', group: 'contenido', available: false, anyOf: ['servicios:leer'], target: '/admin/dashboard?section=servicios' },
+  { key: 'galeria', group: 'contenido', available: false, anyOf: ['galeria:leer'], target: '/admin/dashboard?section=galeria' },
+  { key: 'faq', group: 'contenido', available: false, anyOf: ['preguntas_frecuentes:leer'], target: '/admin/dashboard?section=faq' },
+  { key: 'contenido', group: 'contenido', available: false, anyOf: ['items:leer'], target: '/admin/dashboard?section=contenido', note: 'Biblioteca editorial retirada' },
+  { key: 'convenios', group: 'contenido', available: false, anyOf: ['convenios:leer'], target: '/admin/dashboard?section=convenios' },
   { key: 'mensajes', group: 'atencion', anyOf: ['mensajes:leer'], target: '/admin/messages' },
   { key: 'cotizaciones', group: 'atencion', anyOf: ['cotizaciones:leer'], target: '/admin/dashboard?section=cotizaciones' },
   { key: 'chatbot', group: 'atencion', anyOf: ['chatbot_consultas:leer'], target: '/admin/dashboard?section=chatbot' },
-  { key: 'ajustes', group: 'atencion', anyOf: ['configuracion:leer'], target: '/admin/dashboard?section=ajustes', note: 'Información de empresa (GET /admin/settings)' },
+  { key: 'ajustes', group: 'contenido', available: false, anyOf: ['configuracion:leer'], target: '/admin/dashboard?section=ajustes', note: 'Información institucional retirada; no es configuración de cuenta' },
   { key: 'configuracion', group: 'cuenta', anyOf: [], target: '/admin/dashboard?section=configuracion', note: 'Ajustes de la propia cuenta (cambio de contraseña): toda sesión válida' },
   { key: 'cuentas', group: 'cuenta', anyOf: ['cuentas:leer'], target: '/admin/dashboard?section=cuentas', requiresRolesMode: true, note: 'Roles y usuarios (GET /admin/users): solo con modo por_roles y cuentas:leer. Sin AccessGuard (modo heredado) no se ofrece: cualquier sesión podría cambiar roles' },
 ] satisfies PanelSectionRule[]);

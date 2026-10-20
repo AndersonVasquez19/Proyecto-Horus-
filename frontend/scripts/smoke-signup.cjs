@@ -121,7 +121,7 @@ const handler = async (req, res, { route, json, body }) => {
     const text = await p.text('main');
     ck((await p.evaluate('location.pathname + location.search')) === '/admin/dashboard', 'tras el login la cuenta nueva entra directamente a /admin/dashboard', await p.evaluate('location.pathname + location.search'));
     ck((await p.evaluate('document.querySelector("[data-panel-access]").dataset.panelAccess')) === 'sin-rol' && text.includes('Cuenta básica') && text.includes('permisos adicionales') && !text.includes('pendiente de autorización'), 'el panel muestra el espacio básico, sin pantalla de autorización pendiente', text.slice(0, 200));
-    ck(JSON.stringify(await p.evaluate('[...document.querySelectorAll("aside nav .hp-nav-item")].map(b => b.textContent.trim())')) === '["Mi espacio"]', 'el menú solo ofrece «Mi espacio»: ninguna sección administrativa');
+    ck(JSON.stringify(await p.evaluate('[...document.querySelectorAll("aside nav .hp-nav-item")].map(b => b.textContent.trim())')) === '["Mi espacio","Mi cuenta"]', 'el menú ofrece Mi espacio y Mi cuenta, sin secciones administrativas');
     ck(await p.evaluate('!!document.querySelector(\'main a[href="/admin/dashboard?section=configuracion"]\')'), 'el espacio básico lleva a los Ajustes de la propia cuenta');
     ck(await p.evaluate('[...document.querySelectorAll(".hp-sidebar-bottom button")].some(b => b.textContent.includes("Cerrar sesión"))'), 'se puede cerrar sesión');
     const extra = (await requests()).filter(r => r.route.startsWith('/api/admin/') && !['/api/admin/login', '/api/admin/me'].includes(r.route));

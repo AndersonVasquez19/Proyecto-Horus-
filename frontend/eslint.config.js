@@ -6,7 +6,8 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // .artifacts/ (ignorado por Git) guarda capturas y compilaciones de revisión de los smokes, p. ej. smoke-institutional-static.
+  globalIgnores(['dist', '.artifacts']),
   {
     files: ['**/*.{js,jsx,ts,tsx}'],
     extends: [

@@ -75,7 +75,8 @@ const server = http.createServer(async (req, res) => {
         if ((m = sub.match(/^messages\/(\d+)$/))) return json({ ok: true, message: effectiveMessages().find(x => x.id === +m[1]) });
         if (sub === 'stats') {
           const all = effectiveMessages(), count = s => all.filter(m=>m.estado===s).length;
-          return json({ok:true,stats:{mensajes:{total:all.length,nuevos:count('nuevo'),enProceso:count('en_proceso'),atendidos:count('atendido'),archivados:count('archivado')},reclamaciones:{total:reclamaciones.length},contenido:{total:0},catalogo:{}},actividadReciente:{mensajes:all,reclamaciones:[]}});
+          // Contrato de GET /admin/stats?vista=operativa (Resumen académico y de atención).
+          return json({ok:true,stats:{academico:{estudiantes:0,edicionesActivas:0,matriculasRegistradas:0,matriculasVigentes:0},mensajes:{total:all.length,nuevos:count('nuevo'),enProceso:count('en_proceso'),atendidos:count('atendido'),archivados:count('archivado'),pendientes:count('nuevo')+count('en_proceso')}},actividadReciente:{mensajes:all.map(x=>({id:x.id,nombre:x.nombre,asunto:x.asunto,estado:x.estado,createdAt:x.createdAt}))}});
         }
         if (sub === 'reclamaciones') return json({ ok: true, reclamaciones, pagination: { total: reclamaciones.length, page: 1, limit: 10, pages: 1 }, metrics: { reclamo: reclamaciones.length, queja: 0 } });
         return json({ ok: true, items: [], messages: [], pagination: { page: 1, total: 0, pages: 1 }, metrics: {} });

@@ -1,0 +1,28 @@
+/* Solo el espacio de trabajo: no modifica Login/Register ni la web de Carlos. */
+/* Fuente original de google/fonts/ofl/montserrat; licencia en /licenses/Montserrat-OFL.txt. */
+@font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 100 900; font-display: swap; src: url('../assets/fonts/Montserrat-Variable.ttf') format('truetype'); }
+.hp-shell { background: #f5f8fc; --panel-heading-font: 'Montserrat', 'Manrope', 'Inter', sans-serif; }
+.hp-shell .hp-sidebar { background: #102d4f; }
+.hp-shell .hp-nav-item, .hp-shell .hp-btn, .hp-shell .hp-shortcut-grid button { font-family: var(--panel-heading-font); }
+.hp-operational-overview { display: grid; gap: 24px; }
+.hp-operational-overview > * { min-width: 0; margin-block: 0; }
+.hp-operational-hero { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 30px; border-radius: 20px; background: #102d4f; color: #fff; }
+.hp-operational-hero h2 { color: #fff; font-size: clamp(22px, 2.5vw, 30px); line-height: 1.3; margin: 8px 0 12px; }
+.hp-operational-hero p { max-width: 680px; color: #e3edf8; }
+.hp-operational-hero .hp-kicker { color: #e8c477; }
+.hp-operational-hero > span { display: grid; place-items: center; flex: 0 0 90px; height: 90px; border-radius: 24px; color: #18bbd1; background: #ffffff0d; }
+.hp-operational-overview .hp-metrics { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.hp-operational-overview .hp-shortcut-grid { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+.hp-operational-overview .hp-shortcut-icon { color: #2554eb; background: #edf2ff; }
+.hp-operational-overview .hp-activity a { display: flex; gap: 12px; align-items: center; padding: 16px 0; color: inherit; text-decoration: none; border-bottom: 1px solid #edf0f5; }
+.hp-operational-overview .hp-activity a > div { flex: 1; min-width: 0; }
+.hp-operational-overview .hp-activity a strong, .hp-operational-overview .hp-activity a small { display: block; overflow-wrap: anywhere; }
+.hp-operational-overview .hp-activity a small { margin-top: 4px; color: #52647c; }
+.hp-retired { max-width: 760px; display: grid; gap: 18px; justify-items: start; }
+@media (max-width: 760px) {
+  .hp-operational-hero { padding: 24px 20px; }
+  .hp-operational-hero > span { display: none; }
+  .hp-operational-overview .hp-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hp-operational-overview .hp-metrics article { padding: 18px 14px; }
+  .hp-operational-overview .hp-activity a { flex-wrap: wrap; }
+}

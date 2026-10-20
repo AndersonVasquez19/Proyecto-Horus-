@@ -74,6 +74,7 @@ jobs:
           npm run test:notify
           npm run test:session-access
           npm run test:panel-access
+          node --experimental-strip-types --test tests/institutional-content.test.mjs tests/operational-stats.test.mjs
           npm run test:editions
           npm run test:enrollments
           node --experimental-strip-types --test tests/importations.test.mjs

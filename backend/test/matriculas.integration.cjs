@@ -170,6 +170,20 @@ test('Matrículas: HTTP real, InnoDB, cupos, historial y permisos', { timeout: 2
       assert.equal((await request('/chatbot/message', null, 'POST', { message: 'Cursos disponibles' })).status, 200);
       assert.equal((await request(path + '/' + enrollment.id, tokens.g, 'DELETE')).status, 404);
     });
+    await t.test('resumen operativo: recuentos reales, contrato anterior y autorización intacta', async () => {
+      const endpoint = '/admin/stats?vista=operativa';
+      const r = await request(endpoint, tokens.g);
+      assert.equal(r.status, 200);
+      const [[counts]] = await db.query("SELECT (SELECT COUNT(*) FROM estudiantes) AS estudiantes, (SELECT COUNT(*) FROM convocatorias WHERE estado='abierta' AND archivado_at IS NULL) AS edicionesActivas, (SELECT COUNT(*) FROM matriculas) AS matriculasRegistradas, (SELECT COUNT(*) FROM matriculas WHERE estado='activa') AS matriculasVigentes");
+      assert.deepEqual(r.body.stats.academico, { ...counts });
+      assert.equal(r.body.stats.mensajes.pendientes, r.body.stats.mensajes.nuevos + r.body.stats.mensajes.enProceso);
+      assert.equal('catalogo' in r.body.stats, false);
+      assert.equal((await request(endpoint, tokens.c)).status, 200);
+      for (const token of [tokens.s, tokens.b]) assert.equal((await request(endpoint, token)).status, 403);
+      assert.equal((await request(endpoint)).status, 401);
+      assert.equal((await request('/admin/stats?vista=desconocida', tokens.g)).status, 400);
+      assert.ok((await request('/admin/stats', tokens.g)).body.stats.catalogo, 'contrato anterior conservado');
+    });
     if (process.env.MATRICULAS_BROWSER === 'true') await t.test('React ↔ NestJS ↔ MySQL escritorio y móvil', async () => {
       const browser = fork(join(backend, '../frontend/scripts/smoke-matriculas.cjs'), [], { cwd: join(backend, '../frontend'), windowsHide: true, silent: true, execArgv: [],
         env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP, HORUS_MATRICULAS_BROWSER_CHILD: 'true', MATRICULAS_SCREENSHOTS_DIR: process.env.MATRICULAS_SCREENSHOTS_DIR } });

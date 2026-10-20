@@ -73,10 +73,10 @@ test('gerente: todas las secciones de trabajo actuales e inicio en Resumen', () 
   }
 })
 
-test('coordinadora: contenido, atención y Resumen; sin Biblioteca de contenido', () => {
+test('coordinadora: gestión académica, atención y Resumen, sin gestores editoriales', () => {
   const nav = panelNavigation(session('COORDINADORA_INSTITUCIONAL'))
   assert.equal(nav.home, 'resumen')
-  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'ediciones', 'matriculas', 'importacion-excel', 'cursos', 'servicios', 'galeria', 'faq', 'convenios', 'mensajes', 'cotizaciones', 'chatbot', 'ajustes', 'configuracion'])
+  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'ediciones', 'matriculas', 'importacion-excel', 'mensajes', 'cotizaciones', 'chatbot', 'configuracion'])
   assert.equal(nav.canOpenResource('contenido'), false)
 })
 
@@ -85,7 +85,7 @@ test('secretaria: inicia en la Bandeja, sin Resumen (no consulta estadísticas) 
     const nav = panelNavigation(session('SECRETARIA', modo))
     assert.equal(nav.home, 'mensajes')
     assert.equal(nav.canOpen('resumen'), false, 'GET /admin/stats exige estadisticas:leer')
-    assert.deepEqual(visible(nav), ['estudiantes', 'ediciones', 'matriculas', 'cursos', 'mensajes', 'chatbot', 'ajustes', 'configuracion'])
+    assert.deepEqual(visible(nav), ['estudiantes', 'ediciones', 'matriculas', 'mensajes', 'chatbot', 'configuracion'])
     // Educación: puede leer cursos y capacitaciones, pero no Asesoramiento (que es un servicio).
     assert.equal(nav.canOpenResource('cursos'), true)
     assert.equal(nav.canOpenResource('servicios'), false)
@@ -93,8 +93,12 @@ test('secretaria: inicia en la Bandeja, sin Resumen (no consulta estadísticas) 
   }
 })
 
-test('Biblioteca de contenido: solo con items:leer cuando hay rol', () => {
-  assert.equal(panelNavigation(session('SECRETARIA', 'heredado', ['items:leer'])).canOpen('contenido'), true)
+test('gestores editoriales retirados incluso con todos sus permisos y en modo heredado', () => {
+  for (const access of [legacyBackend(), session(null, 'heredado'), session('GERENTE_GENERAL', 'por_roles'), session('COORDINADORA_INSTITUCIONAL')]) {
+    const nav = panelNavigation(access)
+    for (const key of ['cursos', 'educacion', 'servicios', 'galeria', 'faq', 'contenido', 'convenios', 'ajustes']) assert.equal(nav.canOpen(key), false, key)
+  }
+  assert.equal(panelNavigation(session('SECRETARIA', 'heredado', ['items:leer'])).canOpen('contenido'), false)
   assert.equal(panelNavigation(session('SECRETARIA', 'heredado', ['items:leer'])).canOpenResource('contenido'), true)
   assert.equal(panelNavigation(session('COORDINADORA_INSTITUCIONAL', 'heredado', ['cursos:leer'])).canOpen('contenido'), false)
 })
@@ -265,7 +269,7 @@ test('gerente: todas las operaciones de escritura', () => {
   }
 })
 
-test('secretaria: Cursos, Capacitaciones e Información de empresa en modo consulta; registra y atiende consultas sin eliminarlas', () => {
+test('secretaria: conserva permisos históricos de lectura; registra y atiende consultas sin eliminarlas', () => {
   for (const modo of ['heredado', 'por_roles']) {
     const nav = panelNavigation(session('SECRETARIA', modo))
     for (const permission of Object.values(RESOURCE_WRITE.cursos)) assert.equal(nav.can(permission), false, permission)
@@ -280,7 +284,7 @@ test('secretaria: Cursos, Capacitaciones e Información de empresa en modo consu
   }
 })
 
-test('coordinadora: gestiona el contenido salvo borrar cursos y servicios; sin eliminar consultas, editar la configuración ni recuperar contenido original', () => {
+test('coordinadora: permisos históricos conservados; sin eliminar consultas, editar configuración ni recuperar contenido original', () => {
   const nav = panelNavigation(session('COORDINADORA_INSTITUCIONAL'))
   const yes = ['cursos:crear', 'cursos:editar', 'cursos:archivar', 'servicios:crear', 'servicios:editar', ...Object.values(RESOURCE_WRITE['preguntas-frecuentes']), ...Object.values(RESOURCE_WRITE.galeria),
     PANEL_ACTIONS.crearConvenio, PANEL_ACTIONS.editarConvenio, PANEL_ACTIONS.eliminarConvenio, PANEL_ACTIONS.subirImagen,

@@ -1,10 +1,8 @@
 // Operaciones del panel según los permisos (H-BACK-01, E3.4.3, fase 2) con API simulada: nada real (ni cuentas, ni datos, ni correo).
-// Edge por DevTools (smoke-kit.cjs, sin cambios). Cubre: botones de crear, editar, duplicar, eliminar o archivar, recuperar contenido
-// original, publicar convenios, enviar y anular cotizaciones, registrar, cambiar de estado, eliminar y responder consultas; secciones en
-// modo consulta (Información de empresa, Cursos de la secretaria, una cuenta solo lectora); direcciones ?crear=1 y ?contacto= sin permiso;
-// «archivado» sin permiso de archivar; Enter (envío del formulario) sin permiso; enlaces cruzados del Resumen y de la bandeja; navegación
-// heredada intacta (gerente, backend antiguo y cuenta sin rol en modo heredado). En los casos denegados no debe salir ninguna solicitud
-// de escritura; en la sección 6, las operaciones permitidas sí deben llegar al servidor simulado (que responde con error: nada se guarda).
+// Edge por DevTools: rutas editoriales retiradas incluso con ?crear=1 y sus permisos antiguos;
+// atención y cotizaciones según permisos (también cuenta solo lectora y navegación heredada), ?crear=1 y ?contacto= sin permiso,
+// Enter sin permiso y accesos operativos del resumen. Abrir formularios o visitar rutas retiradas nunca debe enviar escrituras;
+// las operaciones permitidas (anular cotización, iniciar atención) sí deben llegar al servidor simulado.
 // Las listas de permisos de cada rol se leen del código del backend (como hace el servidor real); el panel solo recibe la lista.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -65,7 +63,7 @@ const handler = async (req, res, { route, json, body }) => {
   if (req.method !== 'GET') return json({ ok: false, mensaje: 'Escritura no esperada en el smoke.' }, 418) || true;
   const sub = route.slice('/api/admin/'.length);
   if (sub === 'me') return json({ ok: true, ...shape(ACCOUNTS[token]) }) || true;
-  if (sub === 'stats') return json({ ok: true, stats: { mensajes: { total: 1, nuevos: 1, enProceso: 0, atendidos: 0, archivados: 0 }, contenido: { total: 0 }, catalogo: {} }, actividadReciente: { mensajes: [MESSAGE] } }) || true;
+  if (sub === 'stats') return json({ ok: true, stats: { academico: { estudiantes: 0, edicionesActivas: 0, matriculasRegistradas: 0, matriculasVigentes: 0 }, mensajes: { total: 1, nuevos: 1, enProceso: 0, atendidos: 0, archivados: 0, pendientes: 1 } }, actividadReciente: { mensajes: [MESSAGE] } }) || true;
   if (sub === 'stats/actividad') { // el gráfico solo se dibuja con un día por cada día del rango pedido
     const dias = Number(new URL(req.url, 'http://x').searchParams.get('dias')) || 30;
     const mensajes = Array.from({ length: dias }, (_, i) => ({ fecha: new Date(Date.UTC(2030, 0, 1 + i)).toISOString().slice(0, 10), total: 0, chatbot: 0 }));
@@ -95,226 +93,119 @@ const handler = async (req, res, { route, json, body }) => {
   const { ck, open, closePages, origin } = k;
   const ctl = (...parts) => fetch(origin + '/__s/' + parts.map(encodeURIComponent).join('/'));
   const requests = async () => (await fetch(origin + '/__log').then(r => r.json())).requests;
+  const clean = async (mode = 'por_roles') => { await closePages(); await ctl('clear'); await ctl('mode', mode); };
+  const restore = async (token, route, ready) => {
+    const p = await open(); await p.go('/__empty');
+    await p.evaluate('localStorage.setItem(' + JSON.stringify(KEY) + ', ' + JSON.stringify(token) + '); 1');
+    await p.go(route); if (ready) await p.wait(ready, route); await sleep(300); return p;
+  };
+  const has = (p, text, scope = 'main') => p.evaluate('[...document.querySelectorAll(' + JSON.stringify(scope + ' button, ' + scope + ' a') + ')].some(b => (b.textContent + " " + (b.getAttribute("aria-label") || "")).includes(' + JSON.stringify(text) + '))');
+  const submit = (p, selector) => p.evaluate('document.querySelector(' + JSON.stringify(selector) + ')?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); true');
+  const noWrites = async name => ck(!(await requests()).some(r => r.method !== 'GET'), name, await requests());
   const writes = async () => (await requests()).filter(r => r.method !== 'GET');
   const calls = async (token, prefix) => (await requests()).filter(r => r.token === token && r.route.startsWith('/api/admin/' + prefix));
-  const clean = async (mode = 'heredado') => { await closePages(); await ctl('clear'); await ctl('mode', mode); const p = await open(); await p.go('/__empty'); await p.evaluate('localStorage.clear(); sessionStorage.clear(); 1'); await closePages(); };
-  const PANEL = "/^\\/admin\\/(dashboard|messages)$/.test(location.pathname) && document.querySelector('.hp-sidebar')";
-  const restore = async (token, route, ready) => {
-    const p = await open(); await p.go('/__empty'); await p.evaluate('localStorage.setItem(' + JSON.stringify(KEY) + ', ' + JSON.stringify(token) + '); 1');
-    await p.go(route); await p.wait(PANEL, 'panel (' + route + ')'); if (ready) await p.wait(ready, 'contenido de ' + route); await sleep(400); return p;
-  };
-  // ¿Hay un botón o enlace visible cuyo texto (o aria-label) contenga `text` dentro de `scope`?
-  const has = (p, text, scope = 'main') => p.evaluate('[...document.querySelectorAll(' + JSON.stringify(scope + ' button, ' + scope + ' a') + ')].some(b => (b.textContent + " " + (b.getAttribute("aria-label") || "")).replace(/\\s+/g, " ").includes(' + JSON.stringify(text) + '))');
   const readonlyNotice = p => p.evaluate('!!document.querySelector("main [data-panel-readonly]")');
   const dialogOpen = p => p.evaluate('!!document.querySelector("dialog[open]")');
-  const dialogForm = p => p.evaluate('!!document.querySelector("dialog[open] form")');
-  // Envía el formulario como lo haría Enter (evento submit, sin depender de la validación del navegador).
-  const submit = (p, selector) => p.evaluate('(() => { const f = document.querySelector(' + JSON.stringify(selector) + '); if (!f) return false; f.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); return true; })()');
-  const estadoOptions = p => p.evaluate('[...(document.querySelector("dialog[open] #field-estado")?.options || [])].map(o => o.value)');
-  const CAPACITACIONES = '/admin/dashboard?section=educacion&seccion=capacitaciones';
-  const CARDS = 'document.querySelector(".hw-resource, .hp-table tbody tr")';
-
-  console.log('\n== CONSERVACIÓN DE CURSOS Y CAPACITACIONES');
-  for (const mode of ['heredado', 'por_roles']) for (const token of ['tk-gerente', 'tk-coord', 'tk-sec', 'tk-norol']) {
-    await clean(mode);
-    for (const section of ['cursos', 'capacitaciones']) {
-      const denied = token === 'tk-norol' && mode === 'por_roles';
-      const p = await restore(token, '/admin/dashboard?section=educacion&seccion=' + section + '&eliminar=11', denied ? 'document.querySelector("[data-panel-access]")' : CARDS);
-      const who = token + ' ' + mode + ' ' + section;
-      ck(!(await has(p, 'Eliminar')) && !(await has(p, 'Archivar')) && !(await dialogOpen(p)), who + ': sin acción ni confirmación de DELETE, tampoco con parámetro de URL');
-      if (!denied) {
-        await p.click('main .hw-tabs button', 'Tabla'); await p.wait('document.querySelector(".hp-table tbody tr")', 'tabla');
-        ck(!(await has(p, 'Eliminar')) && !(await has(p, 'Archivar')), who + ': tabla sin acción DELETE');
-        await p.click('main .hp-table button', 'Ver Curso ficticio'); await p.wait('document.querySelector("dialog[open]")', 'detalle');
-        ck(!(await has(p, 'Eliminar', 'dialog[open]')) && !(await has(p, 'Archivar', 'dialog[open]')), who + ': detalle sin acción DELETE');
-      }
-      await closePages();
-    }
-    ck((await writes()).length === 0, token + ' ' + mode + ': ninguna escritura ni DELETE', await writes());
-  }
-
-  // ===== 1. Secretaria: Cursos e Información de empresa en modo consulta =====
-  console.log('\n== SECRETARIA (modo heredado y por_roles)');
-  for (const mode of ['heredado', 'por_roles']) {
-    const who = 'secretaria (' + mode + ')';
-    await clean(mode);
-    let p = await restore('tk-sec', CAPACITACIONES, CARDS);
-    ck(!(await has(p, 'Crear capacitación')) && (await readonlyNotice(p)), who + ': Capacitaciones sin «Crear» y con aviso de modo consulta');
-    ck(!(await has(p, 'Editar')) && !(await has(p, 'Duplicar')) && !(await has(p, 'Eliminar')) && !(await has(p, 'Recuperar contenido original')), who + ': sin Editar, Duplicar, Eliminar ni «Recuperar contenido original» en las tarjetas');
-    await p.click('main .hw-resource footer button', 'Ver detalle'); await p.wait('document.querySelector("dialog[open]")', 'detalle del curso');
-    ck(!(await dialogForm(p)) && !(await has(p, 'Editar registro', 'dialog[open]')), who + ': «Ver detalle» abre la ficha sin formulario ni «Editar registro»');
-    await p.click('dialog[open] button', 'Cerrar'); await sleep(200);
-    await p.click('main .hw-tabs button', 'Tabla'); await p.wait('document.querySelector(".hp-table tbody tr")', 'tabla');
-    ck((await has(p, 'Ver Curso ficticio')) && !(await has(p, 'Editar Curso ficticio')) && !(await has(p, 'Eliminar Curso ficticio')), who + ': en la tabla solo queda «Ver»');
-    await closePages();
-    p = await restore('tk-sec', CAPACITACIONES + '&vista=agenda', 'document.querySelector(".hw-timeline button")');
-    await p.click('main .hw-timeline button', 'Curso ficticio'); await p.wait('document.querySelector("dialog[open]")', 'ficha desde la agenda');
-    ck(!(await dialogForm(p)), who + ': la agenda abre el curso en modo consulta');
-    await closePages();
-    p = await restore('tk-sec', '/admin/dashboard?section=educacion&seccion=cursos&crear=1', CARDS);
-    ck(!(await dialogOpen(p)) && (await p.text('main')).includes('no puede crear registros'), who + ': ?crear=1 no abre el formulario y explica por qué', await p.text('main [data-panel-readonly]'));
-    await closePages();
-    p = await restore('tk-sec', '/admin/dashboard?section=ajustes', 'document.querySelector("main form input")');
-    ck((await p.evaluate('[...document.querySelectorAll("main form input")].every(i => i.matches(":disabled"))')) && !(await has(p, 'Guardar configuración')) && !(await has(p, 'Restablecer cambios')) && (await readonlyNotice(p)), who + ': Información de empresa en modo consulta (campos deshabilitados, sin Guardar ni Restablecer)');
-    await submit(p, 'main form'); await sleep(400);
-    ck((await calls('tk-sec', 'settings')).every(r => r.method === 'GET') && (await p.text('main')).includes('no tiene permiso'), who + ': enviar el formulario (Enter) no hace PUT /admin/settings');
-    await closePages();
-    p = await restore('tk-sec', '/admin/messages?id=71', 'document.querySelector(".hw-inbox-detail form textarea")');
-    ck((await has(p, 'Registro manual')) && (await has(p, 'Iniciar atención')) && (await has(p, 'Guardar seguimiento')) && (await has(p, 'Enviar respuesta guardada')), who + ': en Mensajes conserva el registro manual, los cambios de estado, el seguimiento y el envío de la respuesta');
-    ck(!(await has(p, 'Eliminar consulta')) && !(await has(p, 'Preparar cotización')), who + ': sin «Eliminar consulta…» (mensajes:eliminar) ni «Preparar cotización» (sin Cotizaciones)');
-    await closePages();
-    p = await restore('tk-sec', '/admin/messages?crear=1', 'document.querySelector("dialog[open] form")');
-    ck(await has(p, 'Registrar consulta', 'dialog[open]'), who + ': ?crear=1 abre el registro manual (tiene mensajes:crear)');
-    ck((await writes()).length === 0, who + ': ninguna solicitud de escritura', await writes());
-  }
-
-  // ===== 2. Coordinadora: gestiona contenido salvo lo que no le corresponde =====
-  console.log('\n== COORDINADORA');
-  await clean();
-  { let p = await restore('tk-coord', CAPACITACIONES, CARDS);
-    ck((await has(p, 'Crear capacitación')) && (await has(p, 'Editar')) && (await has(p, 'Duplicar Curso ficticio')) && !(await readonlyNotice(p)), 'Capacitaciones: crear, editar y duplicar disponibles');
-    ck(!(await has(p, 'Eliminar Curso ficticio')) && !(await has(p, 'Recuperar contenido original')), 'sin borrado definitivo (cursos:eliminar) ni «Recuperar contenido original» (contenido_original:*)');
-    await p.click('main .hw-resource footer button', 'Editar'); await p.wait('document.querySelector("dialog[open] #field-estado")', 'formulario del curso');
-    ck((await estadoOptions(p)).includes('archivado'), 'con cursos:archivar el estado ofrece «Archivado»', await estadoOptions(p));
-    await closePages();
-    p = await restore('tk-coord', '/admin/dashboard?section=servicios', CARDS);
-    ck((await has(p, 'Crear servicio')) && (await has(p, 'Editar')) && !(await has(p, 'Eliminar Servicio ficticio')), 'Servicios: crear y editar, sin eliminar (servicios:eliminar)');
-    await closePages();
-    p = await restore('tk-coord', '/admin/dashboard?section=faq', 'document.querySelector(".hw-faq details")');
-    ck((await has(p, 'Editar respuesta')) && (await has(p, 'Archivar')), 'Preguntas frecuentes: editar y archivar');
-    await closePages();
-    p = await restore('tk-coord', '/admin/dashboard?section=galeria', CARDS);
-    ck((await has(p, 'Crear imagen')) && (await has(p, 'Eliminar Imagen ficticia')), 'Galería: crear y eliminar');
-    await closePages();
-    p = await restore('tk-coord', '/admin/dashboard?section=convenios', 'document.querySelector(".hp-table tbody tr")');
-    ck((await has(p, 'Nuevo convenio')) && (await has(p, 'Editar Convenio ficticio')) && (await has(p, 'Ocultar')) && (await has(p, 'Eliminar Convenio ficticio')), 'Convenios: nuevo, editar, ocultar y eliminar');
-    await closePages();
-    p = await restore('tk-coord', '/admin/messages?id=71', 'document.querySelector(".hw-inbox-detail form textarea")');
-    ck((await has(p, 'Preparar cotización')) && !(await has(p, 'Eliminar consulta')), 'Mensajes: «Preparar cotización» sí; «Eliminar consulta…» no (mensajes:eliminar es del gerente)');
-    await closePages();
-    p = await restore('tk-coord', '/admin/dashboard?section=ajustes', 'document.querySelector("main form input")');
-    ck(!(await has(p, 'Guardar configuración')) && (await readonlyNotice(p)), 'Información de empresa: modo consulta (configuracion:editar es del gerente)');
-    await closePages();
-    p = await restore('tk-coord', '/admin/dashboard?section=cotizaciones', 'document.querySelector(".hp-table tbody tr")');
-    await p.click('main .hp-table button', 'Ver propuesta'); await p.wait('document.querySelector("dialog[open]")', 'detalle de la cotización');
-    ck((await has(p, 'Nueva cotización')) && (await has(p, 'Editar borrador', 'dialog[open]')) && (await has(p, 'Preparar copia', 'dialog[open]')) && (await has(p, 'Enviar por correo', 'dialog[open]')) && (await has(p, 'Marcar anulada', 'dialog[open]')), 'Cotizaciones: crear, editar, copiar, enviar y anular');
-    await closePages();
-    p = await restore('tk-coord', '/admin/dashboard', 'document.querySelector(".hp-hero")');
-    { const seen = { curso: await has(p, 'Crear un curso'), servicio: await has(p, 'Nuevo servicio'), cotizaciones: await has(p, 'Ir a cotizaciones') };
-      ck(seen.curso && seen.servicio && seen.cotizaciones, 'Resumen: accesos de creación y enlaces disponibles', seen); }
-    ck((await writes()).length === 0, 'coordinadora: ninguna solicitud de escritura', await writes()); }
-
-  // ===== 3. Navegación heredada intacta =====
-  console.log('\n== GERENTE, BACKEND ANTIGUO Y CUENTA SIN ROL (HEREDADO)');
-  for (const [token, me, who] of [['tk-gerente', 'nuevo', 'gerente'], ['tk-sec', 'antiguo', 'backend antiguo'], ['tk-norol', 'nuevo', 'cuenta sin rol en modo heredado']]) {
-    await clean(); await ctl('me', me);
-    let p = await restore(token, CAPACITACIONES, CARDS);
-    ck((await has(p, 'Crear capacitación')) && (await has(p, 'Editar')) && !(await has(p, 'Eliminar')) && !(await has(p, 'Archivar')) && (await has(p, 'Recuperar contenido original')) && !(await readonlyNotice(p)), who + ': Capacitaciones conserva creación y edición, sin acción DELETE');
-    await closePages();
-    p = await restore(token, '/admin/dashboard?section=ajustes', 'document.querySelector("main form input")');
-    ck((await has(p, 'Guardar configuración')) && (await p.evaluate('!document.querySelector("main form input").matches(":disabled")')), who + ': Información de empresa editable');
-    await closePages();
-    p = await restore(token, '/admin/messages?id=71', 'document.querySelector(".hw-inbox-detail form textarea")');
-    ck((await has(p, 'Eliminar consulta')) && (await has(p, 'Preparar cotización')) && (await has(p, 'Registro manual')), who + ': Mensajes con eliminar, preparar cotización y registro manual');
-    ck((await writes()).length === 0, who + ': ninguna solicitud de escritura', await writes());
-  }
-
-  // ===== 4. Cuenta solo lectora: todo en modo consulta =====
-  console.log('\n== CUENTA SOLO LECTORA (por_roles)');
-  await clean('por_roles');
-  { let p = await restore('tk-lector', '/admin/dashboard', 'document.querySelector(".hp-hero")');
-    { const seen = { curso: await has(p, 'Crear un curso'), atajos: await p.evaluate('!!document.querySelector(".hp-shortcuts")'), mensajes: await has(p, 'Ir a mensajes'), cotizaciones: await has(p, 'Ir a cotizaciones') };
-      ck(!seen.curso && !seen.atajos && seen.mensajes && seen.cotizaciones, 'Resumen: sin accesos de creación; conserva los enlaces a secciones que puede abrir', seen); }
-    await closePages();
-    p = await restore('tk-lector', '/admin/dashboard?section=galeria', CARDS);
-    ck(!(await has(p, 'Crear imagen')) && !(await has(p, 'Eliminar')) && (await readonlyNotice(p)), 'Galería en modo consulta');
-    await closePages();
-    p = await restore('tk-lector', '/admin/dashboard?section=convenios', 'document.querySelector(".hp-table tbody tr")');
-    ck(!(await has(p, 'Nuevo convenio')) && (await has(p, 'Ver Convenio ficticio')) && !(await has(p, 'Ocultar')) && !(await has(p, 'Eliminar Convenio')) && (await readonlyNotice(p)), 'Convenios: solo «Ver», sin nuevo, publicar/ocultar ni eliminar');
-    await p.click('main .hp-table button', 'Ver'); await p.wait('document.querySelector("dialog[open] fieldset")', 'detalle del convenio');
-    ck((await p.evaluate('document.querySelector("dialog[open] fieldset").disabled')) && !(await has(p, 'Guardar convenio', 'dialog[open]')) && !(await has(p, 'Quitar fotografía', 'dialog[open]')) && !(await has(p, 'Subir', 'dialog[open]')) && (await p.text('dialog[open]')).includes('Detalle del convenio'), 'el convenio se abre en modo consulta: sin guardar, subir ni quitar fotografías');
-    await submit(p, 'dialog[open] form'); await sleep(300);
-    ck((await calls('tk-lector', 'convenios')).every(r => r.method === 'GET'), 'enviar el formulario del convenio (Enter) no hace ninguna escritura');
-    await closePages();
-    p = await restore('tk-lector', '/admin/dashboard?section=cotizaciones', 'document.querySelector(".hp-table tbody tr")');
-    ck(!(await has(p, 'Nueva cotización')) && (await readonlyNotice(p)), 'Cotizaciones: sin «Nueva cotización»');
-    await p.click('main .hp-table button', 'Ver propuesta'); await p.wait('document.querySelector("dialog[open]")', 'detalle');
-    ck(!(await has(p, 'Editar borrador', 'dialog[open]')) && !(await has(p, 'Preparar copia', 'dialog[open]')) && !(await has(p, 'Enviar por correo', 'dialog[open]')) && !(await has(p, 'Marcar', 'dialog[open]')) && (await has(p, 'Ver datos del formulario', 'dialog[open]')), 'el detalle solo ofrece imprimir y ver los datos');
-    await p.click('dialog[open] button', 'Ver datos del formulario'); await p.wait('document.querySelector("dialog[open] form fieldset")', 'datos de la cotización');
-    ck((await p.evaluate('document.querySelector("dialog[open] form fieldset").disabled')) && !(await has(p, 'Guardar borrador', 'dialog[open]')), 'los datos se muestran sin poder guardarlos');
-    await closePages();
-    p = await restore('tk-lector', '/admin/dashboard?section=cotizaciones&contacto=71', 'document.querySelector(".hp-table tbody tr")');
-    ck(!(await dialogOpen(p)) && (await p.text('main')).includes('no puede crear cotizaciones') && (await calls('tk-lector', 'messages/71')).length === 0, '?contacto= sin cotizaciones:crear: no abre el formulario ni consulta la consulta de origen');
-    await closePages();
-    p = await restore('tk-lector', '/admin/messages?id=71', 'document.querySelector(".hw-inbox-detail form textarea")');
-    ck(!(await has(p, 'Registro manual')) && !(await has(p, 'Iniciar atención')) && !(await has(p, 'Marcar atendido')) && !(await has(p, 'Eliminar consulta')) && !(await has(p, 'Preparar cotización')), 'Mensajes: sin registro manual, cambios de estado, eliminar ni preparar cotización');
-    ck((await p.evaluate('document.querySelector(".hw-inbox-detail form fieldset").disabled')) && !(await has(p, 'Guardar seguimiento')) && !(await has(p, 'Enviar respuesta guardada')) && !(await has(p, 'Reenviar constancia')) && (await p.evaluate('!!document.querySelector(".hw-inbox-detail [data-panel-readonly]")')), 'el seguimiento se muestra en modo consulta, sin guardar ni enviar correos');
-    await submit(p, '.hw-inbox-detail form'); await sleep(300);
-    ck((await calls('tk-lector', 'seguimiento')).every(r => r.method === 'GET'), 'enviar el formulario del seguimiento (Enter) no hace PUT');
-    await closePages();
-    p = await restore('tk-lector', '/admin/messages?crear=1', 'document.querySelector(".hw-inbox-list button, .hw-inbox-list table")');
-    ck(!(await dialogOpen(p)) && (await p.text('main')).includes('no puede registrar consultas'), '?crear=1 en Mensajes sin mensajes:crear: no abre el registro manual');
-    ck((await writes()).length === 0, 'cuenta solo lectora: ninguna solicitud de escritura', await writes()); }
-
-  // ===== 4b. Enlaces cruzados del Resumen hacia secciones sin permiso =====
-  console.log('\n== RESUMEN SIN MENSAJES NI COTIZACIONES');
-  await clean('por_roles');
-  { const p = await restore('tk-resumen', '/admin/dashboard', 'document.querySelector(".hp-activity-card .hp-quotes-chart")');
-    const seen = { mensajes: await has(p, 'Ir a mensajes'), todas: await has(p, 'Ver todas'), cotizaciones: await has(p, 'Ir a cotizaciones'), curso: await has(p, 'Crear un curso'), atajos: await p.evaluate('!!document.querySelector(".hp-shortcuts")'),
-      bandeja: await p.evaluate('!!document.querySelector(".hw-work a[href^=\\"/admin/messages\\"]")'), agenda: await p.evaluate('!!document.querySelector(".hw-work a[href*=\\"vista=agenda\\"]")'),
-      reciente: await p.evaluate('[...document.querySelectorAll(".hp-activity button")].every(b => b.disabled)'), servicios: await p.evaluate('[...document.querySelectorAll(".hp-distribution-row")].find(b => b.textContent.includes("Servicios")).disabled') };
-    ck(!seen.mensajes && !seen.todas && !seen.cotizaciones && !seen.curso && !seen.atajos && !seen.bandeja && seen.agenda && seen.reciente && seen.servicios,
-      'sin Mensajes ni Cotizaciones: no se ofrecen sus enlaces (ni crear); la agenda de cursos sí; consultas recientes y Servicios quedan deshabilitados', seen); }
-
-  // ===== 5. Editar sin archivar =====
-  console.log('\n== EDITAR SIN PERMISO DE ARCHIVAR');
-  await clean('por_roles');
-  { const p = await restore('tk-editor', CAPACITACIONES, CARDS);
-    ck(!(await has(p, 'Crear capacitación')) && (await has(p, 'Editar')) && !(await has(p, 'Duplicar')) && !(await has(p, 'Eliminar')) && !(await readonlyNotice(p)), 'con cursos:editar solo se ofrece editar');
-    await p.evaluate('[...document.querySelectorAll("main .hw-resource")].find(c => c.textContent.includes("Curso ficticio")).querySelector("footer button").click(); 1');
-    await p.wait('document.querySelector("dialog[open] #field-estado")', 'formulario');
-    ck(!(await estadoOptions(p)).includes('archivado') && (await estadoOptions(p)).includes('publicado'), 'sin cursos:archivar el estado no ofrece «Archivado»', await estadoOptions(p));
-    await p.click('dialog[open] button', 'Cancelar'); await sleep(300);
-    await p.evaluate('[...document.querySelectorAll("main .hw-resource")].find(c => c.textContent.includes("Curso archivado")).querySelector("footer button").click(); 1');
-    await p.wait('document.querySelector("dialog[open] #field-estado")', 'formulario del curso archivado');
-    ck((await estadoOptions(p)).includes('archivado'), 'un curso ya archivado muestra su estado');
-    await submit(p, 'dialog[open] form'); await p.wait('document.querySelector("dialog[open] [role=alert]")', 'aviso');
-    ck((await p.text('dialog[open] [role=alert]')).includes('no puede guardar registros archivados') && (await writes()).length === 0, 'guardarlo como «archivado» se detiene con un aviso y sin PUT', await p.text('dialog[open] [role=alert]')); }
-
-  // ===== 6. Operaciones permitidas: la solicitud sí sale =====
-  // Que no salga nada en los casos denegados no prueba que una cuenta autorizada pueda guardar. Aquí cada operación permitida debe
-  // llegar al servidor simulado con su método, ruta y cuerpo. El simulador sigue respondiendo con error: no se simula éxito.
-  console.log('\n== OPERACIONES PERMITIDAS (la solicitud llega al servidor)');
+  // Una operación permitida debe llegar al servidor simulado con su método, ruta y cuerpo (el simulador responde con error: nada se guarda).
   const sent = async (token, method, route, what) => {
     const end = Date.now() + 5000;
     while (Date.now() < end) { const hit = (await requests()).find(r => r.token === token && r.method === method && r.route === route); if (hit) return hit; await sleep(100); }
     throw new Error('No llegó ' + method + ' ' + route + ' (' + what + '). Escrituras: ' + JSON.stringify(await writes()));
   };
-  const editCourse = async (p, title) => {
-    await p.evaluate('[...document.querySelectorAll("main .hw-resource")].find(c => c.textContent.includes(' + JSON.stringify(title) + ')).querySelector("footer button").click(); 1');
-    await p.wait('document.querySelector("dialog[open] #field-estado")', 'formulario de ' + title);
-  };
-  await clean('por_roles');
-  { let p = await restore('tk-gerente', '/admin/dashboard?section=ajustes', 'document.querySelector("main form input")');
-    await submit(p, 'main form');
-    ck((await sent('tk-gerente', 'PUT', '/api/admin/settings', 'guardar configuración')).body?.ajustes?.empresa_nombre === 'Horus ficticio', 'gerente: «Guardar configuración» envía PUT /admin/settings (configuracion:editar)');
+
+  console.log('\n== RUTAS EDITORIALES RETIRADAS');
+  for (const token of ['tk-gerente', 'tk-coord', 'tk-sec', 'tk-lector']) {
+    await clean();
+    for (const section of ['educacion', 'cursos', 'servicios', 'galeria', 'faq', 'contenido', 'convenios', 'ajustes']) {
+      const p = await restore(token, '/admin/dashboard?section=' + section + '&crear=1', 'document.querySelector("[data-panel-editorial-retired]")');
+      ck(!(await p.evaluate('!!document.querySelector("main form, dialog[open]")')), token + ': ' + section + ' no monta un gestor ni abre alta');
+      await closePages();
+    }
+    ck(!(await requests()).some(r => /\/admin\/(cursos|servicios|galeria|preguntas-frecuentes|items|convenios|settings|contenido-original)/.test(r.route)), token + ': sin solicitudes editoriales');
+    await noWrites(token + ': sin escrituras');
+  }
+
+  console.log('\n== ATENCIÓN SEGÚN PERMISOS');
+  for (const [token, canQuote, canDelete] of [['tk-sec', false, false], ['tk-coord', true, false], ['tk-gerente', true, true]]) {
+    await clean();
+    let p = await restore(token, '/admin/messages?id=71', 'document.querySelector(".hw-inbox-detail form textarea")');
+    ck(await has(p, 'Registro manual') && await has(p, 'Guardar seguimiento') && await has(p, 'Enviar respuesta guardada'), token + ': registro y seguimiento disponibles');
+    ck(await has(p, 'Preparar cotización') === canQuote && await has(p, 'Eliminar consulta') === canDelete, token + ': cotización y eliminación respetan permisos');
     await closePages();
-    p = await restore('tk-coord', CAPACITACIONES, CARDS); await editCourse(p, 'Curso ficticio');
-    await p.type('dialog[open] #field-estado', 0, 'archivado'); await submit(p, 'dialog[open] form');
-    ck((await sent('tk-coord', 'PUT', '/api/admin/cursos/11', 'archivar curso')).body?.estado === 'archivado', 'coordinadora: con cursos:editar y cursos:archivar guarda un curso como «archivado» (PUT /admin/cursos/11)');
-    await closePages();
-    p = await restore('tk-editor', CAPACITACIONES, CARDS); await editCourse(p, 'Curso ficticio'); await submit(p, 'dialog[open] form');
-    ck((await sent('tk-editor', 'PUT', '/api/admin/cursos/11', 'editar curso')).body?.estado === 'publicado', 'solo cursos:editar: guardar un curso publicado no se bloquea (PUT sin archivar)');
-    await closePages();
-    p = await restore('tk-editor', CAPACITACIONES, CARDS); await editCourse(p, 'Curso archivado');
-    await p.type('dialog[open] #field-estado', 0, 'publicado'); await submit(p, 'dialog[open] form');
-    ck((await sent('tk-editor', 'PUT', '/api/admin/cursos/12', 'republicar curso')).body?.estado === 'publicado', 'republicar usa PUT sobre el mismo ID, sin exigir archivar');
-    await closePages();
-    p = await restore('tk-coord', '/admin/dashboard?section=convenios', 'document.querySelector(".hp-table tbody tr")');
-    await p.click('main .hp-table button', 'Ocultar');
-    ck((await sent('tk-coord', 'PUT', '/api/admin/convenios/51', 'ocultar convenio')).body?.visible === false, 'coordinadora: «Ocultar» envía PUT /admin/convenios/51 (convenios:editar)');
+    p = await restore(token, '/admin/messages?crear=1', 'document.querySelector("dialog[open] form")');
+    ck(await has(p, 'Registrar consulta', 'dialog[open]'), token + ': alta manual disponible');
+    await noWrites(token + ': abrir formularios no escribe');
+  }
+  await clean();
+  {
+    const p = await restore('tk-lector', '/admin/messages?id=71', 'document.querySelector(".hw-inbox-detail form textarea")');
+    ck(!(await has(p, 'Registro manual')) && !(await has(p, 'Guardar seguimiento')) && !(await has(p, 'Enviar respuesta guardada')), 'lector: sin acciones de escritura');
+    ck(await p.evaluate('document.querySelector(".hw-inbox-detail form fieldset").disabled'), 'lector: seguimiento deshabilitado');
+    await submit(p, '.hw-inbox-detail form'); await sleep(250); await noWrites('Enter sin permiso no envía PUT');
+  }
+  await clean();
+  {
+    const p = await restore('tk-lector', '/admin/messages?crear=1', 'document.querySelector(".hw-inbox-list button, .hw-inbox-list table")');
+    ck(!(await p.evaluate('!!document.querySelector("dialog[open]")')), 'lector: ?crear=1 no abre registro manual');
+    await noWrites('lector: ninguna escritura por URL');
+  }
+
+  console.log('\n== COTIZACIONES CONSERVADAS');
+  for (const token of ['tk-coord', 'tk-gerente', 'tk-lector']) {
+    await clean();
+    const p = await restore(token, '/admin/dashboard?section=cotizaciones', 'document.querySelector(".hp-table tbody tr")');
+    await p.click('main .hp-table button', 'Ver propuesta'); await p.wait('document.querySelector("dialog[open]")', 'detalle');
+    const editable = token !== 'tk-lector';
+    ck(await has(p, 'Nueva cotización') === editable && await has(p, 'Editar borrador', 'dialog[open]') === editable && await has(p, 'Enviar por correo', 'dialog[open]') === editable, token + ': cotización conserva permisos');
+    await noWrites(token + ': consultar cotización no escribe');
+  }
+
+  // Cobertura conservada de la versión anterior del smoke: atención y cotizaciones siguen en el panel.
+  console.log('\n== ATENCIÓN Y COTIZACIONES: DETALLE POR PERMISOS');
+  await clean();
+  {
+    let p = await restore('tk-sec', '/admin/messages?id=71', 'document.querySelector(".hw-inbox-detail form textarea")');
+    ck(await has(p, 'Iniciar atención') && !(await has(p, 'Eliminar consulta')) && !(await has(p, 'Preparar cotización')), 'secretaria: cambia el estado, sin eliminar consultas ni preparar cotizaciones');
     await closePages();
     p = await restore('tk-coord', '/admin/dashboard?section=cotizaciones', 'document.querySelector(".hp-table tbody tr")');
+    await p.click('main .hp-table button', 'Ver propuesta'); await p.wait('document.querySelector("dialog[open]")', 'detalle de la cotización');
+    ck(await has(p, 'Preparar copia', 'dialog[open]') && await has(p, 'Marcar anulada', 'dialog[open]'), 'coordinadora: cotización con copiar y anular');
+    await noWrites('coordinadora: abrir la cotización no escribe');
+  }
+  await clean();
+  {
+    let p = await restore('tk-lector', '/admin/dashboard?section=cotizaciones', 'document.querySelector(".hp-table tbody tr")');
+    ck(!(await has(p, 'Nueva cotización')) && await readonlyNotice(p), 'lector: Cotizaciones sin «Nueva cotización» y con aviso de consulta');
+    await p.click('main .hp-table button', 'Ver propuesta'); await p.wait('document.querySelector("dialog[open]")', 'detalle');
+    ck(!(await has(p, 'Editar borrador', 'dialog[open]')) && !(await has(p, 'Preparar copia', 'dialog[open]')) && !(await has(p, 'Marcar', 'dialog[open]')) && await has(p, 'Ver datos del formulario', 'dialog[open]'), 'lector: el detalle solo ofrece imprimir y ver los datos');
+    await p.click('dialog[open] button', 'Ver datos del formulario'); await p.wait('document.querySelector("dialog[open] form fieldset")', 'datos de la cotización');
+    ck(await p.evaluate('document.querySelector("dialog[open] form fieldset").disabled') && !(await has(p, 'Guardar borrador', 'dialog[open]')), 'lector: los datos se muestran sin poder guardarlos');
+    await closePages();
+    p = await restore('tk-lector', '/admin/dashboard?section=cotizaciones&contacto=71', 'document.querySelector(".hp-table tbody tr")');
+    ck(!(await dialogOpen(p)) && (await p.text('main')).includes('no puede crear cotizaciones') && (await calls('tk-lector', 'messages/71')).length === 0, 'lector: ?contacto= sin cotizaciones:crear no abre el formulario ni consulta la consulta de origen');
+    await closePages();
+    p = await restore('tk-lector', '/admin/messages?id=71', 'document.querySelector(".hw-inbox-detail form textarea")');
+    ck(!(await has(p, 'Iniciar atención')) && !(await has(p, 'Marcar atendido')) && !(await has(p, 'Eliminar consulta')) && !(await has(p, 'Preparar cotización')) && !(await has(p, 'Reenviar constancia')) && await p.evaluate('!!document.querySelector(".hw-inbox-detail [data-panel-readonly]")'), 'lector: Mensajes sin cambios de estado, eliminar, cotizar ni correos');
+    await submit(p, '.hw-inbox-detail form'); await sleep(300);
+    ck((await calls('tk-lector', 'seguimiento')).every(r => r.method === 'GET'), 'lector: Enter en el seguimiento no hace PUT');
+    await closePages();
+    p = await restore('tk-lector', '/admin/messages?crear=1', 'document.querySelector(".hw-inbox-list button, .hw-inbox-list table")');
+    ck((await p.text('main')).includes('no puede registrar consultas'), 'lector: ?crear=1 explica que no puede registrar consultas');
+    ck((await writes()).length === 0, 'lector: ninguna solicitud de escritura', await writes());
+  }
+
+  console.log('\n== NAVEGACIÓN HEREDADA EN ATENCIÓN');
+  for (const [token, me, who] of [['tk-gerente', 'nuevo', 'gerente'], ['tk-sec', 'antiguo', 'backend antiguo'], ['tk-norol', 'nuevo', 'cuenta sin rol en modo heredado']]) {
+    await clean('heredado'); await ctl('me', me);
+    const p = await restore(token, '/admin/messages?id=71', 'document.querySelector(".hw-inbox-detail form textarea")');
+    ck(await has(p, 'Eliminar consulta') && await has(p, 'Preparar cotización') && await has(p, 'Registro manual'), who + ': Mensajes con eliminar, preparar cotización y registro manual');
+    ck((await writes()).length === 0, who + ': ninguna solicitud de escritura', await writes());
+  }
+
+  console.log('\n== OPERACIONES PERMITIDAS (la solicitud llega al servidor)');
+  await clean();
+  {
+    let p = await restore('tk-coord', '/admin/dashboard?section=cotizaciones', 'document.querySelector(".hp-table tbody tr")');
     await p.click('main .hp-table button', 'Ver propuesta'); await p.wait('document.querySelector("dialog[open]")', 'detalle de la cotización');
     await p.click('dialog[open] button', 'Marcar anulada');
     ck((await sent('tk-coord', 'POST', '/api/admin/cotizaciones/61/estado', 'anular cotización')).body?.estado === 'anulada', 'coordinadora: «Marcar anulada» envía POST /admin/cotizaciones/61/estado (cotizaciones:anular)');
@@ -322,8 +213,20 @@ const handler = async (req, res, { route, json, body }) => {
     p = await restore('tk-sec', '/admin/messages?id=71', 'document.querySelector(".hw-inbox-detail form textarea")');
     await p.click('main .hw-next-action button', 'Iniciar atención');
     ck((await sent('tk-sec', 'PUT', '/api/admin/seguimiento/messages/71', 'cambiar estado')).body?.estado === 'en_proceso', 'secretaria: «Iniciar atención» envía PUT /admin/seguimiento/messages/71 (seguimiento_mensajes:editar)');
-    const unexpected = (await writes()).filter(r => !['tk-gerente', 'tk-coord', 'tk-editor', 'tk-sec'].includes(r.token) || r.route.includes('/eliminar') || r.method === 'DELETE');
-    ck(unexpected.length === 0, 'ninguna escritura distinta de las permitidas de esta sección', unexpected); }
+    const unexpected = (await writes()).filter(r => !['tk-coord', 'tk-sec'].includes(r.token) || r.method === 'DELETE');
+    ck(unexpected.length === 0, 'ninguna escritura distinta de las permitidas de esta sección', unexpected);
+  }
 
-  k.finish('Operaciones del panel por permisos');
+  console.log('\n== ACCESOS DEL RESUMEN');
+  for (const token of ['tk-gerente', 'tk-coord', 'tk-lector', 'tk-resumen']) {
+    await clean();
+    const p = await restore(token, '/admin/dashboard', 'document.querySelector(".hp-operational-hero")');
+    const creates = token === 'tk-gerente' || token === 'tk-coord';
+    ck(await has(p, 'Registrar estudiante') === creates && await has(p, 'Crear edición') === creates && await has(p, 'Registrar matrícula') === creates, token + ': accesos académicos filtrados');
+    ck(!(await has(p, 'Crear un curso')) && !(await has(p, 'Nuevo servicio')), token + ': sin accesos editoriales');
+    if (token === 'tk-resumen') ck(!(await has(p, 'Atender consultas')) && !(await p.evaluate('!!document.querySelector(".hp-activity-card, .hp-activity")')), 'solo estadísticas: no monta actividad ni enlaza atención');
+    await noWrites(token + ': resumen solo lectura');
+  }
+  await closePages();
+  k.finish('Operaciones del panel académico y de atención');
 })().catch(error => { console.error('FALLO DEL SMOKE:', error.message); process.exit(1); });
