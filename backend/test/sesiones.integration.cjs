@@ -18,6 +18,7 @@ const { join } = require('node:path');
 const http = require('node:http');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
+const { validatedPreinscripciones, withoutPreinscripciones } = require('./fixtures/preinscripciones-fixture.cjs');
 
 const backend = join(__dirname, '..');
 const versions = JSON.parse(readFileSync(join(backend, 'scripts/migrate.cjs'), 'utf8').match(/const versions = (\[[^\]]*\])/)[1].replaceAll("'", '"'));
@@ -29,7 +30,7 @@ const statementsOf = name => readFileSync(join(backend, 'migrations', name + '.s
 test('Sesiones: migración, restricciones, HTTP, permisos, solapamientos, concurrencia, estados, historial y compatibilidad en MySQL desechable', { timeout: 1200000 }, async t => {
   if (process.env.SESIONES_TEST_DB !== 'true') return t.skip('Requiere SESIONES_TEST_DB=true y un servidor desechable identificado por UUID.');
   assert.ok(versions.includes(MIGRATION), 'la migración de sesiones está registrada en migrate.cjs');
-  assert.equal(versions.at(-1), MIGRATION, 'va al final de la sucesión');
+  assert.equal(versions.indexOf(MIGRATION), versions.indexOf('20261020-docentes') + 1, 'va justo después de docentes (ya no es la última: 20261020-preinscripciones la sigue)');
   const campos = value => typeof value === 'string' ? JSON.parse(value) : value; // mysql2 devuelve JSON ya interpretado
   assert.ok(['127.0.0.1', 'localhost', '::1'].includes(process.env.DB_HOST));
   const expectedUuid = String(process.env.SESIONES_TEST_SERVER_UUID ?? '').trim().toLowerCase();
@@ -76,7 +77,7 @@ test('Sesiones: migración, restricciones, HTTP, permisos, solapamientos, concur
         const [rows] = await db.query('SELECT * FROM `' + table + '` ORDER BY 1');
         result[table] = { ddl: create['Create Table'].replace(/ AUTO_INCREMENT=\d+/, ''), rows: JSON.stringify(rows) };
       }
-      return result;
+      return withoutPreinscripciones(result); // db:migrate completo también aplica 20261020-preinscripciones: no es parte de lo que verifica esta suite
     }
     // Rechazo esperado y su causa exacta (errno de mysql2): solo códigos y nombres, nunca valores.
     const rejects = async (promise, errno, name) => {
@@ -251,6 +252,7 @@ test('Sesiones: migración, restricciones, HTTP, permisos, solapamientos, concur
     const edition = async (nombre, curso_id = 1, open = false) => {
       const r = await request(E, tokens.g, 'POST', { curso_id, nombre, fecha_inicio: '2026-11-01', fecha_fin: '2026-11-30', capacidad: 20 }); assert.equal(r.status, 201, r.text);
       if (!open) return r.body.item;
+      await validatedPreinscripciones(db, r.body.item.id, 10, 'ses'); // regla vigente: una edición nueva exige 10 preinscripciones validadas para abrirse
       const opened = await request(E + '/' + r.body.item.id + '/apertura', tokens.g, 'PUT', { revision: r.body.item.revision }); assert.equal(opened.status, 200, opened.text); return opened.body.item; // abierta: admite matrículas y cierre
     };
     const assign = async (docente, ed, rol) => { const r = await request(A, tokens.g, 'POST', { docente_id: docente.id, convocatoria_id: ed.id, ...(rol ? { rol } : {}) }); assert.equal(r.status, 201, r.text); return r.body.item; };

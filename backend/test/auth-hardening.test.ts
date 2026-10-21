@@ -9,6 +9,7 @@ import { AccountsService } from '../src/admin/auth/accounts.service';
 import { JwtStrategy } from '../src/admin/auth/jwt.strategy';
 import { BCRYPT_COST, DUMMY_PASSWORD_HASH } from '../src/admin/auth/password-security';
 import { PublicRateLimitGuard } from '../src/common/public-rate-limit.guard';
+import { memoryBuckets } from './fixtures/rate-limit-memory';
 
 // Todo es ficticio: persistencia en memoria, correo falso y secretos de prueba. Se ejecuta con test/isolate-env.cjs (npm test).
 const SECRET = 'secreto-ficticio-de-pruebas-0123456789abcdef';
@@ -188,9 +189,7 @@ test('changing the password still needs the current password and revokes session
 
 // ---- Límites de solicitudes ----
 function limiter() {
-  const buckets = new Map<string, number>();
-  const tx = { $executeRaw: async (_strings: TemplateStringsArray, id: string) => { buckets.set(id, (buckets.get(id) ?? 0) + 1); }, rateLimitBucket: { findUniqueOrThrow: async ({ where }: any) => ({ count: buckets.get(where.id) }) } };
-  const prisma = { $transaction: async (run: any) => run(tx), rateLimitBucket: { deleteMany: async () => ({ count: 0 }) } } as any;
+  const { buckets, prisma } = memoryBuckets();
   const guard = new PublicRateLimitGuard(prisma);
   const call = (path: string, ip = '203.0.113.1', method = 'POST') => guard.canActivate({ switchToHttp: () => ({ getRequest: () => ({ method, path, ip, socket: { remoteAddress: ip } }) }) } as any);
   return { call, buckets };

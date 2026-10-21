@@ -56,7 +56,7 @@ function expectedColumns() {
 // E4.3b (20261016-academico-solo-dni): el documento académico es solo DNI peruano; un esquema que aún admita CE o PASAPORTE se rechaza.
 const DOC = "ENUM('DNI')", CONFIRMADOR = "ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL')";
 // Migraciones que definen el esquema académico, en su orden de aplicación (el de `versions` en migrate.cjs).
-const ACADEMIC_MIGRATIONS = ['20261015-academico-estructura', '20261016-academico-solo-dni', '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas'];
+const ACADEMIC_MIGRATIONS = ['20261015-academico-estructura', '20261016-academico-solo-dni', '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas', '20261020-preinscripciones'];
 // Esquema efectivo tras aplicar en orden las migraciones académicas: cada CHECK o columna generada redefinida en una migración
 // posterior sustituye a la anterior, y un DROP CHECK sin redefinición en esa misma migración la elimina de lo esperado.
 function academicDefinitions() {
@@ -74,7 +74,7 @@ const ACADEMIC = {
   importaciones_academicas: [['id','char(36)',false],['archivo_sha256','char(64)',false],['convocatoria_id','int',false],['actor_id','int',false],['estado',"ENUM('confirmada')",false],['importados','int',false],['omitidos','int',false],['rechazados','int',false],['estudiantes_nuevos','int',false],['createdAt','datetime(3)',false]],
   estudiantes: [['id','int',false],['nombres','varchar(120)',false],['apellidos','varchar(120)',false],['doc_pais','char(2)',true],['doc_tipo',DOC,true],
     ['doc_numero','varchar(20)',true],['email','varchar(254)',true],['telefono','varchar(30)',true],['archivado_at','datetime(3)',true],['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
-  convocatorias: [['capacidad','int',true],['id','int',false],['curso_id','int',false],['nombre','varchar(160)',false],['fecha_inicio','date',true],['fecha_fin','date',true],
+  convocatorias: [['capacidad','int',true],['minimo_apertura','int',true],['preinscripcion_estado',"ENUM('abierta','cerrada')",false],['codigo_publico','char(32)',true],['id','int',false],['curso_id','int',false],['nombre','varchar(160)',false],['fecha_inicio','date',true],['fecha_fin','date',true],
     ['estado',"ENUM('planificada','abierta','cerrada','cancelada')",false],['archivado_at','datetime(3)',true],['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
   matriculas: [['id','int',false],['estudiante_id','int',false],['convocatoria_id','int',false],['estado',"ENUM('activa','anulada')",false],
     ['cumplimiento',"ENUM('pendiente','cumplido','no_cumplido')",false],['confirmado_por','int',true],['confirmado_rol',CONFIRMADOR,true],['confirmado_at','datetime(3)',true],
@@ -93,6 +93,14 @@ const ACADEMIC = {
   sesiones: [['id','int',false],['convocatoria_id','int',false],['asignacion_id','int',true],['titulo','varchar(160)',false],['fecha','date',false],['hora_inicio','time',false],['hora_fin','time',false],
     ['modalidad',"ENUM('presencial','virtual','hibrida')",false],['lugar','varchar(200)',true],['enlace_url','varchar(2048)',true],['estado',"ENUM('programada','realizada','cancelada')",false],
     ['cancelada_at','datetime(3)',true],['cancelacion_motivo','varchar(300)',true],['observaciones','varchar(500)',true],['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
+  preinscripciones: [['id','int',false],['convocatoria_id','int',false],['nombres','varchar(120)',false],['apellidos','varchar(120)',false],['email','varchar(254)',false],['telefono','varchar(30)',false],
+    ['canal',"ENUM('formulario','chatbot')",false],['estado',"ENUM('recibida','validada','matriculada','desistida','descartada')",false],['vigente_email','varchar(254)',true],
+    ['consentimiento_at','datetime(3)',false],['aviso_version','varchar(30)',false],['estudiante_id','int',true],['matricula_id','int',true],['convertida_por','int',true],['convertida_at','datetime(3)',true],
+    ['revision','int',false],['createdAt','datetime(3)',false],['updatedAt','datetime(3)',false]],
+  preinscripciones_historial: [['id','int',false],['preinscripcion_id','int',false],['createdAt','datetime(3)',false],['operacion',"ENUM('creacion','correccion','validacion','descarte','desistimiento','conversion')",false],
+    ['canal',"ENUM('formulario','chatbot')",true],['actor_id','int',true],['actor_rol',"ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL','SECRETARIA')",true],
+    ['estado_anterior',"ENUM('recibida','validada','matriculada','desistida','descartada')",true],['estado_nuevo',"ENUM('recibida','validada','matriculada','desistida','descartada')",true],
+    ['campos','json',true],['revision','int',false],['motivo','varchar(300)',true]],
   academico_historial: [['id','int',false],['createdAt','datetime(3)',false],['entidad',"ENUM('estudiante','convocatoria','matricula','certificado','docente','asignacion_docente','sesion')",false],['entidad_id','int',false],
     ['operacion',"ENUM('creacion','edicion','archivado','restauracion','cambio_estado','anulacion','confirmacion','emision','sustitucion','reprogramacion')",false],['origen',"ENUM('panel','terminal')",false],
     ['actor_id','int',true],['actor_rol',"ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL','SECRETARIA')",true],['operador','varchar(100)',true],['estado_anterior','varchar(30)',true],
@@ -115,6 +123,12 @@ const ACADEMIC_INDEXES = [
   ['docente_asignaciones','docente_asignaciones_sustituye_idx',['sustituye_a_id','convocatoria_id'],false],
   ['sesiones','sesiones_id_edicion_uq',['id','convocatoria_id'],true], ['sesiones','sesiones_edicion_idx',['convocatoria_id','fecha','hora_inicio'],false],
   ['sesiones','sesiones_asignacion_idx',['asignacion_id','convocatoria_id','fecha'],false], ['sesiones','sesiones_fecha_idx',['fecha','hora_inicio'],false],
+  ['convocatorias','convocatorias_codigo_publico_uq',['codigo_publico'],true], ['matriculas','matriculas_id_relaciones_uq',['id','estudiante_id','convocatoria_id'],true],
+  ['preinscripciones','preinscripciones_vigente_email_uq',['convocatoria_id','vigente_email'],true], ['preinscripciones','preinscripciones_matricula_uq',['matricula_id'],true],
+  ['preinscripciones','preinscripciones_edicion_idx',['convocatoria_id','estado','createdAt'],false], ['preinscripciones','preinscripciones_email_idx',['email'],false],
+  ['preinscripciones','preinscripciones_estado_idx',['estado','createdAt'],false], ['preinscripciones','preinscripciones_matricula_rel_idx',['matricula_id','estudiante_id','convocatoria_id'],false],
+  ['preinscripciones','preinscripciones_estudiante_idx',['estudiante_id'],false], ['preinscripciones','preinscripciones_convertida_por_idx',['convertida_por'],false],
+  ['preinscripciones_historial','preinscripciones_historial_item_idx',['preinscripcion_id','createdAt'],false], ['preinscripciones_historial','preinscripciones_historial_actor_idx',['actor_id','createdAt'],false],
   ['academico_historial','academico_historial_entidad_idx',['entidad','entidad_id','createdAt'],false], ['academico_historial','academico_historial_actor_idx',['actor_id','createdAt'],false],
 ];
 // [tabla, clave foránea, columnas, tabla referenciada, columnas referenciadas]; todas RESTRICT al borrar y al actualizar.
@@ -132,17 +146,23 @@ const ACADEMIC_FOREIGN_KEYS = [
   ['docente_asignaciones','docente_asignaciones_sustituye_fk',['sustituye_a_id','convocatoria_id'],'docente_asignaciones',['id','convocatoria_id']],
   ['sesiones','sesiones_convocatoria_fk',['convocatoria_id'],'convocatorias',['id']],
   ['sesiones','sesiones_asignacion_fk',['asignacion_id','convocatoria_id'],'docente_asignaciones',['id','convocatoria_id']],
+  ['preinscripciones','preinscripciones_convocatoria_fk',['convocatoria_id'],'convocatorias',['id']],
+  ['preinscripciones','preinscripciones_matricula_fk',['matricula_id','estudiante_id','convocatoria_id'],'matriculas',['id','estudiante_id','convocatoria_id']],
+  ['preinscripciones','preinscripciones_convertida_por_fk',['convertida_por'],'admin_users',['id']],
+  ['preinscripciones_historial','preinscripciones_historial_fk',['preinscripcion_id'],'preinscripciones',['id']],
 ];
 const ACADEMIC_CHECKS = {
   importaciones_academicas: ['importaciones_conteos_ck'],
   estudiantes: ['estudiantes_nombres_chk','estudiantes_documento_completo_chk','estudiantes_documento_formato_chk','estudiantes_revision_chk'],
-  convocatorias: ['convocatorias_nombre_chk','convocatorias_fechas_chk','convocatorias_revision_chk','convocatorias_capacidad_chk'],
+  convocatorias: ['convocatorias_nombre_chk','convocatorias_fechas_chk','convocatorias_revision_chk','convocatorias_capacidad_chk','convocatorias_minimo_chk','convocatorias_codigo_chk'],
   matriculas: ['matriculas_confirmacion_chk','matriculas_revision_chk'],
   certificados: ['certificados_codigo_chk','certificados_anulacion_chk','certificados_nombres_chk','certificados_documento_chk','certificados_fechas_chk'],
   academico_historial: ['academico_historial_origen_chk','academico_historial_campos_chk'],
   docentes: ['docentes_nombres_chk','docentes_texto_chk','docentes_documento_completo_chk','docentes_documento_formato_chk','docentes_activo_chk','docentes_revision_chk'],
   docente_asignaciones: ['docente_asignaciones_retiro_chk','docente_asignaciones_revision_chk'],
   sesiones: ['sesiones_titulo_chk','sesiones_texto_chk','sesiones_fecha_chk','sesiones_horas_chk','sesiones_modalidad_chk','sesiones_enlace_chk','sesiones_cancelacion_chk','sesiones_revision_chk'],
+  preinscripciones: ['preinscripciones_nombres_chk','preinscripciones_contacto_chk','preinscripciones_conversion_chk','preinscripciones_revision_chk'],
+  preinscripciones_historial: ['preinscripciones_historial_origen_chk','preinscripciones_historial_campos_chk','preinscripciones_historial_revision_chk'],
 };
 function academicColumns() {
   return Object.entries(ACADEMIC).flatMap(([table, columns]) => columns.map(([name, type, nullable]) => ({ table, name, type, nullable, unique: ['id','codigo_verificacion'].includes(name) })));
@@ -163,7 +183,7 @@ async function checkAcademic(db, indexes) {
   // toleran el formato y los paréntesis que añade MySQL, no un cambio de lógica (TRUE, condición invertida, otro operando).
   const migration = academicDefinitions();
   const sameExpression = (actual, expected) => { try { return canonical(actual) === canonical(expected); } catch { return false; } };
-  for (const key of ['certificados.vigente_matricula_id', 'docente_asignaciones.principal_activo_convocatoria_id']) {
+  for (const key of ['certificados.vigente_matricula_id', 'docente_asignaciones.principal_activo_convocatoria_id', 'preinscripciones.vigente_email']) {
     const [table, column] = key.split('.');
     const generated = columns.find(c => c.TABLE_NAME === table && c.COLUMN_NAME === column);
     if (generated && !(/^STORED GENERATED$/i.test(generated.EXTRA) && sameExpression(generated.GENERATION_EXPRESSION, migration.generated[key]))) problems.push(key + ': no es la columna generada STORED prevista');

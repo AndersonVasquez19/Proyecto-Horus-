@@ -11,24 +11,14 @@ import type { Request } from 'express';
 import { PublicRateLimitGuard } from '../src/common/public-rate-limit.guard';
 import { proxyTrustWarning, trustedProxies } from '../src/common/trusted-proxies';
 import { PrismaService } from '../src/database/prisma.service';
+import { memoryBuckets } from './fixtures/rate-limit-memory';
 
 // Dos visitantes simulados detrás de un proxy, con el MISMO guard de frecuencia y la MISMA lectura de IP (trust proxy) que main.ts.
 // Aislado: sin MySQL (contadores en memoria), sin Caddy ni Railway y sin red externa. El "proxy" es el propio cliente de pruebas,
 // que se conecta desde 127.0.0.1 y envía X-Forwarded-For como lo haría Caddy. Esto NO valida la cadena real Railway -> Caddy -> NestJS.
 
-// Memoria que imita lo mínimo de rate_limit_buckets que usa el guard.
-function fakePrisma() {
-  const buckets = new Map<string, number>();
-  const prisma: any = {
-    $executeRaw: async (_strings: TemplateStringsArray, id: string) => { buckets.set(id, (buckets.get(id) ?? 0) + 1); return 1; },
-    rateLimitBucket: {
-      findUniqueOrThrow: async ({ where }: { where: { id: string } }) => ({ id: where.id, count: buckets.get(where.id) ?? 0 }),
-      deleteMany: async () => ({ count: 0 }),
-    },
-  };
-  prisma.$transaction = async (work: (tx: unknown) => unknown) => work(prisma);
-  return prisma;
-}
+// Memoria que imita lo mínimo de rate_limit_buckets que usa el guard (test/fixtures/rate-limit-memory.ts).
+const fakePrisma = () => memoryBuckets().prisma;
 
 @Controller()
 class Probe {

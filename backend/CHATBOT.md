@@ -102,6 +102,11 @@ No crea cotizaciones, reservas ni inscripciones ni envía correos.
 - POST /api/chatbot/contact: { nombre, email, telefono, asunto, mensaje, consentimiento: true }
   (opcional `tipo`: `contacto` o `cotizacion`)
 - GET /api/admin/chatbot/sin-respuesta (administradores): preguntas sin respuesta y métricas de 30 días, paginado
+- POST /api/chatbot/preinscripcion: { convocatoria (código público), nombres, apellidos, email, telefono, consentimiento: true,
+  confirmacion: true } — acción **determinista** del backend (no del modelo) que el widget invoca solo cuando el visitante completó y
+  confirmó sus datos. Comparte servicio con el formulario web (`POST /api/preinscripciones`); el servidor fija el canal `chatbot`.
+  Detalle y aislamiento en [Gestión de preinscripciones](../docs/procedimientos/gestion-preinscripciones.md). Estos datos **no** se
+  incluyen en `/message` ni viajan a OpenAI; `ChatbotService` no depende del módulo de preinscripciones.
 
 El historial solo sirve como contexto; no es fuente autorizada. Los datos del catálogo y el historial
 se delimitan como datos en la petición. Las fuentes se muestran como texto escapado por React.

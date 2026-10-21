@@ -11,6 +11,7 @@ import { ConvocatoriasModule } from './convocatorias/convocatorias.module';
 import { MatriculasModule } from './matriculas/matriculas.module';
 import { DocentesModule } from './docentes/docentes.module';
 import { SesionesModule } from './sesiones/sesiones.module';
+import { PreinscripcionesModule } from './preinscripciones/preinscripciones.module';
 import { ImportacionesModule } from './importaciones/importaciones.module';
 import { ReportesModule } from './reportes/reportes.module';
 import { Module } from '@nestjs/common';
@@ -59,6 +60,7 @@ import { HealthController } from './health.controller';
     MatriculasModule,
     DocentesModule,
     SesionesModule,
+    PreinscripcionesModule,
     ImportacionesModule,
     ReportesModule,
     ChatbotModule,

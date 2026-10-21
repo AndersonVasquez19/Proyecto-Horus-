@@ -34,6 +34,7 @@ const COORDINADORA_INSTITUCIONAL: readonly Permission[] = [
   'estudiantes:leer', 'estudiantes:crear', 'estudiantes:editar', 'estudiantes:archivar',
   'convocatorias:leer', 'convocatorias:crear', 'convocatorias:editar', 'convocatorias:cerrar', 'convocatorias:archivar',
   'matriculas:leer', 'matriculas:crear', 'matriculas:editar', 'matriculas:anular', 'matriculas:confirmar',
+  'preinscripciones:leer', 'preinscripciones:editar', 'preinscripciones:convertir', // Autorizado por el responsable (2026-10-20). preinscripciones:exportar queda reservado al gerente (etapa futura).
   'docentes:leer', 'docentes:crear', 'docentes:editar', 'docentes:asignar', // Autorizado por el responsable (2026-10-20): gerencia y coordinación. La secretaría y las cuentas básicas no reciben docentes en esta fase.
   'sesiones:leer', 'sesiones:crear', 'sesiones:editar',
   'asistencia:leer', 'asistencia:registrar',
@@ -53,6 +54,10 @@ const SECRETARIA: readonly Permission[] = [
   'estudiantes:leer', 'estudiantes:crear',
   'convocatorias:leer',
   'matriculas:leer', 'matriculas:crear', 'matriculas:editar',
+  // Preinscripciones (autorizado 2026-10-20): puede convertir una preinscripción validada en matrícula SIN recibir por ello permisos
+  // generales nuevos: la apertura de la edición (convocatorias:editar), la recepción de preinscripciones, el cierre y el archivo
+  // siguen siendo de Gerencia y Coordinación; tampoco obtiene estudiantes:editar ni matriculas:anular.
+  'preinscripciones:leer', 'preinscripciones:editar', 'preinscripciones:convertir',
 ];
 
 const MATRIX: Readonly<Record<AdminRole, ReadonlySet<Permission>>> = Object.freeze({

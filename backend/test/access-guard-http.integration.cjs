@@ -420,11 +420,15 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       ]);
       assert.deepEqual(editions.map(route => route.label), [
         'GET admin/convocatorias', 'GET admin/convocatorias/cursos', 'GET admin/convocatorias/999999', 'POST admin/convocatorias',
-        'PUT admin/convocatorias/999999', 'PUT admin/convocatorias/999999/apertura', 'PUT admin/convocatorias/999999/cierre', 'PUT admin/convocatorias/999999/archivo',
+        'PUT admin/convocatorias/999999', 'PUT admin/convocatorias/999999/apertura', 'PUT admin/convocatorias/999999/cierre', 'PUT admin/convocatorias/999999/archivo', 'PUT admin/convocatorias/999999/preinscripcion',
       ]);
       assert.deepEqual(ROLE_KEYS.map(key => editions.map(route => expectation(key, route))), [
-        Array(8).fill('pasa'), Array(8).fill('pasa'), [...Array(3).fill('pasa'), ...Array(5).fill('sinPermiso')], Array(8).fill('sinRol'),
+        Array(9).fill('pasa'), Array(9).fill('pasa'), [...Array(3).fill('pasa'), ...Array(6).fill('sinPermiso')], Array(9).fill('sinRol'),
       ]);
+      // Preinscripciones: nueve rutas administrativas. Gerencia, Coordinación y Secretaría las usan todas (leer, editar y convertir); la cuenta básica ninguna.
+      const preregistrations = routes.filter(route => /^admin\/preinscripciones(?:\/|$)/.test(route.path));
+      assert.equal(preregistrations.length, 9);
+      assert.deepEqual(ROLE_KEYS.map(key => preregistrations.map(route => expectation(key, route))), [Array(9).fill('pasa'), Array(9).fill('pasa'), Array(9).fill('pasa'), Array(9).fill('sinRol')]);
       assert.deepEqual(students.map(route => route.label), [
         'GET admin/estudiantes', 'GET admin/estudiantes/999999', 'POST admin/estudiantes',
         'PUT admin/estudiantes/999999', 'PUT admin/estudiantes/999999/archivo',
@@ -472,7 +476,9 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       // Secretaría y básica +0 (sin reportes_academicos:leer). La matriz de roles no cambia.
       // Docentes y asignaciones: trece rutas para Gerencia y Coordinación (propuesta pendiente de confirmar); Secretaría y básica +0.
       // Sesiones: seis rutas para Gerencia y Coordinación; Secretaría y básica +0. Los totales pasan de [110, 92, 24, 1] a [116, 98, 24, 1].
-      assert.deepEqual(ROLE_KEYS.map(count), [116, 98, 24, 1]);
+      // Preinscripciones: nueve rutas administrativas para Gerencia, Coordinación y Secretaría (leer, editar y convertir) y una de recepción en Ediciones
+      // (convocatorias:editar) solo para Gerencia y Coordinación: [126, 108, 33, 1].
+      assert.deepEqual(ROLE_KEYS.map(count), [126, 108, 33, 1]);
       for (const key of ROLE_KEYS) {
         const own = plan.filter(item => item.key === key && item.route.path.startsWith('admin/seguimiento/cotizaciones/'));
         // Un requisito «denegada» se resuelve antes de mirar el rol: 403 genérico también para la cuenta sin rol.
@@ -613,7 +619,9 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
         await post('admin/register', tokens.coord, valid), await post('admin/register', tokens.sec, valid), await post('admin/register', tokens.gerente, valid)];
       assert.deepEqual(reg.map(r => r.status), [401, 401, 403, 403, 403, 429]);
       assert.deepEqual([reg[2].data?.mensaje, reg[3].data?.mensaje], [NO_ROLE_MESSAGE, FORBIDDEN_MESSAGE]);
-      assert.equal(bucketGrowth(quotas, await buckets()), 12, 'seis intentos × (cuota individual + global de la ruta)');
+      // Solo las solicitudes ADMITIDAS consumen cuota: cinco intentos × (cuota individual + global de la ruta). El sexto, rechazado con 429, no suma
+      // nada (antes sumaba 2 y así una IP abusiva agotaba el global de todos).
+      assert.equal(bucketGrowth(quotas, await buckets()), 10, 'cinco intentos admitidos × (individual + global); el 429 no consume cuota');
       assert.equal(Number((await q('SELECT COUNT(*) AS n FROM admin_users WHERE email = ?', [valid.email]))[0].n), 0, 'el 429 no crea la cuenta');
 
       // b) POST admin/password (5/min, autoservicio): 401 sin sesión válida y 400 con la contraseña actual incorrecta consumen cuota;

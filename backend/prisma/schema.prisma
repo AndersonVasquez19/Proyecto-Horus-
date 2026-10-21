@@ -30,6 +30,7 @@ model AdminUser {
   certificados_emitidos Certificado[] @relation("CertificadoEmitidoPor")
   certificados_anulados Certificado[] @relation("CertificadoAnuladoPor")
   importaciones ImportacionAcademica[]
+  preinscripciones_convertidas Preinscripcion[]
   @@map("admin_users")
 }
 
@@ -405,6 +406,11 @@ model Estudiante {
   @@map("estudiantes")
 }
 
+enum ConvocatoriaPreinscripcionEstado {
+  abierta
+  cerrada
+}
+
 // abierta = admite matrículas; cerrada = ya no las admite (terminada o completa); cancelada = no se dictará.
 enum ConvocatoriaEstado {
   planificada
@@ -418,6 +424,9 @@ enum ConvocatoriaEstado {
 model Convocatoria {
   id Int @id @default(autoincrement())
   capacidad Int? // NULL conserva ediciones anteriores cuya capacidad aún no se ha definido.
+  minimo_apertura Int? // Preinscripciones validadas necesarias para confirmar la apertura (20261020-preinscripciones). NULL = edición anterior sin requisito; el alta por API fija 10.
+  preinscripcion_estado ConvocatoriaPreinscripcionEstado @default(cerrada) // ¿Recibe preinscripciones? Lo decide Gerencia o Coordinación; independiente de la apertura académica.
+  codigo_publico String? @unique(map: "convocatorias_codigo_publico_uq") @db.Char(32) // Identificador opaco para el público (NO secuencial). Se genera al crear la edición o al habilitar la recepción.
   curso_id Int
   curso Curso @relation(fields: [curso_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "convocatorias_curso_fk")
   nombre String @db.VarChar(160)
@@ -432,6 +441,7 @@ model Convocatoria {
   importaciones ImportacionAcademica[]
   docentes DocenteAsignacion[]
   sesiones Sesion[]
+  preinscripciones Preinscripcion[]
   @@index([curso_id, fecha_inicio], map: "convocatorias_curso_idx")
   @@index([estado, fecha_inicio], map: "convocatorias_estado_idx")
   @@map("convocatorias")
@@ -494,6 +504,8 @@ model Matricula {
   createdAt DateTime @default(now()) @db.DateTime(3)
   updatedAt DateTime @updatedAt @db.DateTime(3)
   certificados Certificado[]
+  preinscripciones Preinscripcion[] // MySQL limita a una (UNIQUE sobre preinscripciones.matricula_id)
+  @@unique([id, estudiante_id, convocatoria_id], map: "matriculas_id_relaciones_uq") // 20261020-preinscripciones: clave compuesta que obliga a que la preinscripción convertida apunte a una matrícula de la MISMA edición y del MISMO estudiante
   @@unique([estudiante_id, convocatoria_id], map: "matriculas_estudiante_convocatoria_uq")
   @@index([convocatoria_id, estado], map: "matriculas_convocatoria_idx")
   @@index([confirmado_por], map: "matriculas_confirmado_por_idx")
@@ -730,4 +742,99 @@ model Sesion {
   @@index([asignacion_id, convocatoria_id, fecha], map: "sesiones_asignacion_idx")
   @@index([fecha, hora_inicio], map: "sesiones_fecha_idx")
   @@map("sesiones")
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Preinscripciones (migración 20261020-preinscripciones). Solicitud pública de interés en una edición, hecha por el formulario web o
+// por el chatbot (el servidor fija el canal). NO es una matrícula: no ocupa cupo, no pide DNI, pagos ni comprobantes. Un
+// administrador la valida y, más tarde, la convierte en matrícula con el servicio de Matrículas. Nada se borra: los estados finales
+// son desistida, descartada y matriculada.
+//
+// recibida → validada | descartada | desistida;  validada → matriculada | descartada | desistida;  los demás son finales.
+// Cuentan para el mínimo de apertura SOLO validada y matriculada (nunca recibida).
+//
+// Duplicados: MySQL mantiene la columna generada STORED `vigente_email` (= email mientras el estado sea recibida, validada o
+// matriculada; NULL si desistida o descartada) con UNIQUE (convocatoria_id, vigente_email). Esa columna NO se declara aquí a
+// propósito: Prisma no admite columnas generadas y nunca debe escribirla. Un segundo vigente con el mismo correo falla con P2002.
+// Tras desistir o descartar, la misma persona puede volver a preinscribirse.
+//
+// Conversión: estudiante_id, matricula_id, convertida_por y convertida_at son todos NULL o todos completos (CHECK según el estado), y
+// la clave foránea compuesta (matricula_id, estudiante_id, convocatoria_id) → matriculas obliga a que la matrícula sea de la misma
+// edición y del mismo estudiante. Los datos personales viven solo aquí; preinscripciones_historial guarda NOMBRES de campos.
+// ---------------------------------------------------------------------------------------------------------------------------
+
+enum PreinscripcionEstado {
+  recibida
+  validada
+  matriculada
+  desistida
+  descartada
+}
+
+enum PreinscripcionCanal {
+  formulario
+  chatbot
+}
+
+enum PreinscripcionOperacion {
+  creacion
+  correccion
+  validacion
+  descarte
+  desistimiento
+  conversion
+}
+
+model Preinscripcion {
+  id Int @id @default(autoincrement())
+  convocatoria_id Int
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_convocatoria_fk")
+  nombres String @db.VarChar(120)
+  apellidos String @db.VarChar(120)
+  email String @db.VarChar(254)
+  telefono String @db.VarChar(30)
+  canal PreinscripcionCanal
+  estado PreinscripcionEstado @default(recibida)
+  consentimiento_at DateTime @db.DateTime(3)
+  aviso_version String @db.VarChar(30)
+  estudiante_id Int?
+  matricula_id Int?
+  matricula Matricula? @relation(fields: [matricula_id, estudiante_id, convocatoria_id], references: [id, estudiante_id, convocatoria_id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_matricula_fk")
+  convertida_por Int?
+  convertidor AdminUser? @relation(fields: [convertida_por], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_convertida_por_fk")
+  convertida_at DateTime? @db.DateTime(3)
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  historial PreinscripcionHistorial[]
+  @@unique([matricula_id], map: "preinscripciones_matricula_uq")
+  @@index([convocatoria_id, estado, createdAt], map: "preinscripciones_edicion_idx")
+  @@index([email], map: "preinscripciones_email_idx")
+  @@index([estado, createdAt], map: "preinscripciones_estado_idx")
+  @@index([matricula_id, estudiante_id, convocatoria_id], map: "preinscripciones_matricula_rel_idx")
+  @@index([estudiante_id], map: "preinscripciones_estudiante_idx")
+  @@index([convertida_por], map: "preinscripciones_convertida_por_idx")
+  @@map("preinscripciones")
+}
+
+// Historial de solo inserción, en la MISMA transacción que el cambio. Propio de las preinscripciones: no toca el ENUM de
+// academico_historial. `campos` guarda los NOMBRES de los campos modificados, nunca sus valores. Sin actor en la creación (la hace el
+// visitante); con actor en todo lo demás.
+model PreinscripcionHistorial {
+  id Int @id @default(autoincrement())
+  preinscripcion_id Int
+  preinscripcion Preinscripcion @relation(fields: [preinscripcion_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_historial_fk")
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  operacion PreinscripcionOperacion
+  canal PreinscripcionCanal?
+  actor_id Int?
+  actor_rol AdminRol?
+  estado_anterior PreinscripcionEstado?
+  estado_nuevo PreinscripcionEstado?
+  campos Json?
+  revision Int
+  motivo String? @db.VarChar(300)
+  @@index([preinscripcion_id, createdAt], map: "preinscripciones_historial_item_idx")
+  @@index([actor_id, createdAt], map: "preinscripciones_historial_actor_idx")
+  @@map("preinscripciones_historial")
 }

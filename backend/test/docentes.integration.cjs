@@ -17,6 +17,7 @@ const { join } = require('node:path');
 const http = require('node:http');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
+const { validatedPreinscripciones, withoutPreinscripciones } = require('./fixtures/preinscripciones-fixture.cjs');
 
 const backend = join(__dirname, '..');
 const versions = JSON.parse(readFileSync(join(backend, 'scripts/migrate.cjs'), 'utf8').match(/const versions = (\[[^\]]*\])/)[1].replaceAll("'", '"'));
@@ -78,7 +79,7 @@ test('Docentes: migración, restricciones, HTTP, permisos, concurrencia, histori
         const [rows] = await db.query('SELECT * FROM `' + table + '` ORDER BY 1');
         result[table] = { ddl: create['Create Table'].replace(/ AUTO_INCREMENT=\d+/, ''), rows: JSON.stringify(rows) };
       }
-      return result;
+      return withoutPreinscripciones(result); // db:migrate completo también aplica 20261020-preinscripciones: no es parte de lo que verifica esta suite
     }
     // Rechazo esperado y su causa exacta (errno de mysql2): solo códigos y nombres, nunca valores.
     const rejects = async (promise, errno, name) => {
@@ -317,7 +318,7 @@ test('Docentes: migración, restricciones, HTTP, permisos, concurrencia, histori
     // Edición de trabajo y fixtures de asignación.
     const input = { curso_id: 1, nombre: 'Noviembre 2026', fecha_inicio: '2026-11-01', fecha_fin: '2026-11-30', capacidad: 20 };
     const teacher = async (n, extra = {}) => (await request(D, tokens.g, 'POST', { nombres: 'Asignable' + n, apellidos: 'Equipo', ...extra })).body.item;
-    const edition = async (nombre, open = true) => { const e = (await request(E, tokens.g, 'POST', { ...input, nombre })).body.item; return open ? (await request(E + '/' + e.id + '/apertura', tokens.g, 'PUT', { revision: e.revision })).body.item : e; };
+    const edition = async (nombre, open = true) => { const e = (await request(E, tokens.g, 'POST', { ...input, nombre })).body.item; if (open) await validatedPreinscripciones(db, e.id, 10, 'doc'); /* regla vigente: una edición nueva exige 10 preinscripciones validadas para abrirse */ return open ? (await request(E + '/' + e.id + '/apertura', tokens.g, 'PUT', { revision: e.revision })).body.item : e; };
     const assign = (docente_id, convocatoria_id, rol, token = tokens.g) => request(A, token, 'POST', { docente_id, convocatoria_id, ...(rol ? { rol } : {}) });
     let ed;
     await t.test('asignación: existencia, duplicados, un solo principal (también simultáneo) y reglas de la edición', async () => {

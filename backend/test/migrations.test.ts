@@ -222,8 +222,8 @@ test('migraciones: la 20261020-docentes crea dos tablas restrictivas y solo ampl
 test('migraciones: la 20261020-sesiones-academicas crea una tabla restrictiva y solo amplía dos ENUM del historial, sin datos, reflejada en schema.prisma y db:check', () => {
   const sql = statements(read('20261020-sesiones-academicas'));
   assert.deepEqual(sql.map(s => (s.match(/^(?:CREATE TABLE IF NOT EXISTS|ALTER TABLE) `(\w+)`/) ?? [])[1]), ['sesiones', 'academico_historial', 'academico_historial'], 'cada sentencia es idempotente y atómica');
-  assert.equal(versions.at(-1), '20261020-sesiones-academicas', 'va al final de la sucesión, después de docentes (referencia docente_asignaciones)');
-  assert.ok(versions.indexOf('20261020-sesiones-academicas') > versions.indexOf('20261020-docentes'));
+  // Contrato actualizado: dejó de ser la última migración (20261020-preinscripciones va después). Sigue justo detrás de docentes, de la que depende.
+  assert.equal(versions.indexOf('20261020-sesiones-academicas'), versions.indexOf('20261020-docentes') + 1, 'va justo después de docentes (referencia docente_asignaciones)');
   const [table, entidad, operacion] = sql;
   assert.ok(!/ON (DELETE|UPDATE) (CASCADE|SET NULL|SET DEFAULT)/i.test(table), 'ninguna relación borra ni modifica en cascada');
   assert.equal((table.match(/FOREIGN KEY/g) ?? []).length, 2); assert.equal((table.match(/ON DELETE RESTRICT ON UPDATE RESTRICT/g) ?? []).length, 2);

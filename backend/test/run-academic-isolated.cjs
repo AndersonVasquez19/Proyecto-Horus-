@@ -12,9 +12,10 @@ const suites = {
   reportes: ['REPORTES', 'reportes.integration.cjs'],
   docentes: ['DOCENTES', 'docentes.integration.cjs'],
   sesiones: ['SESIONES', 'sesiones.integration.cjs'],
+  preinscripciones: ['PREINSCRIPCIONES', 'preinscripciones.integration.cjs'],
 };
 const suite = suites[process.argv[2]];
-if (!suite) throw new Error('Selecciona matriculas, ediciones, estudiantes, access, reportes, docentes o sesiones.');
+if (!suite) throw new Error('Selecciona matriculas, ediciones, estudiantes, access, reportes, docentes, sesiones o preinscripciones.');
 const name = 'horus-fase3-' + randomBytes(8).toString('hex');
 const password = randomBytes(32).toString('hex');
 const docker = args => {

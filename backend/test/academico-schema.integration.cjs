@@ -38,7 +38,7 @@ const statementsOf = name => readFileSync(join(backend, 'migrations', name + '.s
 
 test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actualización, recuperación, restricciones y Prisma)', async t => {
   if (process.env.ACADEMICO_SCHEMA_TEST_DB !== 'true') return t.skip('Requiere ACADEMICO_SCHEMA_TEST_DB=true y un MySQL desechable identificado.');
-  assert.deepEqual(VERSIONS.slice(VERSIONS.indexOf(MIGRATION)), [MIGRATION, SOLO_DNI, '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas'], 'las migraciones académicas conservan su orden y añaden importaciones, docentes y sesiones al final');
+  assert.deepEqual(VERSIONS.slice(VERSIONS.indexOf(MIGRATION)), [MIGRATION, SOLO_DNI, '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas', '20261020-preinscripciones'], 'las migraciones académicas conservan su orden y añaden importaciones, docentes, sesiones y preinscripciones al final');
   const host = process.env.DB_HOST || '', port = Number(process.env.DB_PORT || 0);
   const expectedUuid = String(process.env.ACADEMICO_SCHEMA_TEST_SERVER_UUID ?? '').trim().toLowerCase();
   assert.ok(['localhost', '127.0.0.1', '::1'].includes(host) && port > 0, 'DB_HOST de bucle local y DB_PORT explícito');
@@ -100,10 +100,11 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
     const name = await databaseBefore(SOLO_DNI);
     // Aislar las pruebas históricas de DNI: capacidad, importaciones, docentes y sesiones son independientes y ya están en su línea base.
     // La actualización natural E4.3b → capacidad, con datos y sin esta preparación, se prueba en convocatorias.integration.cjs;
-    // la de docentes (desde una base previa con datos, con fallos parciales) en docentes.integration.cjs y la de sesiones en sesiones.integration.cjs.
+    // la de docentes (desde una base previa con datos, con fallos parciales) en docentes.integration.cjs, la de sesiones en sesiones.integration.cjs
+    // y la de preinscripciones (tablas, columnas de convocatorias y clave compuesta de matrículas) en preinscripciones.integration.cjs.
     const db = await connectTo(name);
     try {
-      for (const version of ['20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas']) {
+      for (const version of ['20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas', '20261020-preinscripciones']) {
         for (const statement of statementsOf(version)) await db.query(statement);
         await db.execute('INSERT INTO horus_migrations (name, applied_at) VALUES (?, ?)', [version, new Date()]);
       }
@@ -197,7 +198,8 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
         'academico_historial.academico_historial_campos_chk=YES', 'academico_historial.academico_historial_origen_chk=YES',
         'certificados.certificados_anulacion_chk=YES', 'certificados.certificados_codigo_chk=YES', 'certificados.certificados_documento_chk=YES',
         'certificados.certificados_fechas_chk=YES', 'certificados.certificados_nombres_chk=YES',
-        'convocatorias.convocatorias_capacidad_chk=YES', 'convocatorias.convocatorias_fechas_chk=YES', 'convocatorias.convocatorias_nombre_chk=YES', 'convocatorias.convocatorias_revision_chk=YES',
+        'convocatorias.convocatorias_capacidad_chk=YES', 'convocatorias.convocatorias_codigo_chk=YES', 'convocatorias.convocatorias_fechas_chk=YES', 'convocatorias.convocatorias_minimo_chk=YES',
+        'convocatorias.convocatorias_nombre_chk=YES', 'convocatorias.convocatorias_revision_chk=YES',
         'estudiantes.estudiantes_documento_completo_chk=YES', 'estudiantes.estudiantes_documento_formato_chk=YES', 'estudiantes.estudiantes_nombres_chk=YES', 'estudiantes.estudiantes_revision_chk=YES',
         'matriculas.matriculas_confirmacion_chk=YES', 'matriculas.matriculas_revision_chk=YES',
       ]);
@@ -211,7 +213,9 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
       assert.deepEqual(s.uniques.map(row => row.t + '.' + row.i + '(' + row.cols + ')'), [
         'certificados.certificados_codigo_uq(codigo_verificacion)', 'certificados.certificados_id_matricula_uq(id,matricula_id)',
         'certificados.certificados_sustituye_uq(sustituye_a_id,matricula_id)', 'certificados.certificados_vigente_uq(vigente_matricula_id)',
+        'convocatorias.convocatorias_codigo_publico_uq(codigo_publico)',
         'estudiantes.estudiantes_documento_uq(doc_pais,doc_tipo,doc_numero)', 'matriculas.matriculas_estudiante_convocatoria_uq(estudiante_id,convocatoria_id)',
+        'matriculas.matriculas_id_relaciones_uq(id,estudiante_id,convocatoria_id)',
       ]);
       assert.equal(s.generated.extra, 'STORED GENERATED');
       assert.match(s.generated.expr, /case when \(`estado` = _utf8mb4\\?'vigente\\?'\) then `matricula_id` else NULL end/i);
@@ -230,7 +234,7 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
       const before = await snapshot(name, ['horus_migrations']);
       assert.ok(before.cursos && before.admin_users && before.cotizaciones, 'instantánea de las tablas habituales');
       await migrateAndCheck(name);
-      const after = await snapshot(name, ['horus_migrations', ...ACADEMIC_TABLES, 'importaciones_academicas', 'docentes', 'docente_asignaciones', 'sesiones']);
+      const after = await snapshot(name, ['horus_migrations', ...ACADEMIC_TABLES, 'importaciones_academicas', 'docentes', 'docente_asignaciones', 'sesiones', 'preinscripciones', 'preinscripciones_historial']);
       assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort(), 'no se crean ni eliminan otras tablas');
       for (const table of Object.keys(before)) {
         assert.equal(after[table].ddl, before[table].ddl, table + ': definición sin cambios');
@@ -848,7 +852,7 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
       for (const column of ['id', 'matricula_id', 'codigo_verificacion', 'estado', 'estudiante_doc_numero', 'emitido_at', 'anulado_por', 'anulacion_motivo', 'sustituye_a_id']) assert.ok(insertCert[0].includes('`' + column + '`'), 'el INSERT incluye ' + column);
       assert.ok(lines.some(line => line.startsWith('INSERT INTO `estudiantes`') && line.includes('`createdAt`')), 'las columnas DEFAULT_GENERATED (createdAt) sí se copian');
       const manifest = JSON.parse(readFileSync(file + '.manifest.json', 'utf8'));
-      assert.deepEqual(manifest.tables.filter(table => table.generatedColumns).map(table => [table.name, table.generatedColumns]), [['certificados', ['vigente_matricula_id']], ['docente_asignaciones', ['principal_activo_convocatoria_id']]], 'el respaldo no vuelca las columnas generadas (certificados y, desde 20261020, docente_asignaciones): se recalculan al restaurar');
+      assert.deepEqual(manifest.tables.filter(table => table.generatedColumns).map(table => [table.name, table.generatedColumns]), [['certificados', ['vigente_matricula_id']], ['docente_asignaciones', ['principal_activo_convocatoria_id']], ['preinscripciones', ['vigente_email']]], 'el respaldo no vuelca las columnas generadas (certificados y, desde 20261020, docente_asignaciones y preinscripciones): se recalculan al restaurar');
 
       // Restauración con el script real en una base aislada horus_restore_*.
       const verify = await runScript('restore.cjs', source, ['--file=' + file, '--verify-only']);
@@ -862,9 +866,9 @@ test('E4.2: estructura académica en MySQL 8.4 desechable (instalación, actuali
       const declaredKeys = await connectTo(source).then(async c => { try { return (await c.query('SELECT CONSTRAINT_NAME AS n FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() ORDER BY TABLE_NAME, CONSTRAINT_NAME'))[0].map(r => r.n); } finally { await c.end(); } });
       const verified = restore.output.match(/Integridad referencial verificada: (\d+) claves foráneas \((\d+) compuestas\), sin filas huérfanas: (.*)\./);
       assert.ok(verified, restore.output);
-      assert.deepEqual([Number(verified[1]), Number(verified[2])], [declaredKeys.length, 3], 'tres claves compuestas: sustitución de certificados, sustitución de asignaciones docentes (20261020) y asignación de una sesión a su edición (20261020-sesiones-academicas)');
+      assert.deepEqual([Number(verified[1]), Number(verified[2])], [declaredKeys.length, 4], 'cuatro claves compuestas: sustitución de certificados, sustitución de asignaciones docentes (20261020), asignación de una sesión a su edición (20261020-sesiones-academicas) y matrícula de una preinscripción convertida (20261020-preinscripciones)');
       assert.deepEqual(verified[3].split(', ').sort(), [...declaredKeys].sort(), 'se comprueba cada clave foránea declarada');
-      for (const key of ['convocatorias_curso_fk', 'matriculas_confirmado_por_fk', 'certificados_anulado_por_fk', 'certificados_emitido_por_fk', 'certificados_sustituye_fk', 'docente_asignaciones_docente_fk', 'docente_asignaciones_convocatoria_fk', 'docente_asignaciones_sustituye_fk', 'sesiones_convocatoria_fk', 'sesiones_asignacion_fk', 'attention_contact_fk', 'cotizaciones_contacto_fk', 'convenio_fotos_convenio_id_fkey']) assert.ok(declaredKeys.includes(key), key);
+      for (const key of ['convocatorias_curso_fk', 'matriculas_confirmado_por_fk', 'certificados_anulado_por_fk', 'certificados_emitido_por_fk', 'certificados_sustituye_fk', 'docente_asignaciones_docente_fk', 'docente_asignaciones_convocatoria_fk', 'docente_asignaciones_sustituye_fk', 'sesiones_convocatoria_fk', 'sesiones_asignacion_fk', 'preinscripciones_convocatoria_fk', 'preinscripciones_matricula_fk', 'preinscripciones_convertida_por_fk', 'preinscripciones_historial_fk', 'attention_contact_fk', 'cotizaciones_contacto_fk', 'convenio_fotos_convenio_id_fkey']) assert.ok(declaredKeys.includes(key), key);
       t.diagnostic('restauración válida: ' + verified[0]);
 
       // Todas las tablas (anteriores y académicas): misma definición y mismas filas, incluida la columna generada recalculada.

@@ -1,14 +1,18 @@
+import { randomBytes } from 'node:crypto';
 import { BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Convocatoria, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { isSchemaOutdated, isUniqueViolation } from '../database/serialization';
-import { ArchivoConvocatoriaDto, CierreConvocatoriaDto, ConvocatoriasQueryDto, CreateConvocatoriaDto, CursosConvocatoriaQueryDto, UpdateConvocatoriaDto } from './convocatorias.dto';
+import { ArchivoConvocatoriaDto, CierreConvocatoriaDto, ConvocatoriasQueryDto, CreateConvocatoriaDto, CursosConvocatoriaQueryDto, RecepcionPreinscripcionDto, UpdateConvocatoriaDto } from './convocatorias.dto';
 import { validateEdition, validateTransition } from './convocatorias.rules';
+import { ESTADOS_PARA_APERTURA, MINIMO_APERTURA_NUEVAS, validateOpeningMinimum } from '../preinscripciones/preinscripciones.rules';
 
 const course = { id: true, titulo: true, tipo: true, estado: true } as const;
 const calendar = (value: Date | null) => value?.toISOString().slice(0, 10) ?? null;
 const serialize = <T extends Convocatoria>(item: T) => ({ ...item, fecha_inicio: calendar(item.fecha_inicio), fecha_fin: calendar(item.fecha_fin) });
 const pagination = (q: CursosConvocatoriaQueryDto, total: number) => ({ page: q.page, limit: q.limit, total, pages: Math.ceil(total / q.limit) });
+// Identificador opaco para el público (128 bits aleatorios, 32 hex): la API pública no expone ids secuenciales.
+const publicCode = () => randomBytes(16).toString('hex');
 
 @Injectable()
 export class ConvocatoriasService {
@@ -69,7 +73,10 @@ export class ConvocatoriasService {
     return this.execute(() => this.prisma.$transaction(async tx => {
       await this.lockCourse(tx, dto.curso_id);
       await this.uniqueName(tx, dto.curso_id, dto.nombre);
-      const item = await tx.convocatoria.create({ data: { ...dto, fecha_inicio: new Date(dto.fecha_inicio + 'T00:00:00Z'), fecha_fin: new Date(dto.fecha_fin + 'T00:00:00Z') }, include: { curso: { select: course } } });
+      // Toda edición NUEVA exige 10 preinscripciones validadas para abrirse (sin excepciones ni parámetros del cliente: el DTO rechaza
+      // `minimo_apertura`). Las anteriores a la migración conservan NULL = sin requisito. Nace con la recepción de preinscripciones
+      // cerrada: Gerencia o Coordinación la habilitan explícitamente.
+      const item = await tx.convocatoria.create({ data: { ...dto, fecha_inicio: new Date(dto.fecha_inicio + 'T00:00:00Z'), fecha_fin: new Date(dto.fecha_fin + 'T00:00:00Z'), minimo_apertura: MINIMO_APERTURA_NUEVAS, codigo_publico: publicCode() }, include: { curso: { select: course } } });
       await this.history(tx, item, actor, 'creacion', ['curso_id', 'nombre', 'fecha_inicio', 'fecha_fin', 'capacidad']);
       return { ok: true, item: serialize(item) };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }));
@@ -91,7 +98,27 @@ export class ConvocatoriasService {
       validateTransition(before.estado, 'abierta', !!before.archivado_at);
       const occupied = await tx.matricula.count({ where: { convocatoria_id: id, estado: 'activa' } });
       validateEdition({ ...before, fecha_inicio: calendar(before.fecha_inicio), fecha_fin: calendar(before.fecha_fin) }, occupied, true);
+      // Mínimo de apertura: SOLO cuentan las preinscripciones validadas (o ya matriculadas), nunca las simples solicitudes recibidas.
+      // Se cuenta con el bloqueo de la edición ya tomado; validar, descartar, desistir y convertir toman el mismo bloqueo antes de
+      // cambiar de estado, así que el recuento es firme frente a validaciones simultáneas. Al llegar a 10 la edición NO se abre sola:
+      // esta operación la confirma Gerencia o Coordinación.
+      if (before.minimo_apertura !== null) {
+        const counted = await tx.preinscripcion.count({ where: { convocatoria_id: id, estado: { in: [...ESTADOS_PARA_APERTURA] } } });
+        validateOpeningMinimum(before.minimo_apertura, counted);
+      }
       return { estado: 'abierta' };
+    });
+  }
+  // Habilita o cierra la RECEPCIÓN de preinscripciones. No abre ni cierra la edición, ni la cierra sola al llegar al mínimo o al abrirla.
+  setReception(id: number, dto: RecepcionPreinscripcionDto, actor: number) {
+    return this.change(id, dto.revision, actor, 'edicion', async (_tx, before) => {
+      if (before.preinscripcion_estado === dto.estado) throw new ConflictException('La recepción de preinscripciones ya tiene ese estado.');
+      if (dto.estado === 'abierta') {
+        if (before.archivado_at || !['planificada', 'abierta'].includes(before.estado)) throw new ConflictException('Solo una edición planificada o abierta, sin archivar, puede recibir preinscripciones.');
+        if (!before.capacidad) throw new ConflictException('Define la capacidad de la edición antes de recibir preinscripciones.');
+        return { preinscripcion_estado: 'abierta', ...(before.codigo_publico ? {} : { codigo_publico: publicCode() }) };
+      }
+      return { preinscripcion_estado: 'cerrada' }; // cerrar la recepción siempre se permite
     });
   }
   close(id: number, dto: CierreConvocatoriaDto, actor: number) {

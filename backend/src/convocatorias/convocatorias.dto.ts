@@ -30,6 +30,10 @@ export class UpdateConvocatoriaDto extends RevisionConvocatoriaDto {
 export class CierreConvocatoriaDto extends RevisionConvocatoriaDto {
   @IsIn(['cerrada', 'cancelada']) estado: 'cerrada' | 'cancelada';
 }
+// Recepción de preinscripciones: independiente de la apertura académica. Lo decide Gerencia o Coordinación (convocatorias:editar).
+export class RecepcionPreinscripcionDto extends RevisionConvocatoriaDto {
+  @IsIn(['abierta', 'cerrada']) estado: 'abierta' | 'cerrada';
+}
 export class ArchivoConvocatoriaDto extends RevisionConvocatoriaDto {
   @IsBoolean() archivado: boolean;
 }

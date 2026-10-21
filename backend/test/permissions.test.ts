@@ -32,6 +32,7 @@ import { MatriculasController } from '../src/matriculas/matriculas.controller';
 import { AsignacionesDocentesController, DocentesController } from '../src/docentes/docentes.controller';
 import { EdicionSesionesController, SesionesController } from '../src/sesiones/sesiones.controller';
 import { ReportesController } from '../src/reportes/reportes.controller';
+import { ChatbotPreinscripcionController, PreinscripcionesController, PreinscripcionesPublicController } from '../src/preinscripciones/preinscripciones.controller';
 import { ImportacionesController } from '../src/importaciones/importaciones.controller';
 import { AdminNewsletterController } from '../src/newsletter/admin-newsletter.controller';
 import { NewsletterController } from '../src/newsletter/newsletter.controller';
@@ -235,7 +236,7 @@ test('sesiones: catálogo exacto sin cambios, gerente y coordinadora completos, 
   assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('sesiones'), 'sesiones es un módulo implementado');
   assert.deepEqual(permissionsOf(C).filter(id => id.startsWith('sesiones:')), [...all].sort());
   assert.deepEqual(permissionsOf(S).filter(id => id.startsWith('sesiones:')), []);
-  assert.equal(permissionsOf(C).length, 68, 'la matriz de la coordinadora no cambió');
+  assert.equal(permissionsOf(C).length, 71, 'la matriz de la coordinadora solo creció en los 3 permisos preinscripciones:leer|editar|convertir (autorizados 2026-10-20)');
 });
 
 test('sesiones: cada ruta exige el permiso previsto, según los decoradores reales y el inventario', () => {
@@ -280,8 +281,8 @@ test('E3.4.1: los tres roles registran consultas manuales (mensajes:crear), pero
   const messages = (role: string) => permissionsOf(role).filter(id => id.startsWith('mensajes:'));
   assert.deepEqual(messages(C), ['mensajes:crear', 'mensajes:editar', 'mensajes:leer']);
   assert.deepEqual(messages(S), ['mensajes:crear', 'mensajes:editar', 'mensajes:leer']);
-  assert.equal(permissionsOf(C).length, 68, 'coordinadora: 62 permisos anteriores + mensajes:crear + matriculas:confirmar (E4.1) + 4 de docentes');
-  assert.equal(permissionsOf(S).length, 15, 'secretaria: 14 permisos anteriores + mensajes:crear');
+  assert.equal(permissionsOf(C).length, 71, 'coordinadora: 62 permisos anteriores + mensajes:crear + matriculas:confirmar (E4.1) + 4 de docentes + 3 de preinscripciones');
+  assert.equal(permissionsOf(S).length, 18, 'secretaria: 14 permisos anteriores + mensajes:crear + 3 de preinscripciones (leer, editar, convertir)');
   // La ruta que registra consultas exige exactamente ese permiso (decorador real e inventario).
   const create = ROUTE_INVENTORY.find(route => route.method === 'POST' && route.path === 'admin/messages');
   assert.deepEqual(create?.access, { kind: 'permiso', permission: 'mensajes:crear' });
@@ -307,6 +308,7 @@ const CONTROLLERS: Function[] = [
   AdminPreguntaFrecuenteController, ChatbotController, ContactoController, OriginalContentController, ConveniosController, AdminConveniosController,
   CotizacionesController, AdminGaleriaController, GaleriaController, HealthController, AdminNewsletterController, NewsletterController,
   ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController, DocentesController, AsignacionesDocentesController, SesionesController, EdicionSesionesController, ReportesController,
+  PreinscripcionesPublicController, ChatbotPreinscripcionController, PreinscripcionesController,
 ];
 
 function normalize(...parts: string[]) { return parts.join('/').split('/').filter(Boolean).join('/'); }

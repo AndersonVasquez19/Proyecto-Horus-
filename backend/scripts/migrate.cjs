@@ -1,7 +1,7 @@
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { connect } = require('./database.cjs');
-const versions = ['20260909-create-catalogo', '20260921-create-cotizaciones', '20261002-complete-institutional', '20261002-original-design', '20261002-create-convenios', '20261003-remove-otros-category', '20261009-chatbot-metrics', '20261010-newsletter-default-novedades', '20261011-cotizaciones-idempotencia', '20261014-admin-rol', '20261014-admin-auditoria', '20261015-academico-estructura', '20261016-academico-solo-dni', '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas'];
+const versions = ['20260909-create-catalogo', '20260921-create-cotizaciones', '20261002-complete-institutional', '20261002-original-design', '20261002-create-convenios', '20261003-remove-otros-category', '20261009-chatbot-metrics', '20261010-newsletter-default-novedades', '20261011-cotizaciones-idempotencia', '20261014-admin-rol', '20261014-admin-auditoria', '20261015-academico-estructura', '20261016-academico-solo-dni', '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas', '20261020-preinscripciones'];
 // Una migración que no puede aplicarse sin decidir antes qué hacer con datos existentes se detiene con este error. Su mensaje
 // se muestra tal cual: solo contiene recuentos, nunca valores de las filas.
 class MigracionDetenida extends Error {}
@@ -24,9 +24,18 @@ async function documentosNoDni(db) {
     + 'No se convierten, borran ni anonimizan; hay que decidir qué hacer con esos registros antes de volver a ejecutar db:migrate.');
 }
 const preconditions = { '20261016-academico-solo-dni': documentosNoDni };
+// 20261020-preinscripciones: sus dos ALTER TABLE no admiten IF NOT EXISTS en MySQL. Si una ejecución se interrumpió después de aplicar
+// alguno (cada ALTER es atómico, pero no juntos), al repetir db:migrate ese ALTER falla con «columna duplicada» (1060), «índice
+// duplicado» (1061) o «restricción CHECK duplicada» (3822, MySQL la detecta antes que la columna) y se omite, de modo que la migración se completa. No oculta una estructura incorrecta: db:check compara después
+// columnas, tipos, índices, claves foráneas y CHECK reales.
+const alreadyApplied = { '20261020-preinscripciones': [1060, 1061, 3822] };
 async function applySql(db, name) {
   const sql = readFileSync(join(__dirname, '../migrations', name + '.sql'), 'utf8');
-  for (const statement of sql.split(';').map(s => s.trim()).filter(Boolean)) await db.query(statement);
+  const tolerated = alreadyApplied[name] ?? [];
+  for (const statement of sql.split(';').map(s => s.trim()).filter(Boolean)) {
+    try { await db.query(statement); }
+    catch (error) { if (!tolerated.includes(error && error.errno)) throw error; }
+  }
 }
 async function migrate() {
   const db = await connect();

@@ -30,6 +30,7 @@ export const RESOURCE_OPERATIONS = {
   // --- Gestión académica ---
   estudiantes: ['leer', 'crear', 'editar', 'archivar', 'exportar'],
   convocatorias: ['leer', 'crear', 'editar', 'cerrar', 'archivar'],
+  preinscripciones: ['leer', 'editar', 'convertir', 'exportar'], // editar = validar, corregir, descartar y registrar desistimientos; convertir = pasar una preinscripción validada a matrícula (operación controlada que reutiliza Matrículas); exportar queda RESERVADO para una etapa futura: ninguna ruta lo exige todavía. Sin crear (la crea el visitante) ni eliminar.
   matriculas: ['leer', 'crear', 'editar', 'anular', 'confirmar'], // confirmar = declarar administrativamente que se completó o no la capacitación (no es una calificación)
   docentes: ['leer', 'crear', 'editar', 'asignar'], // editar incluye activar/desactivar; asignar = vincular, retirar, reactivar y sustituir docentes en una edición. Sin eliminar: un docente se desactiva.
   sesiones: ['leer', 'crear', 'editar'], // editar incluye reprogramar y cambiar de estado (realizada, cancelada, reabrir). Sin eliminar: una sesión se cancela y se conserva.

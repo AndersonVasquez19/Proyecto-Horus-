@@ -8,6 +8,7 @@ const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
+const { validatedPreinscripciones } = require('./fixtures/preinscripciones-fixture.cjs');
 const http = require('node:http');
 const backend = join(__dirname, '..');
 const versions = JSON.parse(readFileSync(join(backend, 'scripts/migrate.cjs'), 'utf8').match(/const versions = (\[[^\]]*\])/)[1].replaceAll("'", '"'));
@@ -45,6 +46,9 @@ test('Ediciones: migración conservadora, HTTP, permisos, concurrencia y trazabi
       assert.equal(after.length, before.length); const { capacidad, ...rest } = after[0]; assert.equal(capacidad, null); assert.deepEqual(rest, before[0]);
       await assert.rejects(db.query('UPDATE convocatorias SET capacidad=0'), e => e.errno === 3819);
     });
+    // La API compilada de hoy selecciona las columnas que añade 20261020-preinscripciones (minimo_apertura, preinscripcion_estado, codigo_publico):
+    // el resto del esquema vigente se completa con las migraciones registradas después de la de esta suite, como haría db:migrate.
+    for (const version of versions.slice(versions.indexOf(migration) + 1)) await runSql(version);
     const hash = await bcrypt.hash(password, 10);
     for (const [key, role] of [['g', 'GERENTE_GENERAL'], ['c', 'COORDINADORA_INSTITUCIONAL'], ['s', 'SECRETARIA'], ['b', null]]) await db.execute('INSERT INTO admin_users (nombre,email,password,activo,rol,createdAt,updatedAt) VALUES (?,?,?,1,?,NOW(),NOW())', ['Cuenta ficticia', key + '@ediciones.test', hash, role]);
     const probe = http.createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve)); const apiPort = probe.address().port; await new Promise(resolve => probe.close(resolve));
@@ -109,6 +113,8 @@ test('Ediciones: migración conservadora, HTTP, permisos, concurrencia y trazabi
       await db.query('INSERT INTO matriculas (estudiante_id,convocatoria_id) VALUES (?,1),(?,1)', [student.insertId, student2.id]);
       assert.equal((await request(path + '/1/apertura', tokens.g, 'PUT', { revision: 1 })).status, 409, 'tampoco se abre un legado con ocupación superior a su capacidad');
       await db.query('UPDATE convocatorias SET fecha_inicio=NULL,fecha_fin=NULL,capacidad=NULL WHERE id=1');
+      assert.equal((await request(path + '/' + edition.id + '/apertura', tokens.c, 'PUT', { revision: 2 })).status, 409, 'una edición nueva no se abre sin 10 preinscripciones validadas');
+      await validatedPreinscripciones(db, edition.id, 10, 'ed'); // regla vigente (20261020-preinscripciones): 10 validadas insertadas por SQL en la base desechable
       edition = (await request(path + '/' + edition.id + '/apertura', tokens.c, 'PUT', { revision: 2 })).body.item;
       assert.equal(edition.estado, 'abierta'); assert.equal(edition.revision, 3);
       assert.equal((await request(path + '/' + edition.id + '/archivo', tokens.g, 'PUT', { revision: 3, archivado: true })).status, 409);

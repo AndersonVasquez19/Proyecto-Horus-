@@ -197,6 +197,9 @@ jobs:
       # Horarios y sesiones (20261020-sesiones-academicas): mismo ejecutor aislado y desechable que Docentes; nunca horus_db ni horus_local.
       - name: Integración de Horarios y sesiones (HTTP, solapamientos, concurrencia, zona horaria y migración)
         run: node test/run-academic-isolated.cjs sesiones
+      # Preinscripciones (20261020-preinscripciones): mismo ejecutor aislado y desechable; nunca horus_db ni horus_local.
+      - name: Integración de Preinscripciones (HTTP, canales, mínimo de apertura, conversión a matrícula, concurrencia y migración)
+        run: node test/run-academic-isolated.cjs preinscripciones
       - name: Integración de importación CSV (HTTP, atomicidad y concurrencia)
         run: node test/run-importaciones-disposable.cjs importaciones.integration.cjs
       - name: Retirar MySQL
