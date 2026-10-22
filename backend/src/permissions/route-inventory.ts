@@ -127,6 +127,7 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
 
   // --- Atención ---
   perm('GET', 'admin/messages', 'mensajes:leer'), perm('GET', 'admin/messages/:id', 'mensajes:leer'),
+  perm('GET', 'admin/messages/exportar', 'mensajes:exportar', 'CSV controlado de consultas: mismos filtros de la bandeja, tope de filas, sin el texto del mensaje ni notas, celdas neutralizadas contra fórmulas y registro de la descarga sin datos personales. Declarada antes de :id.'),
   perm('POST', 'admin/messages', 'mensajes:crear'), perm('PUT', 'admin/messages/:id', 'mensajes:editar'),
   perm('DELETE', 'admin/messages/:id', 'mensajes:eliminar'),
   follow('GET', 'admin/seguimiento/:recurso/:id', 'leer'), follow('PUT', 'admin/seguimiento/:recurso/:id', 'editar'),

@@ -79,9 +79,12 @@ test('D4: búsqueda/origen/estado combinados, parámetros seguros y respuesta he
     assert.deepEqual(result.messages.map(c => c.id),[6]);
     assert.equal(result.pagination.total,1);
     assert.deepEqual((await f.messages.findAll({page:1,channel:'other',estado:'archivado'})).messages,[]);
+    // Etapa 4A: omitir `page` ya no devuelve todo el inventario; equivale a la página 1 con el límite por defecto (20) y añade pagination/metrics.
     const old = await f.messages.findAll();
-    assert.deepEqual(Object.keys(old).sort(),['messages','ok']);
+    assert.deepEqual(Object.keys(old).sort(),['messages','metrics','ok','pagination']);
+    assert.ok('pagination' in old && old.pagination.page === 1 && old.pagination.limit === 20);
     assert.equal(old.messages.find(c => c.id === 1).estado,'atendido');
+    assert.ok(f.queries.some(q => /LIMIT[\s\S]*OFFSET/.test(q.sql) && q.values.includes(20) && q.values.includes(0)), 'la lectura sin page lleva LIMIT 20 OFFSET 0');
     assert.deepEqual((await f.messages.findAll({page:1,search:"' OR 1=1 --"})).messages,[]);
     await assert.rejects(() => f.messages.findOne(999),(e: {getStatus():number}) => e.getStatus() === 404);
     assert.equal(f.queries.filter(q => /LIMIT/.test(q.sql)).every(q => q.values.some(v => typeof v === 'number')),true);

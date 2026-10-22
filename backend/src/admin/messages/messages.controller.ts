@@ -10,8 +10,13 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Req,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiProduces, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { MessageExportQueryDto } from './dto/export-messages.dto';
 import { MessagesService } from './messages.service';
 import { CreateAdminMessageDto } from './dto/create-message.dto';
 import { UpdateMessageStatusDto } from './dto/update-message-status.dto';
@@ -33,6 +38,19 @@ export class MessagesController {
   @ApiResponse({ status: 200, description: 'Lista de mensajes obtenida exitosamente' })
   async findAll(@Query() query: MessageQueryDto) {
     return this.messagesService.findAll(query);
+  }
+
+  // Debe declararse ANTES de :id (si no, «exportar» se interpretaría como un id y ParseIntPipe respondería 400).
+  @Get('exportar')
+  @RequirePermission('mensajes:exportar')
+  @ApiOperation({ summary: 'Exportar consultas filtradas en CSV (datos personales; acotado y registrado)' })
+  @ApiProduces('text/csv')
+  @ApiResponse({ status: 200, description: 'Archivo CSV adjunto (Content-Disposition: attachment)' })
+  @ApiResponse({ status: 422, description: 'El filtro supera el máximo de filas por exportación' })
+  async exportCsv(@Query() query: MessageExportQueryDto, @Req() req: { user: { id: number } }, @Res({ passthrough: true }) res: Response): Promise<StreamableFile> {
+    const file = await this.messagesService.exportCsv(query, req.user.id);
+    res.setHeader('Cache-Control', 'no-store');
+    return new StreamableFile(file.buffer, { type: 'text/csv; charset=utf-8', disposition: 'attachment; filename="' + file.fileName + '"', length: file.buffer.length });
   }
 
   @Get(':id')

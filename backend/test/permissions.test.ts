@@ -124,7 +124,7 @@ const GERENTE_ONLY = [
   'cuentas:leer', 'cuentas:crear', 'cuentas:editar', 'cuentas:asignar_rol',
   'configuracion:editar', 'contenido_original:leer', 'contenido_original:restaurar',
   'cursos:eliminar', 'servicios:eliminar', 'reclamaciones:eliminar', 'reclamaciones:exportar', 'boletin:eliminar', 'boletin:exportar',
-  'items:leer', 'items:crear', 'items:editar', 'items:eliminar',
+  'items:leer', 'items:crear', 'items:editar', 'items:eliminar', 'mensajes:exportar',
   'estudiantes:exportar', 'importaciones:aplicar', 'certificados:anular', 'calificaciones:corregir_cerradas', 'reportes_academicos:exportar', 'auditoria:leer',
 ];
 

@@ -18,7 +18,7 @@ export const RESOURCE_OPERATIONS = {
   galeria: ['leer', 'crear', 'editar', 'eliminar'],
   convenios: ['leer', 'crear', 'editar', 'eliminar'],
   archivos: ['crear'],
-  mensajes: ['leer', 'crear', 'editar', 'eliminar'],
+  mensajes: ['leer', 'crear', 'editar', 'eliminar', 'exportar'], // exportar = descargar en CSV correos y teléfonos de muchos clientes; distinto de leer y reservado al gerente hasta decidir la matriz (Etapa 4A)
   seguimiento_mensajes: ['leer', 'editar', 'enviar'],
   seguimiento_reclamaciones: ['leer', 'editar', 'enviar'],
   cotizaciones: ['leer', 'crear', 'editar', 'enviar', 'anular'],
