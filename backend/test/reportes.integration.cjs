@@ -185,7 +185,7 @@ test('Reportes académicos: HTTP real, permisos, filtros, coherencia entre forma
       return JSON.stringify(sums.map(row => [row.Table, String(row.Checksum)]));
     };
     const before = await snapshot();
-    const TYPES = ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'resumen'];
+    const TYPES = ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'certificados', 'pendientes-certificacion', 'resumen'];
 
     await t.test('sin sesión 401; cuenta básica y secretaría 403; coordinación consulta pero no exporta', async () => {
       const paths = ['/admin/reportes', '/admin/reportes/matriculas', '/admin/reportes/matriculas/exportar?formato=csv'];

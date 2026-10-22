@@ -1,5 +1,5 @@
 import type { Permission } from '../permissions/permissions';
-import { EDITION_STATES, ENROLLMENT_STATES, FilterKey, STUDENT_STATES } from './reportes.dto';
+import { CERTIFICATE_STATES, EDITION_STATES, ENROLLMENT_STATES, FilterKey, STUDENT_STATES } from './reportes.dto';
 import { REPORT_TYPES, ReportType } from './reportes.types';
 
 // Catálogo de reportes: qué filtros admite cada uno, sus estados válidos y si contiene datos personales.
@@ -58,6 +58,23 @@ export const REPORT_CATALOG: Readonly<Record<ReportType, ReportDefinition>> = Ob
     filtros: [...PERIOD, 'curso_id', 'convocatoria_id', 'agrupar'], estados: [], datosPersonales: false,
     consultaRequiere: [], exportacionRequiere: [],
     notas: ['El período filtra por fecha de registro de la matrícula (hora de Lima).', 'Solo aparecen los grupos con al menos una matrícula en el filtro.', CURRENT_STATE_NOTE],
+  },
+  certificados: {
+    tipo: 'certificados', titulo: 'Certificados emitidos',
+    descripcion: 'Certificados emitidos con estudiante, curso, edición, estado (vigente o anulado) y si fueron sustituidos.',
+    filtros: [...PERIOD, 'curso_id', 'convocatoria_id', 'estado'], estados: CERTIFICATE_STATES, datosPersonales: true,
+    consultaRequiere: ['certificados:leer', 'estudiantes:leer'], exportacionRequiere: ['certificados:leer', 'estudiantes:exportar'],
+    notas: ['El período filtra por fecha de emisión (hora de Lima).', 'Los datos del estudiante, el curso y la edición son los copiados al emitir el certificado.',
+      'No incluye el motivo de anulación.', CURRENT_STATE_NOTE],
+  },
+  'pendientes-certificacion': {
+    tipo: 'pendientes-certificacion', titulo: 'Pendientes de certificación',
+    descripcion: 'Matrículas vigentes con cumplimiento confirmado que todavía no tienen un certificado vigente, y si pueden emitirse ahora.',
+    filtros: [...PERIOD, 'curso_id', 'convocatoria_id'], estados: [], datosPersonales: true,
+    consultaRequiere: ['matriculas:leer', 'certificados:leer', 'estudiantes:leer'], exportacionRequiere: ['certificados:leer', 'estudiantes:exportar'],
+    notas: ['El período filtra por la fecha de confirmación del cumplimiento (hora de Lima).', 'Las ediciones canceladas no se incluyen: no emiten certificados.',
+      'Una matrícula con un certificado anulado y ninguno vigente sigue figurando como pendiente.',
+      'La columna «Situación» aplica la misma regla que la emisión: sin DNI completo no se puede emitir.', CURRENT_STATE_NOTE],
   },
   resumen: {
     tipo: 'resumen', titulo: 'Resumen general por período',

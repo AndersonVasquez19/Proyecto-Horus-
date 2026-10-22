@@ -13,8 +13,8 @@ Prefijo `/api`, JWT y AccessGuard global. La matriz de roles **no cambia**: se u
 | Método y ruta | Permiso (AccessGuard) | Comprobación adicional en el servicio (rol vigente) | Respuesta |
 | --- | --- | --- | --- |
 | GET `/admin/reportes` | `reportes_academicos:leer` | — | Catálogo con lo que la cuenta puede hacer con cada reporte |
-| GET `/admin/reportes/:tipo` | `reportes_academicos:leer` | Repite el permiso base. `estudiantes` exige `estudiantes:leer`; `matriculas`, además, `matriculas:leer` | JSON con la tabla paginada |
-| GET `/admin/reportes/:tipo/exportar?formato=csv\|xlsx\|pdf` | `reportes_academicos:exportar` | Repite el permiso base. `estudiantes` y `matriculas` exigen `estudiantes:exportar` | Archivo adjunto |
+| GET `/admin/reportes/:tipo` | `reportes_academicos:leer` | Repite el permiso base. `estudiantes` exige `estudiantes:leer`; `matriculas`, además, `matriculas:leer`; `certificados`, `certificados:leer` y `estudiantes:leer`; `pendientes-certificacion`, `matriculas:leer`, `certificados:leer` y `estudiantes:leer` | JSON con la tabla paginada |
+| GET `/admin/reportes/:tipo/exportar?formato=csv\|xlsx\|pdf` | `reportes_academicos:exportar` | Repite el permiso base. `estudiantes` y `matriculas` exigen `estudiantes:exportar`; `certificados` y `pendientes-certificacion`, además, `certificados:leer` | Archivo adjunto |
 
 | Rol | Consultar (JSON) | Exportar (archivos) |
 | --- | --- | --- |
@@ -35,6 +35,8 @@ El rol se lee de la base en cada solicitud, no del JWT. Ocultar un botón en Rea
 | `ocupacion` | Ocupación de cupos | igual que `ediciones` | igual que `ediciones` | No |
 | `matriculas` | Matrículas vigentes y anuladas | `desde`, `hasta`, `curso_id`, `convocatoria_id`, `estado`, `cumplimiento` | `activa`, `anulada` | Sí (nombre y DNI) |
 | `matriculas-por-edicion` | Matrículas por curso o edición | `desde`, `hasta`, `curso_id`, `convocatoria_id`, `agrupar` | — | No |
+| `certificados` | Certificados emitidos | `desde`, `hasta`, `curso_id`, `convocatoria_id`, `estado` | `vigente`, `anulado` | Sí (nombre y DNI copiados al emitir) |
+| `pendientes-certificacion` | Pendientes de certificación | `desde`, `hasta`, `curso_id`, `convocatoria_id` | — | Sí (nombre y DNI) |
 | `resumen` | Resumen general por período | `desde`, `hasta` | — | No |
 
 Contenido de cada reporte:
@@ -44,6 +46,8 @@ Contenido de cada reporte:
 - **ocupacion**: ID, curso, edición, estado, inicio, capacidad, vigentes, disponibles y «Ocupación (%)». Resumen: ediciones con y sin capacidad, capacidad total, cupos ocupados y disponibles, ocupación global, ediciones completas y matrículas vigentes. Fila «Total».
 - **matriculas**: ID, fecha de matrícula, apellidos, nombres, DNI, curso, edición, estado (Vigente/Anulada) y cumplimiento. Resumen por estado y cumplimiento. Sin fila de totales.
 - **matriculas-por-edicion**: con `agrupar=edicion` (por defecto): curso, edición, inicio, estado de la edición, vigentes, anuladas y total. Con `agrupar=curso`: curso, tipo, ediciones, vigentes, anuladas y total. Fila «Total».
+- **certificados**: ID, fecha de emisión, código de verificación, apellidos, nombres, DNI, curso, edición, estado (Vigente/Anulado), fecha de anulación y si fue sustituido. Resumen: total, vigentes, anulados y anulados por sustitución. No incluye el motivo de anulación ni quién emitió o anuló. Sin fila de totales. Detalle y explicación: [Reportes de certificación](reportes-certificacion.md).
+- **pendientes-certificacion**: ID de matrícula, fecha de confirmación del cumplimiento, apellidos, nombres, DNI, curso, edición, certificados anulados anteriores y «Situación» («Lista para emitir» o el motivo por el que la emisión la rechazaría). Resumen: pendientes, listos para emitir, sin DNI completo y con un certificado anulado anterior. Sin fila de totales. Detalle: [Reportes de certificación](reportes-certificacion.md).
 - **resumen**: indicadores del período (estudiantes y matrículas registrados, vigentes y anuladas, ediciones que inician) e indicadores **al generar** (estudiantes activos e inactivos, ediciones abiertas y su ocupación). La tabla es la serie mensual (mes, estudiantes registrados, matrículas registradas, vigentes y anuladas) con fila «Total».
 
 Las ediciones activas se cuentan con el mismo criterio que el Resumen del panel (`OPEN_EDITIONS_WHERE` de `StatsService`: abierta y no archivada).
@@ -68,6 +72,7 @@ El período se aplica de esta forma:
 
 - **estudiantes**: por la fecha de registro del estudiante.
 - **matriculas** y **matriculas-por-edicion**: por la fecha de registro de la matrícula.
+- **certificados**: por la fecha de emisión del certificado. **pendientes-certificacion**: por la fecha en que se confirmó el cumplimiento.
 - **ediciones** y **ocupacion**: por superposición del período con `[fecha_inicio, fecha_fin]`; las ediciones sin fechas quedan fuera cuando se indica un período.
 - **resumen**: sin fechas, usa los últimos 12 meses, incluido el actual; sin `hasta`, termina hoy.
 
@@ -171,4 +176,4 @@ Privacidad: el módulo no escribe en la base (lo comprueba la integración con `
 - **Exportación para la coordinadora**: `reportes_academicos:exportar` y `estudiantes:exportar` siguen siendo solo del gerente (decisión pendiente en `policy.ts`). Concederlos es un cambio de matriz con sus pruebas.
 - **Auditoría de descargas**: registrar quién exportó qué requiere una migración (nuevo valor de operación en `admin_auditoria`); no se hizo para no crear cambios de esquema.
 - **Estados históricos**: «vigente/anulada a una fecha» exigiría reconstruirlos desde `academico_historial`; hoy se informa el estado actual.
-- **Certificados**: las tablas existen, pero el módulo no está implementado; no se incluyen en los reportes.
+- **Certificados**: los reportes `certificados` y `pendientes-certificacion` ya existen (ver [Reportes de certificación](reportes-certificacion.md)). Sus consultas solo se han probado con Prisma simulado: falta ejecutarlas contra un MySQL desechable (`node test/run-academic-isolated.cjs reportes`, tras `npm run build`), cuya lista de tipos ya los incluye.

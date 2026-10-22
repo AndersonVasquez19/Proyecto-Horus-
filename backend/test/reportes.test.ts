@@ -302,7 +302,7 @@ test('Reportes: el catálogo informa lo que cada rol puede consultar y exportar'
   assert.deepEqual((await of(C)).resumen, [true, false]);
   assert.deepEqual((await of(S)).matriculas, [false, false]);
   const catalog = await new ReportesService(fakePrisma({ rol: G }).prisma).catalog(1);
-  assert.deepEqual(catalog.reportes.map(r => r.tipo), ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'resumen']);
+  assert.deepEqual(catalog.reportes.map(r => r.tipo), ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'certificados', 'pendientes-certificacion', 'resumen']);
   assert.deepEqual(catalog.limites.filas_exportacion, { csv: 20000, xlsx: 20000, pdf: 3000 });
 });
 
@@ -570,4 +570,136 @@ test('Formatos: una exportación grande dentro del límite se genera en memoria 
   assert.ok(csv.length < 5 * 1024 * 1024 && xlsx.length < 5 * 1024 * 1024, 'tamaño del archivo');
   assert.equal(parseCsv(csv.subarray(3).toString('utf8')).length, MAX_EXPORT_ROWS.xlsx + 2 + 1 + 4 + 1 + 1 + 1 + 2);
   assert.equal(sheetRows(unzip(xlsx).get('xl/worksheets/sheet2.xml')!.toString('utf8')).size, MAX_EXPORT_ROWS.xlsx + 2);
+});
+
+// ------------------------------------------------------------------------------------------------------------------------------
+// Reportes de certificación: «certificados» (emitidos) y «pendientes-certificacion» (cola de emisión). Datos ficticios, sin MySQL.
+interface CertFakeOptions { rol?: string | null; groups?: unknown[]; substituted?: number; certs?: unknown[]; pendingTotal?: number; pendingReady?: number; pendingAnnulled?: number; pending?: unknown[] }
+function certFakePrisma(options: CertFakeOptions = {}) {
+  const calls: Record<string, unknown[]> = {};
+  const record = (name: string, args: unknown) => { (calls[name] ??= []).push(args); };
+  const tx = {
+    curso: { findUnique: async () => ({ titulo: 'Curso ficticio' }) },
+    convocatoria: { findUnique: async () => ({ nombre: 'Edición ficticia', curso: { titulo: 'Curso ficticio' } }) },
+    certificado: {
+      groupBy: async (args: unknown) => { record('certificado.groupBy', args); return options.groups ?? []; },
+      count: async (args: unknown) => { record('certificado.count', args); return options.substituted ?? 0; },
+      findMany: async (args: unknown) => { record('certificado.findMany', args); return options.certs ?? []; },
+    },
+    matricula: {
+      count: async (args: { where: { AND?: Record<string, unknown>[] } }) => {
+        record('matricula.count', args);
+        const extra = JSON.stringify(args.where.AND?.[1] ?? null);
+        if (extra.includes('doc_tipo')) return options.pendingReady ?? 0;
+        if (extra.includes('anulado')) return options.pendingAnnulled ?? 0;
+        return options.pendingTotal ?? (options.pending ?? []).length;
+      },
+      findMany: async (args: unknown) => { record('matricula.findMany', args); return options.pending ?? []; },
+    },
+  };
+  const prisma = {
+    adminUser: { findUnique: async () => options.rol === undefined ? { rol: G } : options.rol === null ? null : { rol: options.rol } },
+    $transaction: async (fn: (client: typeof tx) => unknown) => fn(tx),
+  } as unknown as PrismaService;
+  return { prisma, calls };
+}
+
+const certRow = (id: number, extra: Record<string, unknown> = {}) => ({
+  id, emitido_at: new Date('2026-10-10T15:00:00.000Z'), codigo_verificacion: 'ABCDEFGHJKLMNPQRSTUV', estado: 'vigente', anulado_at: null,
+  estudiante_apellidos: 'Ficticia Ñandú', estudiante_nombres: 'Ana', estudiante_doc_numero: '01234567', curso_titulo: 'Curso ficticio', convocatoria_nombre: 'Edición ficticia',
+  sustituido_por: null, ...extra,
+});
+const pendingRow = (id: number, extra: { doc?: Record<string, unknown>; anulados?: number } = {}) => ({
+  id, estado: 'activa', cumplimiento: 'cumplido', confirmado_at: new Date('2026-10-10T15:00:00.000Z'),
+  estudiante: { nombres: 'Ana', apellidos: 'Ficticia', doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: '01234567', ...extra.doc },
+  convocatoria: { estado: 'abierta', nombre: 'Edición ficticia', fecha_inicio: null, fecha_fin: null, curso: { titulo: 'Curso ficticio', tipo: 'curso', duracion: null } },
+  _count: { certificados: extra.anulados ?? 0 },
+});
+
+test('Reportes de certificación: validan estados y filtros propios antes de consultar', async () => {
+  assert.equal((await validate({ estado: 'anulado' }, ReporteConsultaDto)).estado, 'anulado');
+  assert.equal((await validate({ formato: 'csv', estado: 'vigente' }, ReporteExportacionDto)).estado, 'vigente');
+  const { prisma, calls } = certFakePrisma();
+  const service = new ReportesService(prisma);
+  await assert.rejects(service.preview('certificados', query({ estado: 'activa' }), 1, NOW), (e: BadRequestException) => e.message.includes('vigente, anulado'));
+  await assert.rejects(service.preview('certificados', query({ cumplimiento: 'cumplido' }), 1, NOW), (e: BadRequestException) => e.message.includes('cumplimiento'));
+  await assert.rejects(service.preview('matriculas', query({ estado: 'vigente' }), 1, NOW), BadRequestException);
+  await assert.rejects(service.preview('pendientes-certificacion', query({ estado: 'vigente' }), 1, NOW), BadRequestException);
+  await assert.rejects(service.preview('pendientes-certificacion', query({ cumplimiento: 'cumplido' }), 1, NOW), BadRequestException);
+  assert.equal(calls['certificado.groupBy'], undefined);
+  assert.equal(calls['matricula.count'], undefined);
+});
+
+test('Reportes de certificación: permisos con el rol vigente (consulta y exportación)', async () => {
+  for (const tipo of ['certificados', 'pendientes-certificacion'] as const) {
+    await new ReportesService(certFakePrisma({ rol: G }).prisma).preview(tipo, query(), 1, NOW);
+    await new ReportesService(certFakePrisma({ rol: C }).prisma).preview(tipo, query(), 1, NOW); // coordinación: certificados, estudiantes y matrículas
+    for (const rol of [S, null, 'ADMIN']) await assert.rejects(new ReportesService(certFakePrisma({ rol }).prisma).preview(tipo, query(), 1, NOW), ForbiddenException);
+    await assert.rejects(new ReportesService(certFakePrisma({ rol: C }).prisma).exportDocument(tipo, {}, 'csv', 1, NOW), ForbiddenException);
+    assert.equal((await new ReportesService(certFakePrisma({ rol: G }).prisma).exportDocument(tipo, {}, 'xlsx', 1, NOW)).datos_personales, true);
+  }
+  const catalog = Object.fromEntries((await new ReportesService(certFakePrisma({ rol: C }).prisma).catalog(1)).reportes.map(r => [r.tipo, [r.puede_consultar, r.puede_exportar, r.datos_personales]]));
+  assert.deepEqual(catalog.certificados, [true, false, true]);
+  assert.deepEqual(catalog['pendientes-certificacion'], [true, false, true]);
+});
+
+test('Reportes de certificación: «certificados» filtra por días de Lima, estado, curso y edición; resume todo el filtro y no expone el motivo', async () => {
+  const { prisma, calls } = certFakePrisma({
+    groups: [{ estado: 'vigente', _count: { _all: 2 } }, { estado: 'anulado', _count: { _all: 1 } }], substituted: 1,
+    certs: [certRow(3), certRow(2, { estado: 'anulado', anulado_at: new Date('2026-10-11T04:59:00.000Z'), sustituido_por: { id: 3 } })],
+  });
+  const result = await new ReportesService(prisma).preview('certificados',
+    query({ desde: '2026-10-01', hasta: '2026-10-31', estado: 'vigente', curso_id: 4, convocatoria_id: 9, page: 1, limit: 2 }), 1, NOW);
+  const where = { emitido_at: { gte: new Date('2026-10-01T05:00:00.000Z'), lt: new Date('2026-11-01T05:00:00.000Z') }, estado: 'vigente', matricula: { convocatoria_id: 9, convocatoria: { curso_id: 4 } } };
+  assert.deepEqual((calls['certificado.groupBy'][0] as { where: unknown }).where, where);
+  assert.deepEqual(calls['certificado.count'][0], { where: { AND: [where, { sustituido_por: { isNot: null } }] } });
+  const find = calls['certificado.findMany'][0] as { orderBy: unknown; skip: number; take: number; select: Record<string, unknown> };
+  assert.deepEqual(find.orderBy, [{ emitido_at: 'desc' }, { id: 'desc' }]); assert.equal(find.skip, 0); assert.equal(find.take, 2);
+  for (const secret of ['anulacion_motivo', 'emitido_por', 'anulado_por', 'matricula_id']) assert.equal(secret in find.select, false, secret);
+  const { reporte, pagination } = result;
+  assert.deepEqual(reporte.resumen.map(r => [r.clave, r.valor]), [['total', 3], ['vigentes', 2], ['anulados', 1], ['sustituidos', 1]]);
+  assert.deepEqual(pagination, { page: 1, limit: 2, total: 3, pages: 2 });
+  assert.equal(reporte.tabla.filas[0].emitido, '2026-10-10 10:00'); // hora de Lima
+  assert.equal(reporte.tabla.filas[0].sustituido, 'No'); assert.equal(reporte.tabla.filas[0].anulado, null);
+  assert.deepEqual([reporte.tabla.filas[1].estado, reporte.tabla.filas[1].sustituido, reporte.tabla.filas[1].anulado], ['Anulado', 'Sí', '2026-10-10 23:59']);
+  assert.deepEqual(reporte.filtros.map(f => f.etiqueta), ['Curso', 'Edición', 'Estado']);
+  assert.equal(reporte.datos_personales, true);
+  assert.deepEqual(reporte.tabla.columnas.map(c => c.clave), Object.keys(reporte.tabla.filas[0]));
+});
+
+test('Reportes de certificación: «pendientes» solo incluye vigentes cumplidas sin certificado vigente y aplica la regla real de emisión', async () => {
+  const { prisma, calls } = certFakePrisma({
+    pendingTotal: 3, pendingReady: 2, pendingAnnulled: 1,
+    pending: [pendingRow(7), pendingRow(8, { anulados: 1 }), pendingRow(9, { doc: { doc_pais: null, doc_tipo: null, doc_numero: null } })],
+  });
+  const { reporte } = await new ReportesService(prisma).preview('pendientes-certificacion', query({ desde: '2026-10-01', curso_id: 4, convocatoria_id: 9, limit: 10 }), 1, NOW);
+  const where = {
+    estado: 'activa', cumplimiento: 'cumplido', certificados: { none: { estado: 'vigente' } }, convocatoria: { estado: { not: 'cancelada' }, curso_id: 4 }, convocatoria_id: 9,
+    confirmado_at: { gte: new Date('2026-10-01T05:00:00.000Z') },
+  };
+  assert.deepEqual((calls['matricula.count'][0] as { where: unknown }).where, where);
+  assert.deepEqual(calls['matricula.count'][1], { where: { AND: [where, { estudiante: { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: { not: null } } }] } });
+  assert.deepEqual(calls['matricula.count'][2], { where: { AND: [where, { certificados: { some: { estado: 'anulado' } } }] } });
+  assert.deepEqual((calls['matricula.findMany'][0] as { orderBy: unknown }).orderBy, [{ confirmado_at: 'asc' }, { id: 'asc' }]);
+  assert.deepEqual(reporte.resumen.map(r => [r.clave, r.valor]), [['total', 3], ['listos', 2], ['sin_dni', 1], ['con_anulado', 1]]);
+  const rows = reporte.tabla.filas;
+  assert.deepEqual(rows.map(r => r.situacion), ['Lista para emitir', 'Lista para emitir', 'El estudiante no tiene un DNI completo registrado, necesario para emitir el certificado.']);
+  assert.deepEqual(rows.map(r => r.anulados), [0, 1, 0]);
+  assert.equal(rows[0].confirmado, '2026-10-10 10:00');
+  assert.equal(rows[2].dni, null);
+  assert.deepEqual(reporte.tabla.columnas.map(c => c.clave), Object.keys(rows[0]));
+  assert.equal(reporte.tabla.totales, null);
+});
+
+test('Reportes de certificación: los formatos muestran las mismas filas y el volumen respeta el límite del PDF', async () => {
+  const service = new ReportesService(certFakePrisma({ groups: [{ estado: 'vigente', _count: { _all: 1 } }], certs: [certRow(1, { estudiante_apellidos: '=SUMA(A1)' })] }).prisma);
+  const doc = await service.exportDocument('certificados', {}, 'csv', 1, NOW);
+  const csv = parseCsv(renderCsv(doc).subarray(3).toString('utf8'));
+  const header = csv.findIndex(row => row[0] === 'ID');
+  assert.deepEqual(csv[header].slice(0, 3), ['ID', 'Fecha de emisión', 'Código de verificación']);
+  assert.equal(csv[header + 1][2], 'ABCDEFGHJKLMNPQRSTUV');
+  assert.equal(csv[header + 1][3], "'=SUMA(A1)", 'las fórmulas se neutralizan');
+  assert.equal(xlsxTable(doc, renderXlsx(doc))[1][5], '01234567');
+  const big = new ReportesService(certFakePrisma({ groups: [{ estado: 'vigente', _count: { _all: MAX_EXPORT_ROWS.pdf + 1 } }] }).prisma);
+  await assert.rejects(big.exportDocument('certificados', {}, 'pdf', 1, NOW), UnprocessableEntityException);
 });

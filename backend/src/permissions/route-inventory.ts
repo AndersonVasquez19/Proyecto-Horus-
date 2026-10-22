@@ -122,8 +122,8 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('PATCH', 'admin/sesiones/:id', 'sesiones:editar', 'Edición parcial con revisión. Cambiar fecha, horas o docente es reprogramar y exige motivo.'),
   perm('PUT', 'admin/sesiones/:id/estado', 'sesiones:editar', 'programada → realizada | cancelada; realizada → programada (reabrir, con motivo). Nada se borra.'),
   perm('GET', 'admin/reportes', 'reportes_academicos:leer', 'Catálogo de reportes y capacidades de la cuenta. Solo lectura.'),
-  perm('GET', 'admin/reportes/:tipo', 'reportes_academicos:leer', 'Consulta JSON paginada. Estudiantes y matrículas (datos personales) exigen además estudiantes:leer (y matriculas:leer), comprobados en el servicio.'),
-  perm('GET', 'admin/reportes/:tipo/exportar', 'reportes_academicos:exportar', 'CSV, XLSX o PDF. Estudiantes y matrículas (datos personales) exigen además estudiantes:exportar, comprobado en el servicio.'),
+  perm('GET', 'admin/reportes/:tipo', 'reportes_academicos:leer', 'Consulta JSON paginada. Estudiantes, matrículas, certificados y pendientes de certificación (datos personales) exigen además estudiantes:leer (y matriculas:leer / certificados:leer según el reporte), comprobados en el servicio.'),
+  perm('GET', 'admin/reportes/:tipo/exportar', 'reportes_academicos:exportar', 'CSV, XLSX o PDF. Estudiantes, matrículas, certificados y pendientes de certificación (datos personales) exigen además estudiantes:exportar (y certificados:leer en los dos de certificación), comprobado en el servicio.'),
 
   // --- Atención ---
   perm('GET', 'admin/messages', 'mensajes:leer'), perm('GET', 'admin/messages/:id', 'mensajes:leer'),

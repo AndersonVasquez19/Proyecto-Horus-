@@ -2,7 +2,7 @@
 // son renderizadores puros de este mismo objeto: por construcción muestran las mismas filas, el mismo resumen y los mismos totales.
 // La consulta JSON del panel devuelve este mismo documento con la tabla paginada (el resumen y los totales cubren todo el filtro).
 
-export const REPORT_TYPES = ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'resumen'] as const;
+export const REPORT_TYPES = ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'certificados', 'pendientes-certificacion', 'resumen'] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 
 export const REPORT_FORMATS = ['csv', 'xlsx', 'pdf'] as const;
