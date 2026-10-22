@@ -9,6 +9,7 @@ import { isSchemaOutdated } from '../database/serialization';
 import type { Permission } from '../permissions/permissions';
 import { FORBIDDEN_MESSAGE } from '../permissions/access.guard';
 import { can } from '../permissions/policy';
+import { CURRENCY_LABELS, expiredQuotes, inquiriesByState, monthlyActivity, oldOpenInquiries, quoteAmounts, quotesByState } from './reportes.comerciales';
 import { REPORT_CATALOG, ReportDefinition, catalogEntries } from './reportes.catalogo';
 import { FILTER_KEYS, ReporteConsultaDto, ReporteFiltrosDto } from './reportes.dto';
 import { BATCH_SIZE, MAX_EXPORT_ROWS, MAX_REPORT_ROWS, PREVIEW_MAX_LIMIT, REPORT_TRANSACTION_TIMEOUT_MS } from './reportes.limites';
@@ -27,6 +28,7 @@ export const STATE_LABELS: Readonly<Record<string, string>> = {
   activos: 'Activos', inactivos: 'Inactivos', todos: 'Todos',
   planificada: 'Planificada', abierta: 'Abierta', cerrada: 'Cerrada', cancelada: 'Cancelada',
   activa: 'Vigente', anulada: 'Anulada', vigente: 'Vigente', anulado: 'Anulado',
+  borrador: 'Borrador', enviada: 'Enviada', aceptada: 'Aceptada', rechazada: 'Rechazada', nuevo: 'Nuevo', en_proceso: 'En proceso',
 };
 export const COMPLIANCE_LABELS: Readonly<Record<string, string>> = { pendiente: 'Pendiente', cumplido: 'Cumplido', no_cumplido: 'No cumplido' };
 const ARCHIVE_LABELS: Readonly<Record<string, string>> = { activos: 'Solo no archivadas', archivados: 'Solo archivadas', todos: 'Todas' };
@@ -60,18 +62,20 @@ export class ReportesService {
       ok: true,
       formatos: ['csv', 'xlsx', 'pdf'],
       limites: { filas_exportacion: { ...MAX_EXPORT_ROWS }, filas_por_pagina: PREVIEW_MAX_LIMIT },
+      // Visibilidad: un reporte COMERCIAL que la cuenta no puede consultar se omite; los académicos se conservan siempre (mejora de
+      // visibilidad: las rutas de consulta y exportación siguen autorizando por su cuenta).
       reportes: catalogEntries().map(entry => ({
         ...entry,
         puede_consultar: canRead && allowed(rol, REPORT_CATALOG[entry.tipo].consultaRequiere),
         puede_exportar: canExport && allowed(rol, REPORT_CATALOG[entry.tipo].exportacionRequiere),
-      })),
+      })).filter(entry => entry.ambito !== 'comercial' || entry.puede_consultar),
     };
   }
 
   async preview(tipo: ReportType, q: ReporteConsultaDto, actorId: number, now = new Date()) {
     const def = REPORT_CATALOG[tipo];
     this.validateFilters(def, q);
-    await this.authorize(actorId, 'reportes_academicos:leer', def.consultaRequiere, 'consultar');
+    await this.authorize(actorId, 'reportes_academicos:leer', def, def.consultaRequiere, 'consultar');
     const reporte = await this.build(def, q, now, { window: { skip: (q.page - 1) * q.limit, take: q.limit }, maxRows: MAX_REPORT_ROWS, limitLabel: 'la consulta' });
     const total = reporte.tabla.total_filas;
     return { ok: true, reporte, pagination: { page: q.page, limit: q.limit, total, pages: Math.ceil(total / q.limit) } };
@@ -81,7 +85,7 @@ export class ReportesService {
   async exportDocument(tipo: ReportType, q: Filters, formato: ReportFormat, actorId: number, now = new Date()): Promise<ReportDocument> {
     const def = REPORT_CATALOG[tipo];
     this.validateFilters(def, q);
-    await this.authorize(actorId, 'reportes_academicos:exportar', def.exportacionRequiere, 'exportar');
+    await this.authorize(actorId, 'reportes_academicos:exportar', def, def.exportacionRequiere, 'exportar');
     return this.build(def, q, now, { window: null, maxRows: Math.min(MAX_EXPORT_ROWS[formato], MAX_REPORT_ROWS), limitLabel: 'el formato ' + formato.toUpperCase() });
   }
 
@@ -102,10 +106,12 @@ export class ReportesService {
 
   // Comprobación con el rol VIGENTE (como la reactivación de matrículas): el permiso base repite el de AccessGuard (defensa en
   // profundidad) y los reportes con datos personales exigen además leer o exportar estudiantes.
-  private async authorize(actorId: number, base: Permission, extra: readonly Permission[], action: 'consultar' | 'exportar') {
+  private async authorize(actorId: number, base: Permission, def: ReportDefinition, extra: readonly Permission[], action: 'consultar' | 'exportar') {
     const rol = await this.role(actorId);
     if (!can(rol, base)) throw new ForbiddenException(FORBIDDEN_MESSAGE);
-    if (!allowed(rol, extra)) throw new ForbiddenException('Tu rol no puede ' + action + ' reportes con datos personales de estudiantes.');
+    if (!allowed(rol, extra)) {
+      throw new ForbiddenException(def.ambito === 'comercial' ? 'Tu rol no puede ' + action + ' este reporte comercial o de atención al cliente.' : 'Tu rol no puede ' + action + ' reportes con datos personales de estudiantes.');
+    }
   }
 
   private async execute<T>(operation: () => Promise<T>): Promise<T> {
@@ -127,10 +133,10 @@ export class ReportesService {
   }
 
   private async build(def: ReportDefinition, q: Filters, now: Date, mode: BuildMode): Promise<ReportDocument> {
-    const period = resolvePeriod(q.desde, q.hasta, now, def.tipo === 'resumen' ? 12 : undefined);
+    const period = resolvePeriod(q.desde, q.hasta, now, def.tipo === 'resumen' || def.tipo === 'actividad-comercial' ? 12 : undefined);
     return this.execute(() => this.prisma.$transaction(async tx => {
       const filtros = await this.filterLabels(tx, q);
-      const built = await this.builder(def.tipo)(tx, q, period, mode);
+      const built = await this.builder(def.tipo, now)(tx, q, period, mode);
       return {
         tipo: def.tipo, titulo: def.titulo, descripcion: def.descripcion, institucion: INSTITUTION_NAME,
         generado_at: now.toISOString(), generado_local: limaDateTime(now),
@@ -140,7 +146,7 @@ export class ReportesService {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: REPORT_TRANSACTION_TIMEOUT_MS, maxWait: 5_000 }));
   }
 
-  private builder(tipo: ReportType): (tx: Tx, q: Filters, p: Period, mode: BuildMode) => Promise<Built> {
+  private builder(tipo: ReportType, now: Date): (tx: Tx, q: Filters, p: Period, mode: BuildMode) => Promise<Built> {
     switch (tipo) {
       case 'estudiantes': return (tx, q, p, mode) => this.students(tx, q, p, mode);
       case 'ediciones': return (tx, q, p, mode) => this.editionsReport(tx, q, p, mode);
@@ -150,6 +156,13 @@ export class ReportesService {
       case 'certificados': return (tx, q, p, mode) => this.certificates(tx, q, p, mode);
       case 'pendientes-certificacion': return (tx, q, p, mode) => this.pendingCertification(tx, q, p, mode);
       case 'resumen': return (tx, _q, p, mode) => this.summary(tx, p, mode);
+      // Comerciales y de atención: misma estructura {resumen, tabla}; los renderizadores de CSV, XLSX y PDF son los mismos.
+      case 'cotizaciones-por-estado': return (tx, q, p) => quotesByState(tx, q, p);
+      case 'cotizaciones-vencidas': return (tx, q, p, mode) => expiredQuotes(tx, q, p, mode, now);
+      case 'cotizaciones-importes': return (tx, q, p) => quoteAmounts(tx, q, p);
+      case 'consultas-por-estado': return (tx, _q, p) => inquiriesByState(tx, p, now);
+      case 'consultas-abiertas-antiguas': return (tx, q, p, mode) => oldOpenInquiries(tx, q, p, mode, now);
+      case 'actividad-comercial': return (tx, _q, p, mode) => monthlyActivity(tx, p, mode);
     }
   }
 
@@ -169,6 +182,7 @@ export class ReportesService {
     if (q.estado !== undefined) labels.push({ clave: 'estado', etiqueta: 'Estado', valor: STATE_LABELS[q.estado] });
     if (q.cumplimiento !== undefined) labels.push({ clave: 'cumplimiento', etiqueta: 'Cumplimiento', valor: COMPLIANCE_LABELS[q.cumplimiento] });
     if (q.archivo !== undefined) labels.push({ clave: 'archivo', etiqueta: 'Archivo', valor: ARCHIVE_LABELS[q.archivo] });
+    if (q.moneda !== undefined) labels.push({ clave: 'moneda', etiqueta: 'Moneda', valor: CURRENCY_LABELS[q.moneda] });
     if (q.agrupar !== undefined) labels.push({ clave: 'agrupar', etiqueta: 'Agrupación', valor: GROUPING_LABELS[q.agrupar] });
     return labels;
   }

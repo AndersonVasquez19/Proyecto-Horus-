@@ -14,7 +14,7 @@ const GOLD = 'FFC9A961';
 const TOTAL_FILL = 'FFF3EDE0';
 
 // Índices de cellXfs (ver STYLES).
-const S = { title: 1, subtitle: 2, header: 3, text: 4, int: 5, date: 6, datetime: 7, dec: 8, totalText: 9, totalInt: 10, totalDec: 11, label: 12, note: 13, totalEmpty: 14 } as const;
+const S = { title: 1, subtitle: 2, header: 3, text: 4, int: 5, date: 6, datetime: 7, dec: 8, totalText: 9, totalInt: 10, totalDec: 11, label: 12, note: 13, totalEmpty: 14, money: 15, totalMoney: 16 } as const;
 
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
@@ -39,7 +39,7 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <border><left/><right/><top style="thin"><color rgb="${NAVY}"/></top><bottom/><diagonal/></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="15">
+<cellXfs count="17">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/>
@@ -55,6 +55,8 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" quotePrefix="1"/>
 <xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1" quotePrefix="1"/>
 <xf numFmtId="0" fontId="0" fillId="3" borderId="2" xfId="0" applyFill="1" applyBorder="1"/>
+<xf numFmtId="2" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="2" fontId="1" fillId="3" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -86,6 +88,7 @@ function dataCell(value: CellValue, kind: ColumnKind, total: boolean): Cell {
     return { value, style: total ? S.totalText : S.text };
   }
   if (kind === 'decimal') return { value, style: total ? S.totalDec : S.dec };
+  if (kind === 'importe') return { value, style: total ? S.totalMoney : S.money };
   return { value, style: total ? S.totalInt : S.int };
 }
 
@@ -144,7 +147,7 @@ function summarySheet(doc: ReportDocument, dataSheet: string): SheetSpec {
     [text('Filas de datos', S.label), { value: doc.tabla.total_filas, style: S.int }, text('hoja «' + dataSheet + '»', S.note)],
     [],
     [text('Indicador', S.header), text('Valor', S.header)],
-    ...doc.resumen.map(entry => [text(entry.etiqueta), entry.valor === null ? text(NOT_APPLICABLE) : { value: entry.valor, style: entry.tipo === 'decimal' ? S.dec : S.int }]),
+    ...doc.resumen.map(entry => [text(entry.etiqueta), entry.valor === null ? text(NOT_APPLICABLE) : { value: entry.valor, style: entry.tipo === 'decimal' ? S.dec : entry.tipo === 'importe' ? S.money : S.int }]),
   ];
   if (doc.notas.length || doc.datos_personales) rows.push([], [text('Notas', S.label)]);
   for (const note of doc.notas) rows.push([text(note, S.note)]);

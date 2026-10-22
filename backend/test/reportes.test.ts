@@ -302,7 +302,9 @@ test('Reportes: el catálogo informa lo que cada rol puede consultar y exportar'
   assert.deepEqual((await of(C)).resumen, [true, false]);
   assert.deepEqual((await of(S)).matriculas, [false, false]);
   const catalog = await new ReportesService(fakePrisma({ rol: G }).prisma).catalog(1);
-  assert.deepEqual(catalog.reportes.map(r => r.tipo), ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'certificados', 'pendientes-certificacion', 'resumen']);
+  // Los 8 reportes académicos conservan su orden y su ámbito; los comerciales (Etapa 3) se añaden después (ver reportes-comerciales.test.ts).
+  assert.deepEqual(catalog.reportes.slice(0, 8).map(r => r.tipo), ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'certificados', 'pendientes-certificacion', 'resumen']);
+  assert.ok(catalog.reportes.slice(0, 8).every(r => r.ambito === 'academico'));
   assert.deepEqual(catalog.limites.filas_exportacion, { csv: 20000, xlsx: 20000, pdf: 3000 });
 });
 

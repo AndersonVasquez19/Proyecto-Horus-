@@ -2,7 +2,10 @@
 // son renderizadores puros de este mismo objeto: por construcción muestran las mismas filas, el mismo resumen y los mismos totales.
 // La consulta JSON del panel devuelve este mismo documento con la tabla paginada (el resumen y los totales cubren todo el filtro).
 
-export const REPORT_TYPES = ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'certificados', 'pendientes-certificacion', 'resumen'] as const;
+export const ACADEMIC_REPORT_TYPES = ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'certificados', 'pendientes-certificacion', 'resumen'] as const;
+// Reportes comerciales y de atención al cliente (Cotizaciones y Consultas). Mismo motor, mismos formatos; permisos propios (ver reportes.catalogo.ts).
+export const COMMERCIAL_REPORT_TYPES = ['cotizaciones-por-estado', 'cotizaciones-vencidas', 'cotizaciones-importes', 'consultas-por-estado', 'consultas-abiertas-antiguas', 'actividad-comercial'] as const;
+export const REPORT_TYPES = [...ACADEMIC_REPORT_TYPES, ...COMMERCIAL_REPORT_TYPES] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 
 export const REPORT_FORMATS = ['csv', 'xlsx', 'pdf'] as const;
@@ -13,7 +16,8 @@ export type ReportFormat = (typeof REPORT_FORMATS)[number];
 // decimal     número con un decimal (porcentajes: 75.0 significa 75,0 %; el título de la columna indica «(%)»)
 // fecha       fecha de calendario 'AAAA-MM-DD'
 // fecha_hora  fecha y hora de Lima 'AAAA-MM-DD HH:mm' (America/Lima, UTC-5 sin horario de verano)
-export type ColumnKind = 'texto' | 'entero' | 'decimal' | 'fecha' | 'fecha_hora';
+// importe     importe monetario con dos decimales (la moneda va en otra columna o en el título; nunca se suman monedas distintas)
+export type ColumnKind = 'texto' | 'entero' | 'decimal' | 'importe' | 'fecha' | 'fecha_hora';
 export type CellValue = string | number | null;
 
 export interface ReportColumn {
@@ -29,7 +33,7 @@ export interface ReportSummaryItem {
   clave: string;
   etiqueta: string;
   valor: number | null; // null = no aplica (p. ej. ocupación sin capacidad definida)
-  tipo: 'entero' | 'decimal';
+  tipo: 'entero' | 'decimal' | 'importe';
 }
 
 export interface ReportFilterLabel {

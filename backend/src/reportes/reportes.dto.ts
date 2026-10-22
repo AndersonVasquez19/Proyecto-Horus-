@@ -14,7 +14,11 @@ export const STUDENT_STATES = ['activos', 'inactivos', 'todos'] as const;
 export const EDITION_STATES = ['planificada', 'abierta', 'cerrada', 'cancelada'] as const;
 export const ENROLLMENT_STATES = ['activa', 'anulada'] as const;
 export const CERTIFICATE_STATES = ['vigente', 'anulado'] as const;
-export const ALL_STATES = [...STUDENT_STATES, ...EDITION_STATES, ...ENROLLMENT_STATES, ...CERTIFICATE_STATES] as const;
+// Reportes comerciales y de atención (cotizaciones y consultas). Los valores coinciden con QUOTE_STATES, MESSAGE_STATES y las monedas de CotizacionDto.
+export const QUOTE_REPORT_STATES = ['borrador', 'enviada', 'aceptada', 'rechazada', 'anulada'] as const;
+export const OPEN_INQUIRY_STATES = ['nuevo', 'en_proceso'] as const;
+export const CURRENCY_FILTERS = ['PEN', 'USD'] as const;
+export const ALL_STATES = [...STUDENT_STATES, ...EDITION_STATES, ...ENROLLMENT_STATES, ...CERTIFICATE_STATES, ...QUOTE_REPORT_STATES, ...OPEN_INQUIRY_STATES] as const;
 export const COMPLIANCE_STATES = ['pendiente', 'cumplido', 'no_cumplido'] as const;
 export const ARCHIVE_FILTERS = ['activos', 'archivados', 'todos'] as const;
 export const GROUPINGS = ['edicion', 'curso'] as const;
@@ -33,6 +37,7 @@ export class ReporteFiltrosDto {
   @ValidateIf((_o, v) => v !== undefined) @IsIn(COMPLIANCE_STATES) cumplimiento?: (typeof COMPLIANCE_STATES)[number];
   @ValidateIf((_o, v) => v !== undefined) @IsIn(ARCHIVE_FILTERS) archivo?: (typeof ARCHIVE_FILTERS)[number];
   @ValidateIf((_o, v) => v !== undefined) @IsIn(GROUPINGS) agrupar?: (typeof GROUPINGS)[number];
+  @ValidateIf((_o, v) => v !== undefined) @IsIn(CURRENCY_FILTERS) moneda?: (typeof CURRENCY_FILTERS)[number];
 }
 
 export class ReporteConsultaDto extends ReporteFiltrosDto {
@@ -49,4 +54,4 @@ export class ReporteExportacionDto extends ReporteFiltrosDto {
 }
 
 export type FilterKey = keyof ReporteFiltrosDto;
-export const FILTER_KEYS: readonly FilterKey[] = ['desde', 'hasta', 'curso_id', 'convocatoria_id', 'estado', 'cumplimiento', 'archivo', 'agrupar'];
+export const FILTER_KEYS: readonly FilterKey[] = ['desde', 'hasta', 'curso_id', 'convocatoria_id', 'estado', 'cumplimiento', 'archivo', 'agrupar', 'moneda'];

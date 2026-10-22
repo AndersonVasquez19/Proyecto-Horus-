@@ -31,7 +31,7 @@ export function pdfText(value: string): string {
   return out;
 }
 
-const numeric = (kind: ColumnKind) => kind === 'entero' || kind === 'decimal';
+const numeric = (kind: ColumnKind) => kind === 'entero' || kind === 'decimal' || kind === 'importe';
 function displayCell(value: ReportRow[string], kind: ColumnKind, total: boolean): string {
   if ((value === null || value === undefined) && numeric(kind) && !total) return '—';
   return pdfText(cellText(value ?? null, kind, 'pdf'));
