@@ -31,6 +31,7 @@ import { EstudiantesController } from '../src/estudiantes/estudiantes.controller
 import { MatriculasController } from '../src/matriculas/matriculas.controller';
 import { AsignacionesDocentesController, DocentesController } from '../src/docentes/docentes.controller';
 import { EdicionSesionesController, SesionesController } from '../src/sesiones/sesiones.controller';
+import { CertificadosController, CertificadosPublicController } from '../src/certificados/certificados.controller';
 import { ReportesController } from '../src/reportes/reportes.controller';
 import { ChatbotPreinscripcionController, PreinscripcionesController, PreinscripcionesPublicController } from '../src/preinscripciones/preinscripciones.controller';
 import { ImportacionesController } from '../src/importaciones/importaciones.controller';
@@ -66,7 +67,7 @@ test('cada permiso tiene un identificador único con el formato recurso:operacio
 
 test('los permisos de recursos futuros están separados de los actuales', () => {
   for (const resource of FUTURE_RESOURCES) assert.ok(resource in RESOURCE_OPERATIONS);
-  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones', 'certificados'], 'sesiones dejó de ser futuro: ya tiene rutas (Horarios y Sesiones)');
+  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones'], 'sesiones y certificados dejaron de ser futuros: ya tienen rutas');
   // Reportes académicos ya tienen rutas (src/reportes): consultar con reportes_academicos:leer y exportar con reportes_academicos:exportar.
   assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('reportes_academicos'));
 });
@@ -308,7 +309,7 @@ const CONTROLLERS: Function[] = [
   AdminPreguntaFrecuenteController, ChatbotController, ContactoController, OriginalContentController, ConveniosController, AdminConveniosController,
   CotizacionesController, AdminGaleriaController, GaleriaController, HealthController, AdminNewsletterController, NewsletterController,
   ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController, DocentesController, AsignacionesDocentesController, SesionesController, EdicionSesionesController, ReportesController,
-  PreinscripcionesPublicController, ChatbotPreinscripcionController, PreinscripcionesController,
+  PreinscripcionesPublicController, ChatbotPreinscripcionController, PreinscripcionesController, CertificadosController, CertificadosPublicController,
 ];
 
 function normalize(...parts: string[]) { return parts.join('/').split('/').filter(Boolean).join('/'); }

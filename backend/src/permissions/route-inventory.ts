@@ -31,6 +31,7 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   pub('POST', 'chatbot/message'), pub('POST', 'chatbot/contact'),
   pub('GET', 'preinscripciones/convocatorias', 'Ediciones que reciben preinscripciones: código opaco, sin IDs secuenciales, cupos, conteos ni datos personales.'),
   pub('POST', 'preinscripciones', 'Formulario público. El servidor fija el canal; consentimiento obligatorio; respuesta idéntica ante un duplicado; límite compartido en MySQL.'),
+  pub('GET', 'certificados/verificar/:codigo', 'Verificación por código aleatorio (100 bits). Respuesta mínima: nombre, curso y fechas; nunca el DNI ni el motivo de anulación. Código inexistente o mal formado: el mismo 404. Límite de frecuencia por IP, subred y global (PublicRateLimitGuard).'),
   pub('POST', 'chatbot/preinscripcion', 'Misma operación que el formulario (un solo servicio), activada por el chatbot tras confirmar el visitante. El modelo de OpenAI no la invoca ni recibe sus datos.'),
 
   // --- Autenticación y cuentas ---
@@ -80,6 +81,13 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('GET', 'admin/matriculas', 'matriculas:leer'), perm('GET', 'admin/matriculas/ediciones', 'matriculas:leer'),
   perm('GET', 'admin/matriculas/:id', 'matriculas:leer'), perm('GET', 'admin/matriculas/:id/historial', 'matriculas:leer'),
   perm('POST', 'admin/matriculas', 'matriculas:crear'), perm('PUT', 'admin/matriculas/:id/anulacion', 'matriculas:anular'),
+  perm('PUT', 'admin/matriculas/:id/cumplimiento', 'matriculas:confirmar', 'Confirma cumplido / no cumplido o devuelve a pendiente (con motivo al corregir). Solo Gerencia y Coordinación; no es una calificación. Bloqueado con un certificado vigente.'),
+  perm('GET', 'admin/certificados', 'certificados:leer', 'Contiene el DNI copiado al emitir: nunca público.'),
+  perm('GET', 'admin/certificados/:id', 'certificados:leer'), perm('GET', 'admin/certificados/:id/historial', 'certificados:leer'),
+  perm('GET', 'admin/certificados/:id/pdf', 'certificados:leer', 'PDF A4 con QR; sin DNI ni motivo de anulación. Un anulado se imprime como ANULADO. La URL del QR sale de CERTIFICADOS_VERIFICACION_URL (https público validado); sin ella, 503.'),
+  perm('POST', 'admin/certificados', 'certificados:emitir', 'Exige matrícula activa con cumplimiento «cumplido», DNI completo y ningún certificado vigente. Copia los datos al emitir.'),
+  perm('PUT', 'admin/certificados/:id/anulacion', 'certificados:anular', 'Con motivo; conserva quién y cuándo. Solo Gerencia mientras la matriz no conceda certificados:anular a otros roles.'),
+  perm('POST', 'admin/certificados/:id/sustitucion', 'certificados:anular', 'Anula el vigente y emite otro con los datos actuales en UNA transacción; el servicio exige además certificados:emitir.'),
   perm('PUT', 'admin/matriculas/:id/reactivacion', 'matriculas:anular', 'Revertir una anulación exige anular; el servicio exige además editar.'),
   perm('GET', 'admin/estudiantes', 'estudiantes:leer'), perm('GET', 'admin/estudiantes/:id', 'estudiantes:leer'),
   perm('GET', 'admin/convocatorias', 'convocatorias:leer'), perm('GET', 'admin/convocatorias/cursos', 'convocatorias:leer'),

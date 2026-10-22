@@ -4,19 +4,19 @@ import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { PrismaService } from '../database/prisma.service';
 import type { Request } from 'express';
-const limits:Record<string,number>={'/admin/login':10,'/admin/register':5,'/admin/signup':3,'/admin/forgot-password':5,'/admin/reset-password':5,'/admin/password':5,'/contacto':5,'/reclamaciones':5,'/newsletter':5,'/newsletter/unsubscribe':5,'/chatbot/message':20,'/chatbot/contact':5,'/preinscripciones':5,'/chatbot/preinscripcion':5};
+const limits:Record<string,number>={'/admin/login':10,'/admin/register':5,'/admin/signup':3,'/admin/forgot-password':5,'/admin/reset-password':5,'/admin/password':5,'/contacto':5,'/reclamaciones':5,'/newsletter':5,'/newsletter/unsubscribe':5,'/chatbot/message':20,'/chatbot/contact':5,'/preinscripciones':5,'/chatbot/preinscripcion':5,'/certificados/verificar':30};
 // El formulario y el chatbot comparten UNA cuota de preinscripciones por IP, por subred, por hora y global: alternar de canal no multiplica el límite.
 const aliases:Record<string,string>={'/chatbot/preinscripcion':'/preinscripciones'};
 // Rutas públicas con su propio tope global (no gastan ni agotan el de «all-public», compartido por el resto de formularios).
-const ownGlobal=new Set(['/preinscripciones']);
+const ownGlobal=new Set(['/preinscripciones','/certificados/verificar']);
 // Tope global por minuto de la ruta (todas las IP) sobre solicitudes ADMITIDAS. Por defecto 200; el registro público tiene uno menor para frenar altas masivas.
-const globalLimits:Record<string,number>={'/admin/signup':30,'/preinscripciones':60};
+const globalLimits:Record<string,number>={'/admin/signup':30,'/preinscripciones':60,'/certificados/verificar':600};
 // Tope adicional por IP y hora: el registro público crea cuentas, así que 3 por minuto no basta para frenar un goteo automatizado. El de preinscripciones
 // (30/hora) deja registrarse a un aula completa que comparte una conexión (una por persona) sin permitir un goteo sostenido desde una sola IP.
-const hourlyLimits:Record<string,number>={'/admin/signup':10,'/preinscripciones':30};
+const hourlyLimits:Record<string,number>={'/admin/signup':10,'/preinscripciones':30,'/certificados/verificar':200};
 // Tope por minuto de la SUBRED (IPv4 /24, IPv6 /64): frena a quien rota direcciones vecinas para multiplicar su cuota por IP, y sigue dejando pasar
 // a varias personas legítimas detrás de una misma conexión (4 veces el tope individual). Un atacante con muchas subredes distintas solo lo frena el tope global.
-const subnetLimits:Record<string,number>={'/preinscripciones':20};
+const subnetLimits:Record<string,number>={'/preinscripciones':20,'/certificados/verificar':90};
 const MINUTE_MESSAGE='Has enviado varias solicitudes. Espera un minuto y vuelve a intentar.';
 const HOUR_MESSAGE='Has enviado varias solicitudes. Espera un momento y vuelve a intentar.';
 const BUSY_MESSAGE='El servicio está ocupado. Vuelve a intentarlo en unos segundos.';
@@ -46,8 +46,11 @@ export class PublicRateLimitGuard implements CanActivate {
  constructor(private readonly prisma:PrismaService){}
  async canActivate(context:ExecutionContext) {
  const request=context.switchToHttp().getRequest<Request>();
- if(request.method!=='POST')return true;
- const scope=request.path.toLowerCase().replace(/^\/api(?=\/)/,'').replace(/\/$/,'');
+ const path=request.path.toLowerCase().replace(/^\/api(?=\/)/,'').replace(/\/$/,'');
+ // La verificación pública de certificados es un GET: todas las consultas (código válido, inexistente o mal formado) comparten la misma cuota por IP,
+ // así que el límite no revela si un código existe. Las demás rutas limitadas son POST.
+ const scope=request.method==='GET'&&/^\/certificados\/verificar\/[^/]+$/.test(path)?'/certificados/verificar':request.method==='POST'?path:'';
+ if(!scope)return true;
  const limit=limits[scope];if(!limit)return true;
  const quota=aliases[scope]??scope;
  const now=Date.now(),window=Math.floor(now/60000),expiresAt=new Date((window+2)*60000);

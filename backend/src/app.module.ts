@@ -9,6 +9,7 @@ import { CatalogoModule } from './catalogo/catalogo.module';
 import { EstudiantesModule } from './estudiantes/estudiantes.module';
 import { ConvocatoriasModule } from './convocatorias/convocatorias.module';
 import { MatriculasModule } from './matriculas/matriculas.module';
+import { CertificadosModule } from './certificados/certificados.module';
 import { DocentesModule } from './docentes/docentes.module';
 import { SesionesModule } from './sesiones/sesiones.module';
 import { PreinscripcionesModule } from './preinscripciones/preinscripciones.module';
@@ -58,6 +59,7 @@ import { HealthController } from './health.controller';
     EstudiantesModule,
     ConvocatoriasModule,
     MatriculasModule,
+    CertificadosModule,
     DocentesModule,
     SesionesModule,
     PreinscripcionesModule,

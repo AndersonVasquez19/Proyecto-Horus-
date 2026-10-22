@@ -21,6 +21,14 @@ export class AnularMatriculaDto {
   @IsInt() @Min(1) @Max(2147483646) revision: number;
   @Transform(trimValue) @IsString() @IsNotEmpty() @MaxLength(300) motivo: string;
 }
+// Confirmación administrativa del cumplimiento (no es una calificación). El motivo es opcional en la primera confirmación y
+// obligatorio al corregirla o devolverla a «pendiente» (lo exige el servicio, que conoce el estado guardado).
+export const CUMPLIMIENTOS = ['pendiente', 'cumplido', 'no_cumplido'] as const;
+export class ConfirmarCumplimientoDto {
+  @IsInt() @Min(1) @Max(2147483646) revision: number;
+  @IsIn(CUMPLIMIENTOS) cumplimiento: (typeof CUMPLIMIENTOS)[number];
+  @ValidateIf((_o, v) => v !== undefined) @Transform(trimValue) @IsString() @IsNotEmpty() @MaxLength(300) motivo?: string;
+}
 export class ReactivarMatriculaDto extends AnularMatriculaDto {
   @IsInt() @Min(1) @Max(2147483646) convocatoria_revision: number;
 }
