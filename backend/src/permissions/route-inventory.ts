@@ -134,7 +134,7 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('GET', 'admin/cotizaciones', 'cotizaciones:leer'), perm('GET', 'admin/cotizaciones/:id', 'cotizaciones:leer'),
   perm('POST', 'admin/cotizaciones', 'cotizaciones:crear'), perm('PUT', 'admin/cotizaciones/:id', 'cotizaciones:editar'),
   perm('POST', 'admin/cotizaciones/:id/correo', 'cotizaciones:enviar'),
-  byField('POST', 'admin/cotizaciones/:id/estado', 'estado', 'cotizaciones:editar', { anulada: 'cotizaciones:anular' }, 'Cambiar el estado es edición; el destino «anulada» exige además cotizaciones:anular.'),
+  byField('POST', 'admin/cotizaciones/:id/estado', 'estado', 'cotizaciones:editar', { anulada: 'cotizaciones:anular', enviada: 'cotizaciones:enviar' }, 'Cambiar el estado es edición; el destino «anulada» exige además cotizaciones:anular y «enviada» (declarar la propuesta como entregada) cotizaciones:enviar.'),
   perm('GET', 'admin/reclamaciones', 'reclamaciones:leer'), perm('GET', 'admin/reclamaciones/:id', 'reclamaciones:leer'),
   perm('DELETE', 'admin/reclamaciones/:id', 'reclamaciones:eliminar', 'Pendiente de criterio legal: podría exigirse conservarlas.'),
   perm('GET', 'admin/newsletter', 'boletin:leer', 'Devuelve la lista completa de correos; no existe endpoint de exportación (la exportación es del navegador).'),

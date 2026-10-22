@@ -19,7 +19,7 @@ export class CotizacionesController {
   @Post() @RequirePermission('cotizaciones:crear') create(@Body() dto: CotizacionDto, @CurrentUser('id') user: number, @Headers(IDEMPOTENCY_HEADER) key?: string) { return this.service.create(dto, user, parseIdempotencyKey(key)); }
   @Put(':id') @RequirePermission('cotizaciones:editar') edit(@Param('id', ParseIntPipe) id: number, @Body() dto: EditCotizacionDto, @CurrentUser('id') user: number) { return this.service.edit(id, dto, user); }
   @Post(':id/correo') @RequirePermission('cotizaciones:enviar') email(@Param('id', ParseIntPipe) id: number, @Body() dto: SendCotizacionDto, @CurrentUser('id') user: number) { return this.service.email(id, dto.revision, user, dto.confirmar_reenvio === true); }
-  @Post(':id/estado') @RequireByField('estado', 'cotizaciones:editar', { anulada: 'cotizaciones:anular' }) status(@Param('id', ParseIntPipe) id: number, @Body() dto: EstadoCotizacionDto, @CurrentUser('id') user: number) { return this.service.status(id, dto, user); }
+  @Post(':id/estado') @RequireByField('estado', 'cotizaciones:editar', { anulada: 'cotizaciones:anular', enviada: 'cotizaciones:enviar' }) status(@Param('id', ParseIntPipe) id: number, @Body() dto: EstadoCotizacionDto, @CurrentUser('id') user: number) { return this.service.status(id, dto, user); }
 }
 @Module({ imports: [AuthModule], controllers: [CotizacionesController], providers: [CotizacionesService] })
 export class CotizacionesModule {}

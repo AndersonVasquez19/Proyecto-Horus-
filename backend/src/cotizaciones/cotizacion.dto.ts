@@ -30,10 +30,16 @@ export class SendCotizacionDto { @IsInt() @Min(1) revision: number; @IsOptional(
 export class EstadoCotizacionDto {
   @IsIn(['enviada', 'aceptada', 'rechazada', 'anulada']) estado: string;
   @IsInt() @Min(1) revision: number;
+  // Motivo o evidencia del cambio (p. ej. «aceptó por correo el 12/10», «el cliente desistió»). Opcional; queda en el historial.
+  @IsOptional() @Transform(trim) @IsString() @Length(0, 500) nota?: string;
 }
 export class CotizacionQueryDto {
-  @Type(() => Number) @IsInt() @Min(1) page: number = 1;
+  @Type(() => Number) @IsInt() @Min(1) @Max(100000) page: number = 1;
   @Type(() => Number) @IsInt() @Min(1) @Max(100) limit: number = 12;
-  @IsString() @Length(0, 100) search: string = '';
+  @Transform(trim) @IsString() @Length(0, 100) search: string = '';
   @IsIn(['', 'borrador', 'enviada', 'aceptada', 'rechazada', 'anulada']) estado: string = '';
+  // Cotizaciones vinculadas a una consulta (Contactos/Atención).
+  @ValidateIf((_object, value) => value !== undefined) @Type(() => Number) @IsInt() @Min(1) contacto_id?: number;
+  // 'si' = solo propuestas enviadas con la vigencia vencida (mismo criterio que HORUS Assistant).
+  @IsIn(['', 'si']) vencida: string = '';
 }

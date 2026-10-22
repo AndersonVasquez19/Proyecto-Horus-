@@ -10,8 +10,16 @@ import { Prisma } from '@prisma/client';
 
 import { CotizacionDto, CotizacionQueryDto, EditCotizacionDto, EstadoCotizacionDto } from './cotizacion.dto';
 import { quoteRequestHash } from './idempotency';
+import { isExpired, limaToday, mailSummary, quoteNumber, transitions } from './quote-rules';
 
-export const transitions: Record<string, string[]> = { borrador: ['enviada', 'anulada'], enviada: ['aceptada', 'rechazada', 'anulada'], aceptada: [], rechazada: [], anulada: [] };
+export { transitions };
+// El listado solo trae lo necesario para identificar y gestionar la cotización. Los datos personales del cliente (correo, teléfono, documento, dirección),
+// el historial y los textos largos quedan reservados para el detalle (`GET /:id`), que exige el mismo permiso `cotizaciones:leer`.
+// `search` sigue buscando por correo en el servidor sin devolverlo.
+export const LIST_OMIT = { historial: true, conceptos: true, condiciones: true, datos_emisor: true, email: true, telefono: true, documento: true, direccion: true } as const;
+// Añade lo derivado que la API ofrece sin guardarlo: `vencida` (enviada con vigencia pasada) y, en el detalle, el resumen de envíos por correo.
+const present = <T extends { estado: string; validez: string }>(item: T) => ({ ...item, vencida: isExpired(item.estado, item.validez) });
+const presentDetail = <T extends { estado: string; validez: string; historial?: unknown }>(item: T) => ({ ...present(item), correo: mailSummary(item.historial) });
 export function calculateQuote(dto: CotizacionDto) {
   const conceptos = dto.conceptos.map(item => {
     const cents = Math.round(item.precio * 100);
@@ -37,17 +45,24 @@ export class CotizacionesService {
   private readonly logger = new Logger(CotizacionesService.name);
   constructor(private readonly prisma: PrismaService, @Optional() private readonly mail?: MailService, @Optional() private readonly config?: ConfigService) {}
   async list(query: CotizacionQueryDto) {
-    const where: Prisma.CotizacionWhereInput = { ...(query.estado ? { estado: query.estado } : {}), ...(query.search ? { OR: ['numero', 'cliente', 'email'].map(field => ({ [field]: { contains: query.search } })) } : {}) };
+    const where: Prisma.CotizacionWhereInput = {
+      ...(query.estado ? { estado: query.estado } : {}),
+      ...(query.contacto_id ? { contacto_id: query.contacto_id } : {}),
+      ...(query.search ? { OR: ['numero', 'cliente', 'email'].map(field => ({ [field]: { contains: query.search } })) } : {}),
+      // validez es un DATE: «vencida» = anterior al día de hoy en Lima (igual que HORUS Assistant).
+      ...(query.vencida === 'si' ? { AND: [{ estado: 'enviada' }, { validez: { lt: new Date(limaToday() + 'T00:00:00Z') } }] } : {}),
+    };
     const [rows, count] = await Promise.all([
-      this.prisma.cotizacion.findMany({ where, take: query.limit, skip: (query.page - 1) * query.limit, orderBy: { createdAt: 'desc' }, omit: { historial: true, conceptos: true, condiciones: true, datos_emisor: true } }),
+      // createdAt tiene precisión de segundos: el id desempata para que la paginación no repita ni omita filas.
+      this.prisma.cotizacion.findMany({ where, take: query.limit, skip: (query.page - 1) * query.limit, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], omit: LIST_OMIT }),
       this.prisma.cotizacion.count({ where }),
     ]);
-    return { ok: true, items: rows.map(serializeQuote), pagination: { total: count, pages: Math.ceil(count / query.limit), page: query.page } };
+    return { ok: true, items: rows.map(row => present(serializeQuote(row))), pagination: { total: count, pages: Math.ceil(count / query.limit), page: query.page } };
   }
   async detail(id: number) {
     const item = await this.prisma.cotizacion.findUnique({ where: { id } });
     if (!item) throw new NotFoundException('Cotización no encontrada.');
-    return { ok: true, item: serializeQuote(item) };
+    return { ok: true, item: presentDetail(serializeQuote(item)) };
   }
   private referenceConflict(error: unknown): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') throw new ConflictException('La consulta de origen cambió. Recarga la cotización.');
@@ -56,6 +71,7 @@ export class CotizacionesService {
   private async payload(dto: CotizacionDto) {
     const date = new Date(dto.validez + 'T12:00:00Z');
     if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== dto.validez) throw new BadRequestException('La fecha de vigencia no es válida.');
+    if (dto.validez < limaToday()) throw new BadRequestException('La vigencia no puede ser anterior a hoy.');
     if (dto.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dto.email)) throw new BadRequestException('Correo del cliente inválido.');
     if (dto.contacto_id && !await this.prisma.contacto.findUnique({ where: { id: dto.contacto_id } })) throw new BadRequestException('La consulta de origen ya no existe.');
     return { cliente: dto.cliente, email: dto.email, telefono: dto.telefono, documento: dto.documento, direccion: dto.direccion,
@@ -73,10 +89,16 @@ export class CotizacionesService {
     }
     const data = await this.payload(dto);
     try {
-      const item = await this.prisma.cotizacion.create({ data: { ...data, numero: 'COT-' + new Date().getUTCFullYear() + '-' + randomUUID(), estado: 'borrador', revision: 1,
-        historial: [{ accion: 'Creada como borrador', usuario: user, fecha: new Date().toISOString() }],
-        ...(idempotencyKey ? { idempotencia_clave: idempotencyKey, idempotencia_huella: huella } : {}) } });
-      return { ok: true, item: { ...serializeQuote(item), ...calculateQuote(dto) } };
+      // El número legible se deriva del id autoincremental (único y sin carreras); mientras se inserta lleva un valor provisional único.
+      // Ambos pasos van en una transacción: o queda la cotización con su número definitivo, o no queda nada.
+      const year = Number(limaToday().slice(0, 4));
+      const item = await this.prisma.$transaction(async tx => {
+        const created = await tx.cotizacion.create({ data: { ...data, numero: 'COT-' + year + '-' + randomUUID(), estado: 'borrador', revision: 1,
+          historial: [{ accion: 'Creada como borrador', usuario: user, fecha: new Date().toISOString() }],
+          ...(idempotencyKey ? { idempotencia_clave: idempotencyKey, idempotencia_huella: huella } : {}) } });
+        return tx.cotizacion.update({ where: { id: created.id }, data: { numero: quoteNumber(year, created.id) } });
+      });
+      return { ok: true, item: present({ ...serializeQuote(item), ...calculateQuote(dto) }) };
     } catch (error) {
       if (idempotencyKey && isUniqueViolation(error)) {
         // Otra solicitud con la misma clave ganó la carrera entre la lectura y la inserción.
@@ -92,7 +114,7 @@ export class CotizacionesService {
     if (previous.idempotencia_huella !== huella) throw new UnprocessableEntityException('Esta clave de idempotencia ya se usó con otro contenido. Revisa la cotización o genera una solicitud nueva.');
     const item = serializeQuote(previous);
     for (const field of ['subtotal', 'descuento', 'tasa', 'impuesto', 'total']) item[field] = Number(item[field]);
-    return { ok: true, reutilizada: true, item };
+    return { ok: true, reutilizada: true, item: present(item) };
   }
   async edit(id: number, dto: EditCotizacionDto, user: number) {
     const data = await this.payload(dto);
@@ -102,14 +124,14 @@ export class CotizacionesService {
     });
   }
   async status(id: number, dto: EstadoCotizacionDto, user: number) {
-    return this.mutate(id, dto.revision, user, 'Estado: ' + dto.estado, item => {
+    // La nota se ve en el historial que ya muestra el panel (campo `accion`) y también queda estructurada (`nota`).
+    // Cambiar el estado es un REGISTRO administrativo: «aceptada» no prueba por sí sola que el cliente aceptó; la nota sirve para dejar la evidencia.
+    const nota = dto.nota?.trim() || undefined;
+    return this.mutate(id, dto.revision, user, 'Estado: ' + dto.estado + (nota ? ' — ' + nota : ''), item => {
       if (!transitions[item.estado]?.includes(dto.estado)) throw new ConflictException('Ese cambio de estado no está permitido.');
-      if (['enviada', 'aceptada'].includes(dto.estado)) {
-        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
-        if (item.validez < today) throw new ConflictException('La cotización está vencida. Prepara una nueva propuesta.');
-      }
+      if (['enviada', 'aceptada'].includes(dto.estado) && item.validez < limaToday()) throw new ConflictException('La cotización está vencida. Prepara una nueva propuesta.');
       return { estado: dto.estado };
-    });
+    }, item => ({ estado_anterior: item.estado, estado_nuevo: dto.estado, ...(nota ? { nota } : {}) }));
   }
   // Envío manual. Reclama el envío antes de contactar al proveedor (compare-and-swap sobre `revision`, intento en `historial`), envía y registra
   // el desenlace. No cambia `estado` (borrador→enviada sigue siendo una transición manual aparte) ni el contenido o los importes.
@@ -117,8 +139,7 @@ export class CotizacionesService {
     const { item } = await this.detail(id);
     if (item.revision !== revision) throw new ConflictException('La cotización cambió. Recárgala antes de enviar.');
     if (!item.email || !['borrador', 'enviada'].includes(item.estado)) throw new BadRequestException('Solo se envían propuestas vigentes con correo del cliente.');
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
-    if (item.validez < today) throw new ConflictException('La propuesta está vencida.');
+    if (item.validez < limaToday()) throw new ConflictException('La propuesta está vencida.');
     const lines = Array.isArray(item.conceptos) ? item.conceptos.map(line => line && typeof line === 'object' && !Array.isArray(line) ? [line.descripcion, line.cantidad, line.precio, line.importe].join(' · ') : '').join('\n') : '';
     const text = [item.emisor, item.datos_emisor, 'Cotización: '+item.numero+' · Revisión '+revision, 'Cliente: '+item.cliente, 'Válida hasta: '+item.validez, lines, 'Subtotal: '+item.subtotal, 'Descuento: '+item.descuento, 'Impuesto: '+item.impuesto, 'Total: '+item.total+' '+item.moneda, item.condiciones].join('\n\n');
     if (!this.mail) throw new ServiceUnavailableException('El correo no está disponible. La cotización sigue guardada.');
@@ -158,17 +179,19 @@ export class CotizacionesService {
     throw new HttpException({ ok: false, envio: 'incierto', mensaje: 'No pudimos confirmar si el proveedor aceptó el correo. Es posible que el cliente lo reciba. Revisa el historial antes de reenviarlo.', ...common }, HttpStatus.BAD_GATEWAY);
   }
   private async mutate(id: number, revision: number, user: number, action: string,
-    changes: (item: ReturnType<typeof serializeQuote<import('@prisma/client').Cotizacion>>) => Prisma.CotizacionUpdateManyMutationInput) {
+    changes: (item: ReturnType<typeof serializeQuote<import('@prisma/client').Cotizacion>>) => Prisma.CotizacionUpdateManyMutationInput,
+    trace?: (item: ReturnType<typeof serializeQuote<import('@prisma/client').Cotizacion>>) => Record<string, unknown>) {
     return this.prisma.$transaction(async tx => {
       const item = await tx.cotizacion.findUnique({ where: { id } });
       if (!item) throw new NotFoundException('Cotización no encontrada.');
       const conflict = () => new ConflictException('La cotización cambió en otra sesión. Recárgala antes de continuar.');
       if (item.revision !== revision) throw conflict();
       // Compare-and-swap makes concurrent edits mutually exclusive, including the audit history.
-      const updates = changes(serializeQuote(item));
+      const current = serializeQuote(item);
+      const updates = changes(current);
       const result = await tx.cotizacion.updateMany({ where: { id, revision }, data: {
         ...updates, revision: { increment: 1 },
-        historial: [...(item.historial as Prisma.JsonArray), { accion: action, usuario: user, fecha: new Date().toISOString() }],
+        historial: [...(item.historial as Prisma.JsonArray), { accion: action, usuario: user, fecha: new Date().toISOString(), ...(trace ? trace(current) : {}) }] as Prisma.InputJsonValue,
       } });
       if (result.count !== 1) throw conflict();
       const updated = serializeQuote(await tx.cotizacion.findUniqueOrThrow({ where: { id } }));
@@ -176,7 +199,7 @@ export class CotizacionesService {
       for (const field of ['subtotal', 'descuento', 'tasa', 'impuesto', 'total']) {
         if (typeof updates[field] === 'number') updated[field] = updates[field];
       }
-      return { ok: true, item: updated };
+      return { ok: true, item: presentDetail(updated) };
     }).catch(error => this.referenceConflict(error));
   }
 }
