@@ -71,6 +71,7 @@ Todos bajo `/api/admin/cotizaciones`, con `Authorization: Bearer <JWT>`.
 | --- | --- | --- |
 | `GET /` | leer | Listado paginado **mínimo** (sin datos personales del cliente, historial, conceptos, condiciones ni datos del emisor; ver §5.1). |
 | `GET /:id` | leer | Detalle completo (incluye los datos personales) + `vencida` + `correo` (resumen de envíos). |
+| `GET /:id/pdf` | leer | Descarga la cotización en **PDF** A4 para el cliente (`application/pdf`, `attachment`, `Cache-Control: no-store`). Solo lectura: no cambia estado, revisión ni historial; no se guarda en disco ni se envía por correo. Lleva número, fechas, cliente (nombre, documento, dirección), emisor, conceptos, importes guardados, estado y condiciones; **no** lleva correo ni teléfono del cliente, historial, revisiones ni datos internos. Borrador y anulada se rotulan con marca de agua. 404 si no existe. |
 | `POST /` | crear | Crea un **borrador**. Encabezado opcional `Idempotency-Key`. |
 | `PUT /:id` | editar | Reemplaza el contenido de un **borrador** (exige `revision`). |
 | `POST /:id/correo` | enviar | Envía el correo con la propuesta (exige `revision`). No cambia el estado. |
@@ -234,6 +235,14 @@ Registro de la validación de este cambio (todo con dobles en memoria, sin MySQL
 - `git diff --check`: sin problemas.
 - **No se ejecutó**: la suite completa, `test:integration` (requiere MySQL), ni pruebas contra una base real. El comportamiento transaccional real de MySQL (el UPDATE con `revision` y el índice UNIQUE) está simulado, no ejecutado.
 
+### PDF de la cotización (`GET /api/admin/cotizaciones/:id/pdf`)
+
+- **Endpoint y permiso**: `GET /api/admin/cotizaciones/:id/pdf`, con `cotizaciones:leer` (el mismo del detalle). Gerente general y coordinadora lo obtienen; la secretaria, la cuenta sin rol y la sesión anónima reciben 403/401 sin llegar al servicio. La ruta figura en `route-inventory.ts` con ese permiso.
+- **Solo lectura**: el PDF se genera al vuelo y no altera la cotización (estado, revisión e historial intactos); no se guarda en disco ni se envía por correo.
+- **Pruebas nuevas** (`cotizaciones-pdf.test.ts`): **13/13** aprobadas.
+- **Pruebas relacionadas con Node 24.19.0**: **373/373** aprobadas (archivos de cotizaciones, PDF, permisos y acceso).
+- **Node 22.23.3** (portable, solo para esta verificación): `tsc --noEmit` y `nest build` sin errores; **112/112** pruebas aprobadas sobre un subconjunto más acotado (`cotizaciones-pdf`, `cotizaciones-flujo`, `cotizaciones-idempotencia`, `permissions`, `access-guard`, `certificados-pdf`, `session-access`). No es el mismo conjunto de 373 pruebas.
+- **Limitaciones**: todo con dobles en memoria, sin MySQL real; no se ejecutó la suite completa (poca RAM libre en el equipo) ni `test:integration`.
 `cotizaciones-flujo.test.ts` cubre: número legible, vigencia, flujo completo, todas las transiciones prohibidas, vencidas, dos cambios de estado simultáneos, dos envíos simultáneos, edición solo en borrador, filtros y orden del listado, resumen de correo, validación de entrada, roles/permisos y lectura-solo del Asistente.
 
 ## 11. Limitaciones pendientes

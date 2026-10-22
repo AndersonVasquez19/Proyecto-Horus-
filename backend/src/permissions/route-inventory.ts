@@ -132,6 +132,7 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   follow('GET', 'admin/seguimiento/:recurso/:id', 'leer'), follow('PUT', 'admin/seguimiento/:recurso/:id', 'editar'),
   follow('POST', 'admin/seguimiento/:recurso/:id/constancia', 'enviar'), follow('POST', 'admin/seguimiento/:recurso/:id/correo', 'enviar'),
   perm('GET', 'admin/cotizaciones', 'cotizaciones:leer'), perm('GET', 'admin/cotizaciones/:id', 'cotizaciones:leer'),
+  perm('GET', 'admin/cotizaciones/:id/pdf', 'cotizaciones:leer', 'PDF A4 para el cliente; solo lectura. Sin historial, revisiones, correo ni teléfono del cliente. Borrador y anulada se imprimen con su estado visible.'),
   perm('POST', 'admin/cotizaciones', 'cotizaciones:crear'), perm('PUT', 'admin/cotizaciones/:id', 'cotizaciones:editar'),
   perm('POST', 'admin/cotizaciones/:id/correo', 'cotizaciones:enviar'),
   byField('POST', 'admin/cotizaciones/:id/estado', 'estado', 'cotizaciones:editar', { anulada: 'cotizaciones:anular', enviada: 'cotizaciones:enviar' }, 'Cambiar el estado es edición; el destino «anulada» exige además cotizaciones:anular y «enviada» (declarar la propuesta como entregada) cotizaciones:enviar.'),

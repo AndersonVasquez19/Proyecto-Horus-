@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 
 import { CotizacionDto, CotizacionQueryDto, EditCotizacionDto, EstadoCotizacionDto } from './cotizacion.dto';
 import { quoteRequestHash } from './idempotency';
+import { renderQuotePdf } from './cotizaciones.pdf';
 import { isExpired, limaToday, mailSummary, quoteNumber, transitions } from './quote-rules';
 
 export { transitions };
@@ -63,6 +64,22 @@ export class CotizacionesService {
     const item = await this.prisma.cotizacion.findUnique({ where: { id } });
     if (!item) throw new NotFoundException('Cotización no encontrada.');
     return { ok: true, item: presentDetail(serializeQuote(item)) };
+  }
+  // PDF para el cliente. SOLO LECTURA (un único findUnique, sin transacción ni escritura: no toca estado, revisión ni historial) y con `select` explícito:
+  // no se leen el historial, la revisión, las claves de idempotencia, el contacto de origen ni el correo y el teléfono del cliente.
+  // Mismo permiso que el detalle (`cotizaciones:leer`); no existe restricción por registro (ninguna cotización pertenece a un usuario concreto).
+  async pdf(id: number, now: Date = new Date()) {
+    if (!Number.isSafeInteger(id) || id < 1 || id > 2147483647) throw new NotFoundException('Cotización no encontrada.');
+    const row = await this.prisma.cotizacion.findUnique({ where: { id }, select: {
+      numero: true, estado: true, cliente: true, documento: true, direccion: true, emisor: true, datos_emisor: true, moneda: true, validez: true, condiciones: true,
+      conceptos: true, subtotal: true, descuento: true, tasa: true, impuesto: true, total: true, createdAt: true,
+    } });
+    if (!row) throw new NotFoundException('Cotización no encontrada.');
+    // Los DECIMAL salen como texto exacto de dos decimales (nunca por coma flotante) y la vigencia como YYYY-MM-DD.
+    const validez = row.validez.toISOString().slice(0, 10);
+    const buffer = await renderQuotePdf({ ...row, validez, vencida: isExpired(row.estado, validez),
+      subtotal: row.subtotal.toFixed(2), descuento: row.descuento.toFixed(2), tasa: row.tasa.toFixed(2), impuesto: row.impuesto.toFixed(2), total: row.total.toFixed(2) }, { generatedAt: now });
+    return { buffer, fileName: 'cotizacion-' + row.numero.replace(/[^A-Za-z0-9._-]/g, '_') + '.pdf' };
   }
   private referenceConflict(error: unknown): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') throw new ConflictException('La consulta de origen cambió. Recarga la cotización.');
