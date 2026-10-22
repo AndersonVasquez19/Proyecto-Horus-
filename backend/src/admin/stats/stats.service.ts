@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { messageTotals, recentMessages } from '../../attention/message-state';
+import { certificadosStats, preinscripcionesStats } from './stats.academic';
 
 // Compartidos con los reportes académicos (src/reportes) para que «ediciones activas» y los días de Lima signifiquen lo mismo.
 export const LIMA_OFFSET_HOURS = 5;
@@ -17,12 +18,14 @@ export class StatsService {
 
   // La vista operativa evita las consultas editoriales. El contrato sin ?vista se conserva para otros consumidores.
   async getOperationalStats() {
-    const [estudiantes, edicionesActivas, matriculas, mensajes, ultimosMensajes] = await Promise.all([
+    const [estudiantes, edicionesActivas, matriculas, mensajes, ultimosMensajes, preinscripciones, certificados] = await Promise.all([
       this.prisma.estudiante.count(),
       this.prisma.convocatoria.count({ where: OPEN_EDITIONS_WHERE }),
       this.prisma.matricula.groupBy({ by: ['estado'], _count: { _all: true } }),
       messageTotals(this.prisma),
       recentMessages(this.prisma),
+      preinscripcionesStats(this.prisma),
+      certificadosStats(this.prisma),
     ]);
     return {
       ok: true,
@@ -38,6 +41,9 @@ export class StatsService {
           atendidos: mensajes.atendido, archivados: mensajes.archivado,
           pendientes: mensajes.nuevo + mensajes.en_proceso,
         },
+        // Aditivos: null = módulo no disponible (estructura académica desactualizada); nunca ceros inventados.
+        preinscripciones,
+        certificados,
       },
       actividadReciente: { mensajes: ultimosMensajes },
     };

@@ -14,6 +14,8 @@ test('resumen operativo: cuenta datos académicos y estado efectivo de atención
       count: async () => 7,
       groupBy: async (q: unknown) => { calls.push(q); return [{ estado: 'activa', _count: { _all: 5 } }, { estado: 'anulada', _count: { _all: 2 } }]; },
     },
+    preinscripcion: { groupBy: async () => [], count: async () => 0 },
+    certificado: { groupBy: async () => [], count: async () => 0 },
     $queryRaw: async (q: { sql: string }) => /COUNT\(\*\)/.test(q.sql)
       ? [{ total: 6, nuevo: 2, en_proceso: 1, atendido: 2, archivado: 1 }]
       : [{ id: 1, nombre: 'Prueba', asunto: 'Consulta', estado: 'en_proceso', createdAt: new Date('2026-10-19T12:00:00Z') }],
@@ -30,7 +32,8 @@ test('resumen operativo: cuenta datos académicos y estado efectivo de atención
 
 test('resumen operativo: una base vacía devuelve ceros confirmados y una lista vacía', async () => {
   const prisma = {
-    estudiante: { count: async () => 0 }, convocatoria: { count: async () => 0 }, matricula: { groupBy: async () => [] },
+    estudiante: { count: async () => 0 }, convocatoria: { count: async () => 0 }, matricula: { groupBy: async () => [], count: async () => 0 },
+    preinscripcion: { groupBy: async () => [], count: async () => 0 }, certificado: { groupBy: async () => [], count: async () => 0 },
     $queryRaw: async (q: { sql: string }) => /COUNT\(\*\)/.test(q.sql) ? [{ total: 0, nuevo: null, en_proceso: null, atendido: null, archivado: null }] : [],
   } as unknown as PrismaService;
   const service = new StatsService({} as CatalogoService, prisma);
