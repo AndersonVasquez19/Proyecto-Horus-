@@ -10,6 +10,7 @@ import { EstudiantesModule } from './estudiantes/estudiantes.module';
 import { ConvocatoriasModule } from './convocatorias/convocatorias.module';
 import { MatriculasModule } from './matriculas/matriculas.module';
 import { CertificadosModule } from './certificados/certificados.module';
+import { AsistenteModule } from './asistente/asistente.module';
 import { DocentesModule } from './docentes/docentes.module';
 import { SesionesModule } from './sesiones/sesiones.module';
 import { PreinscripcionesModule } from './preinscripciones/preinscripciones.module';
@@ -66,6 +67,7 @@ import { HealthController } from './health.controller';
     ImportacionesModule,
     ReportesModule,
     ChatbotModule,
+    AsistenteModule,
     MailModule,
     ContactoModule,
     ReclamacionesModule,

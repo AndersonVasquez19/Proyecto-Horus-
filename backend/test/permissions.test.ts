@@ -33,6 +33,7 @@ import { AsignacionesDocentesController, DocentesController } from '../src/docen
 import { EdicionSesionesController, SesionesController } from '../src/sesiones/sesiones.controller';
 import { CertificadosController, CertificadosPublicController } from '../src/certificados/certificados.controller';
 import { ReportesController } from '../src/reportes/reportes.controller';
+import { AsistenteController } from '../src/asistente/asistente.controller';
 import { ChatbotPreinscripcionController, PreinscripcionesController, PreinscripcionesPublicController } from '../src/preinscripciones/preinscripciones.controller';
 import { ImportacionesController } from '../src/importaciones/importaciones.controller';
 import { AdminNewsletterController } from '../src/newsletter/admin-newsletter.controller';
@@ -309,7 +310,7 @@ const CONTROLLERS: Function[] = [
   AdminPreguntaFrecuenteController, ChatbotController, ContactoController, OriginalContentController, ConveniosController, AdminConveniosController,
   CotizacionesController, AdminGaleriaController, GaleriaController, HealthController, AdminNewsletterController, NewsletterController,
   ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController, DocentesController, AsignacionesDocentesController, SesionesController, EdicionSesionesController, ReportesController,
-  PreinscripcionesPublicController, ChatbotPreinscripcionController, PreinscripcionesController, CertificadosController, CertificadosPublicController,
+  PreinscripcionesPublicController, ChatbotPreinscripcionController, PreinscripcionesController, CertificadosController, CertificadosPublicController, AsistenteController,
 ];
 
 function normalize(...parts: string[]) { return parts.join('/').split('/').filter(Boolean).join('/'); }
@@ -358,7 +359,9 @@ test('cada ruta declara con su decorador exactamente la clasificación del inven
 test('toda ruta /admin queda clasificada y solo las de autoservicio y autenticación quedan sin permiso', () => {
   const noPermission = ROUTE_INVENTORY.filter(route => route.path.startsWith('admin/') && route.access.kind !== 'permiso' && route.access.kind !== 'segun_campo' && route.access.kind !== 'seguimiento').map(route => route.method + ' ' + route.path).sort();
   // POST admin/signup: registro público aprobado por el responsable el 2026-10-16; crea cuentas sin rol (test/public-signup.test.ts).
-  assert.deepEqual(noPermission, ['GET admin/me', 'POST admin/forgot-password', 'POST admin/login', 'POST admin/password', 'POST admin/reset-password', 'POST admin/signup']);
+  // POST admin/asistente/consultar: HORUS Assistant v2 (preguntas en lenguaje natural), solo lectura; mismo control de rol que el resumen.
+  // GET admin/asistente/resumen: HORUS Assistant, solo lectura; el servicio lee el rol vigente de la base y filtra cada área por permisos (test/asistente.test.ts).
+  assert.deepEqual(noPermission, ['GET admin/asistente/resumen', 'GET admin/me', 'POST admin/asistente/consultar', 'POST admin/forgot-password', 'POST admin/login', 'POST admin/password', 'POST admin/reset-password', 'POST admin/signup']);
   for (const route of ROUTE_INVENTORY) {
     assert.ok(isRouteAccess(route.access), route.path);
     if (route.access.kind === 'segun_campo') assert.ok((route.note ?? '').length > 10, route.path + ' debe explicar la condición');
@@ -374,7 +377,7 @@ test('las rutas públicas y de autoservicio de /admin son exactamente las aproba
     .filter(route => route.key.split(' ')[1].startsWith('admin/') && Reflect.getMetadata(ACCESS_METADATA, route.handler)?.kind === kind)
     .map(route => route.key).sort();
   assert.deepEqual(byKind('publica'), ['POST admin/forgot-password', 'POST admin/login', 'POST admin/reset-password', 'POST admin/signup']);
-  assert.deepEqual(byKind('autenticada'), ['GET admin/me', 'POST admin/password']);
+  assert.deepEqual(byKind('autenticada'), ['GET admin/asistente/resumen', 'GET admin/me', 'POST admin/asistente/consultar', 'POST admin/password']);
 });
 
 test('las rutas de cuentas y registro exigen permisos de cuentas, y ningún permiso de recurso futuro se exige todavía', () => {

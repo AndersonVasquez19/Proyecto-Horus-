@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { PrismaService } from '../database/prisma.service';
 import type { Request } from 'express';
-const limits:Record<string,number>={'/admin/login':10,'/admin/register':5,'/admin/signup':3,'/admin/forgot-password':5,'/admin/reset-password':5,'/admin/password':5,'/contacto':5,'/reclamaciones':5,'/newsletter':5,'/newsletter/unsubscribe':5,'/chatbot/message':20,'/chatbot/contact':5,'/preinscripciones':5,'/chatbot/preinscripcion':5,'/certificados/verificar':30};
+const limits:Record<string,number>={'/admin/login':10,'/admin/register':5,'/admin/signup':3,'/admin/forgot-password':5,'/admin/reset-password':5,'/admin/password':5,'/contacto':5,'/reclamaciones':5,'/newsletter':5,'/newsletter/unsubscribe':5,'/chatbot/message':20,'/chatbot/contact':5,'/preinscripciones':5,'/chatbot/preinscripcion':5,'/certificados/verificar':30,'/admin/asistente/consultar':20};
 // El formulario y el chatbot comparten UNA cuota de preinscripciones por IP, por subred, por hora y global: alternar de canal no multiplica el límite.
 const aliases:Record<string,string>={'/chatbot/preinscripcion':'/preinscripciones'};
 // Rutas públicas con su propio tope global (no gastan ni agotan el de «all-public», compartido por el resto de formularios).
@@ -13,7 +13,8 @@ const ownGlobal=new Set(['/preinscripciones','/certificados/verificar']);
 const globalLimits:Record<string,number>={'/admin/signup':30,'/preinscripciones':60,'/certificados/verificar':600};
 // Tope adicional por IP y hora: el registro público crea cuentas, así que 3 por minuto no basta para frenar un goteo automatizado. El de preinscripciones
 // (30/hora) deja registrarse a un aula completa que comparte una conexión (una por persona) sin permitir un goteo sostenido desde una sola IP.
-const hourlyLimits:Record<string,number>={'/admin/signup':10,'/preinscripciones':30,'/certificados/verificar':200};
+// /admin/asistente/consultar: cada consulta cuesta hasta dos llamadas a OpenAI; el tope por cuenta (en el servicio) es el principal y este protege por IP entre instancias.
+const hourlyLimits:Record<string,number>={'/admin/signup':10,'/preinscripciones':30,'/certificados/verificar':200,'/admin/asistente/consultar':150};
 // Tope por minuto de la SUBRED (IPv4 /24, IPv6 /64): frena a quien rota direcciones vecinas para multiplicar su cuota por IP, y sigue dejando pasar
 // a varias personas legítimas detrás de una misma conexión (4 veces el tope individual). Un atacante con muchas subredes distintas solo lo frena el tope global.
 const subnetLimits:Record<string,number>={'/preinscripciones':20,'/certificados/verificar':90};

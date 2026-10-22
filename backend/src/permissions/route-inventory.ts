@@ -141,6 +141,8 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('DELETE', 'admin/newsletter/:id', 'boletin:eliminar'),
   perm('GET', 'admin/chatbot/sin-respuesta', 'chatbot_consultas:leer'),
   perm('GET', 'admin/stats', 'estadisticas:leer'), perm('GET', 'admin/stats/actividad', 'estadisticas:leer'),
+  auth('POST', 'admin/asistente/consultar', 'HORUS Assistant v2, solo lectura (POST solo porque envía una pregunta; no escribe nada). Sin permiso propio: el servicio lee el rol VIGENTE de la base y la IA solo puede elegir herramientas del catálogo de ese rol (cada una hereda los permisos de lectura de su área). Sin DNI, correos ni teléfonos en la pregunta ni hacia OpenAI. Límite por IP (PublicRateLimitGuard, MySQL compartido) y por cuenta. Sin IA disponible responde 503.'),
+  auth('GET', 'admin/asistente/resumen', 'HORUS Assistant, solo lectura. Sin permiso propio: el servicio lee el rol VIGENTE de la base (nunca del token) y consulta cada área solo si el rol ya tiene su permiso de lectura; una cuenta sin rol recibe 403. Límite de frecuencia por cuenta. Sin acciones de escritura.'),
 
   // --- Andamiaje genérico (sin uso en el panel; sin clasificar → solo gerente) ---
   perm('GET', 'admin/items', 'items:leer', 'Sin clasificar: ninguna pantalla del panel lo usa. Solo gerente hasta decidir si se conserva.'),
