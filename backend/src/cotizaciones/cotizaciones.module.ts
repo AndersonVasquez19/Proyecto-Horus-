@@ -23,6 +23,8 @@ export class CotizacionesController {
     return new StreamableFile(file.buffer, { type: 'application/pdf', disposition: 'attachment; filename="' + file.fileName + '"', length: file.buffer.length });
   }
   @Post() @RequirePermission('cotizaciones:crear') create(@Body() dto: CotizacionDto, @CurrentUser('id') user: number, @Headers(IDEMPOTENCY_HEADER) key?: string) { return this.service.create(dto, user, parseIdempotencyKey(key)); }
+  // Copia en borrador de otra cotización (permiso de crear: es una cotización nueva). Idempotency-Key opcional, igual que la creación.
+  @Post(':id/duplicar') @RequirePermission('cotizaciones:crear') duplicate(@Param('id', ParseIntPipe) id: number, @CurrentUser('id') user: number, @Headers(IDEMPOTENCY_HEADER) key?: string) { return this.service.duplicate(id, user, parseIdempotencyKey(key)); }
   @Put(':id') @RequirePermission('cotizaciones:editar') edit(@Param('id', ParseIntPipe) id: number, @Body() dto: EditCotizacionDto, @CurrentUser('id') user: number) { return this.service.edit(id, dto, user); }
   @Post(':id/correo') @RequirePermission('cotizaciones:enviar') email(@Param('id', ParseIntPipe) id: number, @Body() dto: SendCotizacionDto, @CurrentUser('id') user: number) { return this.service.email(id, dto.revision, user, dto.confirmar_reenvio === true); }
   @Post(':id/estado') @RequireByField('estado', 'cotizaciones:editar', { anulada: 'cotizaciones:anular', enviada: 'cotizaciones:enviar' }) status(@Param('id', ParseIntPipe) id: number, @Body() dto: EstadoCotizacionDto, @CurrentUser('id') user: number) { return this.service.status(id, dto, user); }

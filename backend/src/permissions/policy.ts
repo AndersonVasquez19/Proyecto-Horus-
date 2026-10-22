@@ -9,7 +9,7 @@ import { ALL_PERMISSIONS, Permission, isPermission } from './permissions';
 //  - configuracion:editar (la coordinadora no administra configuración crítica; falta decidir si las 10 claves actuales,
 //    todas de contacto/redes públicas, cuentan como tal).
 //  - importaciones:aplicar, certificados:anular, calificaciones:corregir_cerradas, estudiantes:exportar, reportes_academicos:exportar.
-//  - Secretaria: estudiantes:editar, matriculas:anular, asistencia:*, estadisticas:leer, cotizaciones:*, servicios/FAQ/convenios. docentes:* queda fuera de su alcance por decisión autorizada (datos personales de terceros): solo gerencia y coordinación.
+//  - Secretaria NO tiene (no se le conceden): estudiantes:editar, matriculas:anular, asistencia:*, estadisticas:leer, cotizaciones:* (ni siquiera leer) ni servicios/FAQ/convenios. docentes:* queda fuera de su alcance por decisión autorizada (datos personales de terceros): solo gerencia y coordinación.
 //  - items:* (andamiaje genérico sin uso en el panel): solo gerente hasta decidir si se conserva.
 
 const GERENTE_GENERAL: readonly Permission[] = ALL_PERMISSIONS; // acceso completo; los controles de integridad viven en servicios y base de datos

@@ -73,6 +73,7 @@ Todos bajo `/api/admin/cotizaciones`, con `Authorization: Bearer <JWT>`.
 | `GET /:id` | leer | Detalle completo (incluye los datos personales) + `vencida` + `correo` (resumen de envíos). |
 | `GET /:id/pdf` | leer | Descarga la cotización en **PDF** A4 para el cliente (`application/pdf`, `attachment`, `Cache-Control: no-store`). Solo lectura: no cambia estado, revisión ni historial; no se guarda en disco ni se envía por correo. Lleva número, fechas, cliente (nombre, documento, dirección), emisor, conceptos, importes guardados, estado y condiciones; **no** lleva correo ni teléfono del cliente, historial, revisiones ni datos internos. Borrador y anulada se rotulan con marca de agua. 404 si no existe. |
 | `POST /` | crear | Crea un **borrador**. Encabezado opcional `Idempotency-Key`. |
+| `POST /:id/duplicar` | crear | Crea una cotización **nueva** en borrador a partir de otra, en cualquier estado. Hereda cliente, conceptos, importes, condiciones y consulta de origen; **no** hereda id, número, estado, revisión, historial/correos ni clave de idempotencia. La original no se modifica. La vigencia se conserva tal cual: si la original ya venció, la copia queda en borrador con esa fecha pasada y la respuesta incluye `requiere_nueva_vigencia: true`; no puede enviarse ni pasar a «enviada» hasta editar el borrador con una vigencia nueva (no existe un plazo comercial predeterminado y no se inventa uno). `Idempotency-Key` opcional (misma clave + misma original + mismo usuario = misma copia; otra combinación, 422). Sin cuerpo. |
 | `PUT /:id` | editar | Reemplaza el contenido de un **borrador** (exige `revision`). |
 | `POST /:id/correo` | enviar | Envía el correo con la propuesta (exige `revision`). No cambia el estado. |
 | `POST /:id/estado` | según destino | Cambia el estado (exige `revision`; admite `nota`). |
@@ -179,6 +180,7 @@ Con la misma `Idempotency-Key` y el mismo contenido (y mismo administrador) se d
 | 401 / 403 | Sin sesión / sin permiso para esa acción. |
 | 404 | Cotización inexistente. |
 | 409 | `revision` desactualizada (alguien más cambió la cotización), transición no permitida, edición de una propuesta que ya no es borrador, propuesta vencida, envío que requiere confirmación. |
+| 409 (concurrencia) | Conflicto de concurrencia de la base (interbloqueo / conflicto de escritura) al crear, duplicar o cambiar una cotización: «Otra operación estaba modificando los mismos datos. No se guardó nada; vuelve a intentarlo.» No se reintenta solo (ver §10.1). |
 | 422 | Misma `Idempotency-Key` con contenido o administrador distinto. |
 | 502 / 503 | Resultado de correo incierto / fallido (ver arriba). |
 
@@ -219,7 +221,7 @@ Además: **vencida** no es un estado guardado sino un indicador (`vencida: true`
 
 ## 9. Integraciones con otros módulos
 
-- **Contactos / Atención**: `contacto_id` vincula la cotización con la consulta de origen (se verifica que exista). `GET /?contacto_id=` lista las cotizaciones de una consulta. Eliminar una consulta con cotizaciones se bloquea (409). Crear una cotización **no modifica** el caso de Atención.
+- **Contactos / Atención**: `contacto_id` vincula la cotización con la consulta de origen (se verifica que exista). `GET /?contacto_id=` lista las cotizaciones de una consulta. Eliminar una consulta con cotizaciones se bloquea (409). Crear (o duplicar) una cotización vinculada a una consulta cuyo estado efectivo (el del seguimiento si existe; si no, el de la consulta) es **«nuevo»** la pasa a **«en_proceso»** en la **misma transacción**: bloqueo de la fila de origen, seguimiento creado o con revisión +1 y entrada en su historial (`origen: cotizacion`). La respuesta añade `consulta: { id, estado, actualizada }`. Cualquier otro estado (en_proceso, atendido, archivado) se respeta. Si algo falla, no queda ni la cotización ni el cambio de estado.
 - **Correo**: usa el registro de intentos común con Atención (`mail/mail-attempts.ts`) y respeta `MAIL_PROVIDER`. Sin correo real en pruebas.
 - **Estadísticas** (`/admin/stats/activity`): cuenta cotizaciones por estado; no cambia.
 - **HORUS Assistant**: solo **lee** (`groupBy` por estado y conteo de enviadas vencidas, con el mismo criterio que `vencida`). Nunca modifica cotizaciones, estados ni importes; una prueba lo verifica.
@@ -245,11 +247,23 @@ Registro de la validación de este cambio (todo con dobles en memoria, sin MySQL
 - **Limitaciones**: todo con dobles en memoria, sin MySQL real; no se ejecutó la suite completa (poca RAM libre en el equipo) ni `test:integration`.
 `cotizaciones-flujo.test.ts` cubre: número legible, vigencia, flujo completo, todas las transiciones prohibidas, vencidas, dos cambios de estado simultáneos, dos envíos simultáneos, edición solo en borrador, filtros y orden del listado, resumen de correo, validación de entrada, roles/permisos y lectura-solo del Asistente.
 
+### 10.1 Vigencia al duplicar, ensayo con MySQL real y conflictos de concurrencia
+
+**Política definitiva de vigencia al duplicar.** La copia conserva SIEMPRE la fecha de vigencia de la original (no existe un plazo comercial predeterminado y no se inventa uno). Si la original ya venció, la copia queda en borrador con esa fecha pasada, la respuesta incluye `requiere_nueva_vigencia: true` (también al repetir la misma `Idempotency-Key`) y el historial anota `vigencia_pendiente`. No puede enviarse ni pasar a «enviada» (409) hasta editar el borrador con una vigencia nueva válida (la edición rechaza fechas anteriores a hoy con 400). Sin cambios de esquema ni migraciones.
+
+**Ensayo con MySQL 8.0.46 real y aislado (13/13).** Clon temporal con `--no-defaults`, datadir y puerto propios, UUID distinto del servicio MySQL80, esquema vacío creado con `db:init` + `db:migrate` (18 migraciones) y solo datos ficticios; nada de `horus_db` ni `horus_local`. Se ejercitó `CotizacionesService` compilado con Prisma real (13 comprobaciones superadas): creación vinculada a una consulta «nuevo»; paso atómico a `en_proceso` con seguimiento (revisión 2); historial correcto; una segunda cotización no repite la transición; duplicar con `Idempotency-Key`; copia de una original vencida; 8 duplicaciones y 8 creaciones simultáneas con la misma clave (una sola fila y una sola transición); rollback completo ante un fallo controlado (disparador SQL temporal solo en el clon: sin cotización huérfana, sin clave consumida, consulta en «nuevo», reintento correcto); 6 creaciones simultáneas sobre la misma consulta (exactamente una transición); restricciones `UNIQUE(recurso, registro_id)`, `UNIQUE(idempotencia_clave)` y la clave foránea de la consulta; e integridad final (sin números ni seguimientos duplicados).
+
+**Interbloqueos observados.** Bajo concurrencia real, algunas solicitudes simultáneas fallaron con el interbloqueo 1213 de MySQL o el conflicto de escritura P2034 de Prisma (p. ej. 1 de 8 con la misma clave y 3 de 6 sobre la misma consulta). La base permaneció consistente (cada transacción afectada se revirtió entera), pero el servicio no traducía el error y se habría respondido un 500.
+
+**Manejo HTTP 409 implementado.** `CotizacionesService` reconoce de forma estructurada solo `P2034` y el código MySQL `1213` (por `mysqlErrorCode`, el mismo mecanismo de las cuentas; no se analizan textos) y responde 409 con un mensaje seguro, sin detalles de MySQL ni Prisma. Cualquier otro error, incluido uno cuyo texto mencione «deadlock», se propaga sin convertirse en 409. **No hay reintentos automáticos**; la transacción no cambió. Los interbloqueos **no desaparecen**: solo se traducen a 409. Repetir la solicitud con la misma `Idempotency-Key` es seguro y devuelve la misma cotización. Repetido el escenario de concurrencia con el 409 activo (6 rondas de 6 solicitudes sobre la misma consulta y 4 de 8 con la misma clave), no quedó ningún error sin traducir, una sola transición y un solo seguimiento por consulta, y ninguna cotización, seguimiento ni número duplicado (3 de 6 y 7 de 8 se aceptaron, el resto recibió 409).
+
+**Limitaciones de este ensayo.** Se probó el servicio, no la API HTTP completa: no se ejercitaron controladores, guards, JWT, límites de frecuencia ni el filtrado de excepciones de Nest (que convierte un error no tratado en un 500 genérico). No se probaron el PDF ni el correo contra la base real, y la carga fue pequeña (6–8 solicitudes en paralelo, un solo proceso). Las evidencias sanitizadas están fuera del repositorio.
+
 ## 11. Limitaciones pendientes
 
 **Mejoras que requieren migración (no hechas):**
 
-1. Separar *solicitud* y *presupuesto formal*, o versionar propuestas (p. ej. `reemplaza_a_id`, para «duplicar y renegociar» una rechazada): hoy una propuesta enviada no se edita y no hay endpoint de duplicado.
+1. Separar *solicitud* y *presupuesto formal*, o versionar propuestas (p. ej. `reemplaza_a_id`, para «duplicar y renegociar» una rechazada): hoy una propuesta enviada no se edita; `POST /:id/duplicar` ya permite preparar otra, pero sin vínculo formal entre original y copia (solo la mención en el historial de la copia).
 2. Numeración correlativa por año (contador propio): hoy `NNNNNN` es el id global.
 3. Columnas de auditoría estructuradas: `creada_por`, `enviada_at`, `respondida_at`, `motivo_cierre` (hoy están en el JSON de `historial`).
 4. Índices `(estado, validez)` y `(createdAt, id)` si el volumen crece; búsqueda de texto completo (hoy `LIKE '%…%'`).
@@ -265,6 +279,8 @@ Registro de la validación de este cambio (todo con dobles en memoria, sin MySQL
 - Reintentar un cambio de estado tras perder la respuesta devuelve 409 (la revisión ya avanzó); el panel debe recargar el detalle.
 - `PUT` reemplaza `contacto_id`: el panel debe reenviarlo al editar.
 - Vigencia: la comprobación usa el día de Lima en el servidor.
+- Con mucha concurrencia sobre la misma consulta, parte de las solicitudes recibe 409 (interbloqueo traducido, no evitado): el panel debe permitir reintentar con la misma `Idempotency-Key`.
+- Falta una prueba de extremo a extremo con la API HTTP y varios clientes reales contra MySQL.
 
 ## 12. Explicación sencilla para la sustentación
 
