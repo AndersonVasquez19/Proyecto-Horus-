@@ -1,16 +1,17 @@
-import { ForbiddenException, HttpException, HttpStatus, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { permissionsOf } from '../permissions/policy';
 import { ASISTENTE_DATA, type AsistenteDataSource } from './asistente.data';
 import { AsistenteExplainer, type ExplanationResult } from './asistente.explainer';
+import { ASISTENTE_LIMITES, RATE_MESSAGE, type LimitesResumen } from './asistente.limites';
 import {
-  SECTION_SOURCES, SlidingWindowLimiter, authorizedSections, basicText, buildPendientes, type SectionData, type SectionKey,
+  SECTION_SOURCES, authorizedSections, basicText, buildPendientes, type SectionData, type SectionKey,
 } from './asistente.rules';
 import { operatingDay } from './asistente.time';
 
 // Mismos textos que AccessGuard (que es la única que puede usar AccountAccessService; ver test/access-guard.test.ts).
 export const UNAUTHORIZED_MESSAGE = 'Usuario no encontrado o inactivo.';
 export const NO_ROLE_MESSAGE = 'Esta función requiere permisos adicionales. Tu cuenta es básica: solicita a la gerencia que te asigne un rol.';
-export const RATE_MESSAGE = 'Has consultado el asistente muchas veces. Espera un momento y vuelve a intentar.';
+export { RATE_MESSAGE };
 
 // Métricas que HORUS Assistant NO calcula porque el sistema no las registra (se informan como tales; no se estiman).
 export const NO_REGISTRADO: readonly string[] = Object.freeze([
@@ -29,19 +30,16 @@ type SectionOutcome = { estado: 'ok'; consultado_en: string } | { estado: 'no_di
 @Injectable()
 export class AsistenteService {
   private readonly logger = new Logger(AsistenteService.name);
-  // Por instancia y por cuenta. Con IA el tope es menor porque cada llamada tiene costo.
-  private readonly summaryLimiter = new SlidingWindowLimiter(30, 10 * 60_000);
-  private readonly aiLimiter = new SlidingWindowLimiter(6, 10 * 60_000);
-
+  // El límite por cuenta es COMPARTIDO entre instancias (rate_limit_buckets, ver asistente.limites.ts): 30 por 10 min y 6 con IA, que cuesta por llamada.
   constructor(
     @Inject(ASISTENTE_DATA) private readonly data: AsistenteDataSource,
     private readonly explainer: AsistenteExplainer,
+    @Inject(ASISTENTE_LIMITES) private readonly limites: LimitesResumen,
   ) {}
 
   async resumen(actorId: number, options: { explicar?: boolean } = {}, now = new Date()) {
     const wantsAi = options.explicar === true;
-    this.throttle(this.summaryLimiter, actorId, now);
-    if (wantsAi) this.throttle(this.aiLimiter, actorId, now);
+    await this.limites.admitirResumen(actorId, now, wantsAi); // 429 si se excede; 503 sin tocar datos ni IA si el almacén compartido no responde
 
     // El rol sale de la base en esta misma solicitud (nunca del token ni del cliente).
     const account = await this.data.account(actorId);
@@ -99,14 +97,14 @@ export class AsistenteService {
     };
   }
 
-  private throttle(limiter: SlidingWindowLimiter, actorId: number, now: Date) {
-    const decision = limiter.hit(actorId, now.getTime());
-    if (!decision.allowed) throw new HttpException({ ok: false, mensaje: RATE_MESSAGE, reintentar_en_segundos: decision.retryAfterSeconds }, HttpStatus.TOO_MANY_REQUESTS);
-  }
-
   private async explanation(wantsAi: boolean, fecha: string, zona: string, pendientes: Parameters<AsistenteExplainer['explain']>[2]): Promise<ExplanationResult | { estado: 'no_solicitada' }> {
     if (!wantsAi) return { estado: 'no_solicitada' };
-    return this.explainer.explain(fecha, zona, pendientes);
+    // La explicación es opcional: nada de lo que ocurra con la IA puede impedir que el resumen determinista se entregue.
+    try { return await this.explainer.explain(fecha, zona, pendientes); }
+    catch (error) {
+      this.logger.warn(`Asistente: la explicación con IA falló (${error instanceof Error ? error.name : 'error'}).`);
+      return { estado: 'no_disponible', motivo: 'No se pudo generar la explicación con IA. Se muestra el resumen básico.' };
+    }
   }
 }
 

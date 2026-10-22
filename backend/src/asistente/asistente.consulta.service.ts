@@ -4,12 +4,14 @@ import {
   ejecutar, herramientasPara, necesitaSemana, seccionesDe, type ResultadoHerramienta,
 } from './asistente.catalogo';
 import {
-  MAX_PREGUNTA, MENSAJES, allowedAnswerNumbers, answerInput, answerInstructions, areasSinAcceso, containsPersonalData, parsePlan, plannerInput, plannerInstructions, type DatosParaRedactar,
+  MAX_PREGUNTA, MENSAJES, answerInput, answerInstructions, areasSinAcceso, containsPersonalData, parsePlan, plannerInput, plannerInstructions, type DatosParaRedactar,
 } from './asistente.consulta';
 import { ASISTENTE_CONSULTA_DATA, type ConsultaDataSource, type SesionesSemanaAgg } from './asistente.data';
 import { AsistenteExplainer } from './asistente.explainer';
-import { SECTION_SOURCES, SlidingWindowLimiter, authorizedSections, explanationIsFaithful, type SectionData, type SectionKey } from './asistente.rules';
-import { NO_REGISTRADO, NO_ROLE_MESSAGE, RATE_MESSAGE, UNAUTHORIZED_MESSAGE, windowOf } from './asistente.service';
+import { indicadoresDe, resumenDeDatos, validarRedaccion } from './asistente.fidelidad';
+import { ASISTENTE_LIMITES, type LimitesConsulta } from './asistente.limites';
+import { SECTION_SOURCES, authorizedSections, type SectionData, type SectionKey } from './asistente.rules';
+import { NO_REGISTRADO, NO_ROLE_MESSAGE, UNAUTHORIZED_MESSAGE, windowOf } from './asistente.service';
 import { operatingDay, operatingWeek } from './asistente.time';
 
 export const DATOS_PERSONALES_MESSAGE = 'Tu pregunta incluye datos personales (correo, teléfono o número de documento). Reformúlala sin ellos: HORUS Assistant responde con cifras.';
@@ -24,7 +26,11 @@ type IaFailure = keyof typeof IA_MESSAGES;
 // Tiempo máximo que se espera a cada llamada a OpenAI (el límite total de una consulta es la suma de las dos).
 const PLAN_TIMEOUT_MS = 10_000;
 const ANSWER_TIMEOUT_MS = 12_000;
-const MS = 60_000;
+
+export const AVISO_RESUMEN = Object.freeze({
+  redaccion_no_validada: 'La redacción con IA no se pudo comprobar contra los datos, así que se muestra un resumen de los datos generado por el sistema.',
+  ia_no_disponible: 'La IA no pudo redactar la respuesta en este momento, así que se muestra un resumen de los datos generado por el sistema.',
+});
 
 type SectionOutcome = { estado: 'ok'; consultado_en: string } | { estado: 'no_disponible'; motivo: string } | { estado: 'error'; motivo: string };
 
@@ -32,25 +38,22 @@ type SectionOutcome = { estado: 'ok'; consultado_en: string } | { estado: 'no_di
 //   1. NestJS identifica la cuenta y lee su rol VIGENTE de la base; calcula el catálogo de herramientas de ese rol.
 //   2. OpenAI recibe la pregunta y SOLO ese catálogo, y devuelve qué herramientas usar. No recibe datos, no ve la base.
 //   3. NestJS valida la elección (lo que no esté en el catálogo del rol no se ejecuta) y ejecuta consultas FIJAS ya escritas (asistente.data.ts).
-//   4. OpenAI recibe las cifras resultantes y redacta la respuesta; NestJS la descarta si menciona un número que no esté en las cifras.
-// La IA nunca ejecuta SQL ni usa Prisma, y ninguna herramienta escribe. Sin IA disponible no se inventa respuesta: 503.
+//   4. OpenAI recibe los hechos (etiqueta y marcador, SIN el valor) y redacta con marcadores {{herramienta.hecho}}; NestJS sustituye cada marcador por
+//      su valor real y descarta la redacción si una cifra no acompaña a su indicador (asistente.fidelidad.ts). Entonces entrega un resumen determinista.
+// La IA nunca ejecuta SQL ni usa Prisma, y ninguna herramienta escribe. Sin IA para ELEGIR herramientas no se inventa respuesta: 503.
 @Injectable()
 export class AsistenteConsultaService {
   private readonly logger = new Logger(AsistenteConsultaService.name);
-  // En memoria, por instancia. Cada consulta cuesta hasta dos llamadas a OpenAI: por eso los topes son menores que los del resumen.
-  private readonly perAccount = new SlidingWindowLimiter(10, 10 * MS);
-  private readonly perDay = new SlidingWindowLimiter(100, 24 * 60 * MS);
-  private readonly allAccounts = new SlidingWindowLimiter(300, 60 * MS, 1); // consumo global de IA: una sola clave
+  // El límite por cuenta es COMPARTIDO entre instancias (rate_limit_buckets, ver asistente.limites.ts). Cada consulta cuesta hasta dos llamadas a OpenAI.
   constructor(
     @Inject(ASISTENTE_CONSULTA_DATA) private readonly data: ConsultaDataSource,
     private readonly ai: AsistenteExplainer,
+    @Inject(ASISTENTE_LIMITES) private readonly limites: LimitesConsulta,
   ) {}
 
   async consultar(actorId: number, rawQuestion: string, now = new Date()) {
     const pregunta = rawQuestion.trim();
-    this.throttle(this.perAccount, actorId, now);
-    this.throttle(this.perDay, actorId, now);
-    this.throttle(this.allAccounts, 0, now);
+    await this.limites.admitir(actorId, now);
 
     // El rol sale de la base en esta misma solicitud (nunca del token ni de la pregunta).
     const account = await this.data.account(actorId);
@@ -137,22 +140,29 @@ export class AsistenteConsultaService {
       return { ...envelope, estado: 'sin_datos' as const, respuesta: { texto: MENSAJES.sin_datos, origen: 'sistema' as const }, datos: resultados, fuentes, avisos, sugerencias: [] as string[] };
     }
 
-    // Paso 3: el modelo redacta con las cifras. Su texto solo vale si cada número que menciona está en ellas.
+    // Paso 3: el modelo redacta con marcadores; el servidor pone las cifras y comprueba que cada una acompañe a SU indicador.
+    // Si la IA falla o su texto no se puede validar, ya hay datos fiables: se entrega un resumen determinista, identificado como tal.
     const forModel: DatosParaRedactar = { fecha: window.fecha, zona: window.zona, pregunta, resultados, avisos };
     const answered = await this.ai.ask(answerInstructions(), answerInput(forModel), { maxTokens: 400, timeoutMs: ANSWER_TIMEOUT_MS });
-    if (answered.ok === false) throw this.unavailable(answered.estado);
-    if (!explanationIsFaithful(answered.texto, allowedAnswerNumbers(forModel))) { this.logger.warn('Asistente: respuesta del modelo descartada (cifras no verificables).'); throw this.unavailable('respuesta_invalida'); }
-
+    let motivoResumen: keyof typeof AVISO_RESUMEN = 'ia_no_disponible';
+    if (answered.ok) {
+      const veredicto = validarRedaccion(answered.texto, indicadoresDe(resultados));
+      if (veredicto.valida === false) {
+        this.logger.warn(`Asistente: redacción del modelo descartada (${veredicto.motivo}).`); // solo el motivo: nunca el texto
+        motivoResumen = 'redaccion_no_validada';
+      } else {
+        return {
+          ...envelope, estado: 'respondida' as const,
+          respuesta: { texto: veredicto.texto, origen: 'ia' as const, modelo: answered.modelo, validacion: 'cifras_verificadas' as const },
+          datos: resultados, fuentes, avisos, sugerencias: [] as string[],
+        };
+      }
+    }
     return {
       ...envelope, estado: 'respondida' as const,
-      respuesta: { texto: answered.texto, origen: 'ia' as const, modelo: answered.modelo },
-      datos: resultados, fuentes, avisos, sugerencias: [] as string[],
+      respuesta: { texto: resumenDeDatos(resultados), origen: 'sistema' as const, validacion: 'resumen_de_datos' as const },
+      datos: resultados, fuentes, avisos: [...avisos, AVISO_RESUMEN[motivoResumen]], sugerencias: [] as string[],
     };
-  }
-
-  private throttle(limiter: SlidingWindowLimiter, key: number, now: Date) {
-    const decision = limiter.hit(key, now.getTime());
-    if (!decision.allowed) throw new HttpException({ ok: false, codigo: 'limite_de_uso', mensaje: RATE_MESSAGE, reintentar_en_segundos: decision.retryAfterSeconds }, HttpStatus.TOO_MANY_REQUESTS);
   }
 
   private unavailable(motivo: IaFailure): HttpException {

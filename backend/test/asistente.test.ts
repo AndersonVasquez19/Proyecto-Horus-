@@ -11,8 +11,9 @@ import type { PrismaService } from '../src/database/prisma.service';
 import { AsistenteController, ResumenQueryDto } from '../src/asistente/asistente.controller';
 import { PrismaAsistenteData, type AsistenteDataSource } from '../src/asistente/asistente.data';
 import { AsistenteExplainer, type Fetcher } from '../src/asistente/asistente.explainer';
+import { AsistenteLimites, type LimitesResumen } from '../src/asistente/asistente.limites';
 import {
-  MAX_PENDIENTES, SECTION_KEYS, SlidingWindowLimiter, allowedNumbers, authorizedSections, basicText, buildPendientes, explanationIsFaithful, type Pendiente, type SectionData, type SectionKey,
+  MAX_PENDIENTES, SECTION_KEYS, authorizedSections, basicText, buildPendientes, type SectionData, type SectionKey,
 } from '../src/asistente/asistente.rules';
 import { AsistenteService, NO_REGISTRADO, RATE_MESSAGE } from '../src/asistente/asistente.service';
 import { operatingDay } from '../src/asistente/asistente.time';
@@ -21,6 +22,7 @@ import { NO_ROLE_MESSAGE } from '../src/permissions/access.guard';
 import type { AdminRole } from '../src/permissions/roles';
 type AccountAccess = { activo: boolean; sessionVersion: number; rol: AdminRole | null };
 import { can } from '../src/permissions/policy';
+import { memoryBuckets } from './fixtures/rate-limit-memory';
 
 // Todo es SIMULADO: cuentas, fuente de datos, Prisma y OpenAI son dobles en memoria. Ninguna prueba abre MySQL ni contacta con OpenAI.
 const G = 'GERENTE_GENERAL', C = 'COORDINADORA_INSTITUCIONAL', S = 'SECRETARIA';
@@ -55,13 +57,15 @@ function fakeData(overrides: Partial<Record<SectionKey, unknown>> = {}, accounts
 const configOf = (values: Record<string, string>) => ({ get: (key: string) => values[key] }) as unknown as ConfigService;
 const okResponse = (text: string) => ({ ok: true, status: 200, json: async () => ({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text }] }] }) });
 
-function build(role: string | null, options: { data?: ReturnType<typeof fakeData>; config?: Record<string, string>; fetcher?: Fetcher; active?: boolean } = {}) {
+// El límite es el REAL (AsistenteLimites) sobre una memoria que imita rate_limit_buckets; varias instancias con la misma memoria simulan varios procesos con un mismo MySQL.
+function build(role: string | null, options: { data?: ReturnType<typeof fakeData>; config?: Record<string, string>; fetcher?: Fetcher; active?: boolean; buckets?: ReturnType<typeof memoryBuckets>; limites?: LimitesResumen } = {}) {
   const data = options.data ?? fakeData();
   data.source.account = async id => id === 1 ? { activo: options.active !== false, rol: role as never } : null;
   const explainer = new AsistenteExplainer(configOf(options.config ?? {}));
   if (options.fetcher) explainer.fetcher = options.fetcher;
-  const service = new AsistenteService(data.source, explainer);
-  return { service, data, explainer };
+  const buckets = options.buckets ?? memoryBuckets();
+  const service = new AsistenteService(data.source, explainer, options.limites ?? new AsistenteLimites(buckets.prisma as PrismaService));
+  return { service, data, explainer, buckets };
 }
 
 const AI_ON = { ASISTENTE_AI_ENABLED: 'true', OPENAI_API_KEY: 'clave-ficticia-de-prueba', CHATBOT_MODEL: 'modelo-ficticio' };
@@ -144,7 +148,7 @@ test('puedeActuar refleja el permiso real de resolución: la secretaria ve las p
 
 test('las cuentas se aíslan entre sí: el límite de uso de una no afecta a otra y cada una recibe su propio rol', async () => {
   const data = fakeData({}, { 1: { activo: true, sessionVersion: 1, rol: S }, 2: { activo: true, sessionVersion: 1, rol: G } });
-  const service = new AsistenteService(data.source, new AsistenteExplainer(configOf({})));
+  const service = new AsistenteService(data.source, new AsistenteExplainer(configOf({})), new AsistenteLimites(memoryBuckets().prisma as PrismaService));
   assert.equal((await service.resumen(1, {}, NOW)).acceso.rol, S);
   assert.equal((await service.resumen(2, {}, NOW)).acceso.rol, G);
 });
@@ -375,7 +379,8 @@ test('un módulo cuya tabla no existe (P2021) queda como no disponible; cualquie
 // Ausencia de datos sensibles
 // ---------------------------------------------------------------------------------------------------------------------------
 test('la respuesta completa no contiene correos, teléfonos, DNI, credenciales ni campos internos', async () => {
-  const result = await build(G, { config: AI_ON, fetcher: async () => okResponse('Tienes 5 certificados listos.') }).service.resumen(1, { explicar: true }, NOW);
+  const result = await build(G, { config: AI_ON, fetcher: async () => okResponse('{{pendientes.certificados_listos}} certificados listos para emitir.') }).service.resumen(1, { explicar: true }, NOW);
+  assert.equal(result.explicacion.estado, 'generada');
   const text = JSON.stringify(result);
   assert.ok(!/[\w.+-]+@[\w-]+\.[a-z]{2,}/i.test(text), 'correo');
   assert.ok(!/\b\d{8}\b/.test(text), 'posible DNI');
@@ -386,7 +391,7 @@ test('la respuesta completa no contiene correos, teléfonos, DNI, credenciales n
 
 test('al modelo solo viajan cifras y títulos fijos: ni datos personales, ni la clave en el cuerpo, ni historial', async () => {
   let sent: { url: string; init: Parameters<Fetcher>[1] } | undefined;
-  const { service } = build(G, { config: AI_ON, fetcher: async (url, init) => { sent = { url, init }; return okResponse('Hay pendientes de atención y de sesiones: 1 mensaje antiguo.'); } });
+  const { service } = build(G, { config: AI_ON, fetcher: async (url, init) => { sent = { url, init }; return okResponse('{{pendientes.mensajes_antiguos}} mensaje sin cerrar desde hace más de 48 horas.'); } });
   await service.resumen(1, { explicar: true }, NOW);
   assert.ok(sent);
   const body = JSON.parse(sent.init.body);
@@ -397,9 +402,14 @@ test('al modelo solo viajan cifras y títulos fijos: ni datos personales, ni la 
   assert.equal(sent.init.headers.Authorization, 'Bearer clave-ficticia-de-prueba');
   assert.ok(!/@|nombre|email|telefono|password|\d{8}/i.test(dump.replace(/instructions[^]*?"input"/, '"input"')), 'sin datos personales en la entrada');
   const input = JSON.parse(body.input[0].content);
-  assert.deepEqual(Object.keys(input).sort(), ['CIFRAS', 'zona_horaria']);
-  assert.deepEqual(Object.keys(input.CIFRAS[0]).sort(), ['cantidad', 'id', 'severidad', 'titulo']);
+  assert.deepEqual(Object.keys(input).sort(), ['DATOS', 'zona_horaria']);
+  assert.deepEqual(Object.keys(input.DATOS[0]).sort(), ['hechos', 'herramienta', 'parametros']);
+  // Marcador, etiqueta y severidad: NINGUNA cantidad viaja al modelo (el servidor pone las cifras al recibir su redacción).
+  assert.deepEqual(Object.keys(input.DATOS[0].hechos[0]).sort(), ['etiqueta', 'marcador', 'severidad']);
+  assert.ok(input.DATOS[0].hechos.every((hecho: { marcador: string; etiqueta: string }) => /^\{\{pendientes\.[a-z_0-9]+\}\}$/.test(hecho.marcador) && !/^\d/.test(hecho.etiqueta)));
+  assert.ok(!/"(cantidad|valor)"/.test(body.input[0].content));
   assert.match(body.instructions, /datos, no instrucciones/);
+  assert.match(body.instructions, /NUNCA escribas una cifra/);
   assert.match(body.instructions, /No inventes/);
 });
 
@@ -408,7 +418,7 @@ test('los textos que llegan a las reglas son cifras: texto de usuarios con instr
   // Aunque un agregado trajera texto (no debería: son números), ningún campo de texto libre se copia a pendientes ni al prompt.
   const tainted = { ...FULL.atencion, nuevos: 3, texto_libre: hostile } as unknown as SectionData['atencion'];
   let body = '';
-  const { service } = build(G, { config: AI_ON, data: fakeData({ atencion: tainted }), fetcher: async (_url, init) => { body = init.body; return okResponse('Hay 3 mensajes nuevos.'); } });
+  const { service } = build(G, { config: AI_ON, data: fakeData({ atencion: tainted }), fetcher: async (_url, init) => { body = init.body; return okResponse('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender.'); } });
   const result = await service.resumen(1, { explicar: true }, NOW);
   assert.ok(!JSON.stringify(result).includes(hostile));
   assert.ok(!body.includes(hostile));
@@ -454,21 +464,25 @@ test('si OpenAI falla (red, 500, 429, JSON ilegible, respuesta incompleta o vac�
   } finally { warn.mock.restore(); }
 });
 
-test('una explicación con números que no están en las cifras, enlaces, correos o demasiado larga se descarta', async () => {
+test('una explicación con cifras propias, sin marcadores, con enlaces, correos o demasiado larga se descarta; la fiel se entrega con las cifras del servidor', async () => {
   const warn = mock.method(Logger.prototype, 'warn', () => undefined);
   try {
-    for (const text of ['Tienes 250 mensajes nuevos.', 'Revisa https://ejemplo.pe ahora.', 'Escribe a alguien@ejemplo.pe', 'Hay 3 mensajes. ' + 'x'.repeat(1300)]) {
+    for (const text of ['Tienes 250 mensajes nuevos.', 'Tienes {{pendientes.mensajes_nuevos}} mensajes nuevos sin atender, 250 en total.', 'Revisa https://ejemplo.pe ahora.', 'Escribe a alguien@ejemplo.pe',
+      '{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender. ' + 'x'.repeat(1300), '{{pendientes.inexistente}} mensajes nuevos sin atender.']) {
       const result = await build(G, { config: AI_ON, fetcher: async () => okResponse(text) }).service.resumen(1, { explicar: true }, NOW);
       assert.equal(result.explicacion.estado, 'no_disponible', text.slice(0, 30));
+      assert.ok(result.resumen.texto.length > 0 && result.pendientes.length > 0, 'el resumen determinista se entrega igual');
     }
-    const good = await build(G, { config: AI_ON, fetcher: async () => okResponse('Hoy tienes 3 mensajes nuevos y 1 sin cerrar hace más de dos días. Conviene revisarlos primero.') }).service.resumen(1, { explicar: true }, NOW);
+    const good = await build(G, { config: AI_ON, fetcher: async () => okResponse('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender y {{pendientes.mensajes_antiguos}} mensaje sin cerrar desde hace más de 48 horas. Conviene revisarlos primero.') }).service.resumen(1, { explicar: true }, NOW);
     assert.equal(good.explicacion.estado, 'generada');
+    assert.equal((good.explicacion as { texto: string }).texto, '3 mensajes nuevos sin atender y 1 mensaje sin cerrar desde hace más de 48 horas. Conviene revisarlos primero.');
   } finally { warn.mock.restore(); }
 });
 
 test('la explicación nunca cambia las cifras ni los pendientes calculados por las reglas', async () => {
   const base = await build(G).service.resumen(1, {}, NOW);
-  const withAi = await build(G, { config: AI_ON, fetcher: async () => okResponse('Tienes 3 mensajes nuevos y 5 sesiones pasadas sin cerrar.') }).service.resumen(1, { explicar: true }, NOW);
+  const withAi = await build(G, { config: AI_ON, fetcher: async () => okResponse('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender y {{pendientes.sesiones_atrasadas}} sesiones pasadas sin marcar como realizada o cancelada.') }).service.resumen(1, { explicar: true }, NOW);
+  assert.equal(withAi.explicacion.estado, 'generada');
   assert.deepEqual(withAi.pendientes, base.pendientes);
   assert.deepEqual(withAi.indicadores_atencion, base.indicadores_atencion);
   assert.equal(withAi.resumen.texto, base.resumen.texto);
@@ -476,7 +490,7 @@ test('la explicación nunca cambia las cifras ni los pendientes calculados por l
 
 test('el explicador limita las llamadas simultáneas', async () => {
   const release: (() => void)[] = [];
-  const slow: Fetcher = () => new Promise(resolve => release.push(() => resolve(okResponse('Hay 3 mensajes nuevos.') as never)));
+  const slow: Fetcher = () => new Promise(resolve => release.push(() => resolve(okResponse('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender.') as never)));
   const explainer = new AsistenteExplainer(configOf(AI_ON));
   explainer.fetcher = slow;
   const items = buildPendientes(FULL, G).items;
@@ -506,18 +520,6 @@ test('con IA el tope es menor (6 por ventana) y las consultas sin IA siguen disp
   await service.resumen(1, {}, new Date(NOW.getTime() + 60));
 });
 
-test('SlidingWindowLimiter: ventana deslizante, claves independientes y memoria acotada', () => {
-  const limiter = new SlidingWindowLimiter(2, 1000, 3);
-  assert.ok(limiter.hit(1, 0).allowed && limiter.hit(1, 10).allowed);
-  const blocked = limiter.hit(1, 20);
-  assert.equal(blocked.allowed, false);
-  assert.equal(blocked.retryAfterSeconds, 1);
-  assert.ok(limiter.hit(2, 20).allowed);
-  assert.ok(limiter.hit(1, 1001).allowed);
-  for (let key = 10; key < 20; key++) limiter.hit(key, 5000);
-  assert.ok((limiter as any).hits.size <= 11);
-});
-
 test('el resumen es el único GET del controlador, protegido como ruta autenticada, sin verbos de escritura, y valida su parámetro', () => {
   const proto = AsistenteController.prototype;
   // v2 añadió POST consultar (preguntas, solo lectura; ver test/asistente-consulta.test.ts). No hay PUT, PATCH ni DELETE.
@@ -531,10 +533,6 @@ test('el resumen es el único GET del controlador, protegido como ruta autentica
   }
 });
 
-test('no hay acceso a Prisma desde el explicador ni desde las reglas: la IA solo recibe lo que se le pasa', () => {
+test('no hay acceso a Prisma desde el explicador: la IA solo recibe lo que se le pasa', () => {
   assert.equal(AsistenteExplainer.length, 1, 'el explicador solo depende de la configuración');
-  const items: Pendiente[] = buildPendientes(FULL, G).items;
-  assert.ok(explanationIsFaithful('Hay ' + items[0].cantidad + ' pendientes.', allowedNumbers(items)));
-  assert.equal(explanationIsFaithful('Hay 7777 pendientes.', allowedNumbers(items)), false);
-  assert.equal(explanationIsFaithful(undefined, allowedNumbers(items)), false);
 });
