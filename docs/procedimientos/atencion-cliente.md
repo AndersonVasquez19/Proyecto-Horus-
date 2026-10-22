@@ -56,6 +56,7 @@ Todos bajo `/api/admin` y con sesión válida.
 | Método y ruta | Permiso | Qué hace |
 | --- | --- | --- |
 | `GET /messages` | `mensajes:leer` | Bandeja paginada con filtros (ver contrato 8.1) |
+| `GET /messages/exportar` | `mensajes:exportar` | CSV controlado (máx. 5 000 filas, sin el texto del mensaje). Solo Gerente General. Ver [exportacion-consultas.md](exportacion-consultas.md) |
 | `GET /messages/:id` | `mensajes:leer` | Detalle completo, con correo, teléfono y mensaje íntegro (mismo permiso que la bandeja) |
 | `POST /messages` | `mensajes:crear` | Registro manual |
 | `PUT /messages/:id` | `mensajes:editar` | Cambio de estado heredado (3 estados). Si ya existe seguimiento responde 409: se usa `PUT seguimiento` |
@@ -125,7 +126,7 @@ Parámetros (todos opcionales; sin ellos todo funciona como antes):
 
 | Parámetro | Valores | Efecto |
 | --- | --- | --- |
-| `page`, `limit` | enteros (`limit` ≤ 100, 20 por defecto) | Paginación. Sin `page` devuelve todo (contrato heredado) |
+| `page`, `limit` | enteros (`limit` ≤ 100, 20 por defecto) | Paginación. Sin `page` equivale a `page=1` (ya no devuelve todo; corregido en 4A.1) |
 | `estado` | `nuevo`, `en_proceso`, `atendido`, `archivado` | Estado efectivo, filtrado antes de paginar |
 | `search` | texto ≤ 100 | Nombre, correo, asunto o mensaje |
 | `channel` | `chatbot`, `other` | Origen |
@@ -153,6 +154,8 @@ Con `?vista=resumen` cada fila es **solo**:
 ```
 
 `responsable` es `null` si aún no hay seguimiento. `metrics` siempre es global (no depende de los filtros). El detalle (`GET /messages/:id`) conserva `email`, `telefono` y `mensaje` completos.
+
+**Estado de la privacidad (Etapa 4A.2, fase 1):** hoy el servidor **no obliga** a ningún rol a usar `vista=resumen`; sin `vista`, Gerente, Coordinación y Secretaría reciben correo, teléfono y mensaje completo, porque la bandeja de React aún los lee del listado. `vista_previa` (160 caracteres del mensaje) **puede contener información personal** y no equivale a anonimización. El objetivo, aún no activo, es que Coordinación y Secretaría reciban solo los campos mínimos y consulten el detalle cuando lo necesiten. Contrato y pasos: [contrato-etapa-4a2-mensajes.md](contrato-etapa-4a2-mensajes.md).
 
 ### 8.2 `GET /api/admin/seguimiento/messages/:id`
 
@@ -226,9 +229,11 @@ Sin cambios de contrato. Salvo el 400 nuevo `La consulta está archivada. Reábr
 
 `backend/test/atencion-proceso.test.ts` (18 pruebas, dobles en memoria, sin MySQL ni correo real): reglas, flujo completo, intentos fallidos/inciertos, validaciones y DTO, transiciones, concurrencia, idempotencia, doble envío, cotizaciones, permisos, privacidad del listado y de la actividad reciente, filtros y asistente de solo lectura.
 
+`backend/test/messages-privacidad.test.ts` (6 pruebas, 4A.2 fase 1): contrato de privacidad del listado (con y sin `vista=resumen`), detalle y exportación para los tres roles.
+
 ```bash
 cd backend
-node --test --test-concurrency=1 -r ./test/isolate-env.cjs -r ts-node/register test/atencion-proceso.test.ts test/message-states.test.ts test/mail-reliability.test.ts
+node --test --test-concurrency=1 -r ./test/isolate-env.cjs -r ts-node/register test/atencion-proceso.test.ts test/message-states.test.ts test/mail-reliability.test.ts test/messages-privacidad.test.ts
 ```
 
 ## Pendientes
@@ -238,7 +243,7 @@ node --test --test-concurrency=1 -r ./test/isolate-env.cjs -r ts-node/register t
 **Requieren migración (no se hicieron):**
 - `responsable_id` (clave a `admin_users`): hoy `responsable` es texto libre de hasta 100 caracteres y no se valida contra cuentas.
 - Fechas explícitas de primera respuesta y de cierre (`primera_respuesta_at`, `cerrado_at`) para medir tiempos de atención.
-- Permiso `mensajes:exportar`: la exportación CSV es del navegador y usa el listado completo, por lo que cualquiera con `mensajes:leer` puede obtener correos y teléfonos de todas las consultas.
+- ~~Permiso `mensajes:exportar`~~ **Resuelto en el backend (4A.1, sin migración):** existe el permiso (solo Gerente General) y el endpoint `GET /messages/exportar`. **Pendiente:** el botón CSV del navegador sigue armando el archivo con el listado completo (cualquiera con `mensajes:leer`) hasta que React migre; el riesgo de extracción masiva sigue abierto (ver contrato 4A.2).
 - Pasar automáticamente `nuevo → en_proceso` al crear una cotización desde la consulta (hoy es manual).
 
 **Integración real no realizada:** no se probó contra MySQL ni con correo real; `test/prisma.integration.cjs` (MySQL desechable) no se ejecutó.

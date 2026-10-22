@@ -2,6 +2,17 @@
 
 Documento para el compañero responsable del frontend. Describe el contrato del backend ya publicado en la Etapa 4A.1 y el cambio de React previsto para la 4A.2. **La 4A.2 no está implementada**: no se ha modificado ningún archivo de `frontend/`. El detalle técnico del backend está en `exportacion-consultas.md`.
 
+## 0. Decisiones aprobadas (fase 1 del backend)
+
+1. **Se mantiene por ahora** el comportamiento actual de `GET /api/admin/messages` (sin `vista`, devuelve correo, teléfono y mensaje completo) para no romper React.
+2. `mensajes:exportar` sigue **exclusivamente para Gerencia**.
+3. **No se conceden permisos nuevos** a Coordinación ni a Secretaría.
+4. **No se establece todavía** un límite nuevo de consultas de detalle por cuenta.
+5. `vista_previa` se mantiene provisionalmente. **Puede contener información personal** (son los primeros 160 caracteres del mensaje) y **no equivale a anonimización**.
+6. Objetivo futuro: Coordinación y Secretaría reciben en el listado solo los campos mínimos y consultan el detalle autorizado cuando lo necesiten.
+
+**La restricción que fuerza `vista=resumen` NO está activa.** Se activará solo después de comprobar que React ya usa el contrato nuevo. El backend dispone ya de todo lo necesario para migrar la bandeja (listado resumen, detalle por id y exportación), **sin endpoints nuevos**. Cubierto por `backend/test/messages-privacidad.test.ts`.
+
 ## 1. Endpoints
 
 | Uso | Endpoint | Permiso | Estado |
@@ -43,7 +54,7 @@ Estado **actual (4A.1)** y **objetivo (4A.2)**:
 Aclaraciones:
 
 - En 4A.1 el servidor **todavía no obliga** a Coordinación y Secretaría a usar la vista resumen: ese filtrado por rol (ignorar la vista completa sin `mensajes:exportar`) es un cambio de backend de la 4A.2 y requiere que el frontend ya haya migrado.
-- `vista_previa` expone hasta 160 caracteres del mensaje. El objetivo aprobado dice «sin mensaje completo»; si la vista previa debe seguir mostrándose a esos roles es una decisión pendiente (hoy se asume que sí).
+- `vista_previa` expone hasta 160 caracteres del mensaje. Decisión aprobada: se mantiene provisionalmente, **puede contener información personal** y no equivale a anonimización (ver sección 0).
 
 ## 3. Errores
 
@@ -86,6 +97,28 @@ Aclaraciones:
 ### Pruebas a ajustar
 
 `test:list-records`, `smoke:messages-table`, `smoke:message-detail`, `smoke:message-center`, `smoke:unsaved`, `test:panel-access`, `smoke:panel-actions`, más un caso con `/admin/messages/exportar` (200 CSV, 403, 422) con bloqueo previo de destinos no locales.
+
+## 5 bis. Guía corta para el frontend (pasos exactos)
+
+Todo con la API actual; ninguna petición nueva salvo `/exportar`. No guardes correos ni teléfonos en `localStorage`/`sessionStorage`.
+
+1. **`MessageInbox.tsx`**
+   - Pedir el listado con `vista=resumen` (más `page`, `limit`, `search`, `estado`, `channel`, y opcionalmente `responsable`, `antiguas=si`).
+   - En filas y tabla, mostrar `vista_previa` en lugar de `mensaje`; `email` y `telefono` ya no existen en la fila.
+   - Al seleccionar o abrir `?id=N`, cargar `GET /admin/messages/:id` con `useMessageDetail` y mostrar correo, teléfono y mensaje completo desde ahí, con estados de carga y error, sin que una respuesta antigua pise la selección actual.
+   - Reemplazar `exportResults` por la descarga desde `/admin/messages/exportar` (ver `messageExport.ts`) y mostrar el botón solo con `mensajes:exportar`.
+   - Conservar bloqueo síncrono, `AbortController`, timeout y protección de cambios sin guardar.
+2. **`MessageCreateDialog`**
+   - La detección de duplicados lee hoy `email` y `mensaje` del listado. Con `vista=resumen` no vienen: comparar por `nombre`, `asunto` y `vista_previa` del resumen, o abrir el detalle de los candidatos. Decisión de producto pendiente; no pedir el listado completo.
+3. **`messageExport.ts`**
+   - Quitar `fetchAllPages`, `toExportRows`, `buildCsv` y `MESSAGE_EXPORT_COLUMNS` del flujo de mensajes.
+   - Nueva función con `fetch` (no `panelRequest`): `GET /admin/messages/exportar` con `Authorization: Bearer`, `cache: 'no-store'`, `blob()`, y solo `search`, `estado`, `channel` (y `responsable`, `antiguas`). Nunca `page`, `limit` ni `vista` (400).
+   - Descarga con `URL.createObjectURL` y `<a download>`; nombre desde `Content-Disposition` o `horus-consultas-AAAAMMDD-HHmm.csv`; revocar la URL.
+   - Mapear 401, 403, 422 y 400 según la sección 3.
+4. **`panelAccess.ts`**
+   - Declarar `mensajes:exportar` (permiso del botón CSV) y contrastarlo con `route-inventory.ts` en `test:panel-access`. Confirmar que `RESOURCE_READ`/`PANEL_ACTIONS` no ofrezcan la exportación sin él.
+5. **Pruebas** a ajustar: ver «Pruebas a ajustar» (sección 5). Los smokes deben bloquear destinos no locales antes de enviar.
+6. **Aviso al terminar:** cuando React use `vista=resumen` y el detalle, el backend podrá activar la restricción (sección 6, paso 2). Hasta entonces el servidor no la aplica.
 
 ## 6. Orden recomendado de la 4A.2
 
