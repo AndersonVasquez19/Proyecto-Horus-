@@ -1,6 +1,13 @@
 # Integración continua (GitHub Actions)
 
-Archivo: [.github/workflows/ci.yml](../../.github/workflows/ci.yml). Se ejecuta en `push` a `main` y `anderson`, en cada `pull_request` y a demanda (`workflow_dispatch`).
+Archivo: [.github/workflows/ci.yml](../../.github/workflows/ci.yml). Se ejecuta en `push` a `main`, en cada `pull_request` cuya rama base no sea `anderson` y a demanda (`workflow_dispatch`).
+
+> **CI automática suspendida en `anderson` (temporal).** Mientras se desarrolla Horus Group, la rama `anderson` no dispara la CI por `push` ni por `pull_request` con base `anderson`. Los trabajos, scripts y pruebas siguen intactos y la CI sigue disponible a demanda: pestaña *Actions* → *CI* → *Run workflow* (rama `anderson`; casilla `smokes` opcional). Un PR de `anderson` hacia `main` sí ejecuta la CI (la base es `main`).
+>
+> **Cómo reactivarla al terminar el proyecto**, en el bloque `on:` de `.github/workflows/ci.yml`:
+> 1. `push.branches`: cambiar `[main]` por `[main, anderson]`.
+> 2. `pull_request`: eliminar la línea `branches-ignore: [anderson]` (y su comentario de cabecera).
+> 3. Verificar el YAML, hacer commit y push, y comprobar en *Actions* que la ejecución se dispara.
 **Solo comprueba**: no despliega, no usa secretos de producción, no se conecta a Railway ni a la base real y no envía correo ni llama a IA (las pruebas usan dobles).
 
 > **Estado de la validación remota**

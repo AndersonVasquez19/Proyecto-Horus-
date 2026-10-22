@@ -2,10 +2,13 @@
 # Los comandos son los de AGENTS.md / los scripts reales de cada package.json. Guía y límites: docs/procedimientos/ci.md
 name: CI
 
+# CI automática SUSPENDIDA TEMPORALMENTE en la rama `anderson` hasta terminar el proyecto (push y pull_request hacia `anderson`).
+# Para reactivarla: añadir `anderson` a `push.branches` y quitar `branches-ignore` de `pull_request`. Ver docs/procedimientos/ci.md.
 on:
   push:
-    branches: [main, anderson]
+    branches: [main]
   pull_request:
+    branches-ignore: [anderson]
   workflow_dispatch:
     inputs:
       smokes:
