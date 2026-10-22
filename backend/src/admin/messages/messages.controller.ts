@@ -19,7 +19,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RequirePermission } from '../../permissions/access.decorators';
 
 import { Query } from '@nestjs/common';
-import { ListQueryDto } from '../../common/list-query.dto';
+import { MessageQueryDto } from './dto/query-messages.dto';
 @ApiTags('Admin - Mensajes')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
@@ -31,7 +31,7 @@ export class MessagesController {
   @RequirePermission('mensajes:leer')
   @ApiOperation({ summary: 'Listar todos los mensajes de contacto' })
   @ApiResponse({ status: 200, description: 'Lista de mensajes obtenida exitosamente' })
-  async findAll(@Query() query: ListQueryDto) {
+  async findAll(@Query() query: MessageQueryDto) {
     return this.messagesService.findAll(query);
   }
 

@@ -8,6 +8,8 @@ import { attemptEntry, decideSend, fingerprint, lastAttempt, stateOfOutcome, typ
 import { isUniqueViolation } from '../database/serialization';
 import { AttentionDto } from './attention.dto';
 import { administrativeState, lockMessage } from './message-state';
+import { ARCHIVE_WITH_OPEN_QUOTES, SEND_ON_ARCHIVED, allowedTransitions, changedFields, checkMessageChange, summarizeQuotes } from './attention-rules';
+import { limaToday } from '../cotizaciones/quote-rules';
 
 // Textos para la persona que administra. Nunca incluyen detalles del proveedor, destinatarios ni identificadores internos.
 const BLOCKED: Record<SendBlock, string> = {
@@ -38,12 +40,20 @@ export class AttentionService {
  const resumen=(kind:AttemptKind,huella:string)=>{const last=lastAttempt(item.historial,kind,huella);return last?{estado:last.estado,fecha:last.fecha,intento:last.intento}:null;};
  return{respuesta:item.respuesta.trim()?resumen('respuesta',this.huellaRespuesta(recurso,id,email,item.respuesta)):null,constancia:resumen('constancia',this.huellaConstancia(recurso,id,email))};
  }
- async get(recurso:string,id:number){
+ // `contexto` (solo lo pide el controlador) añade, para consultas, qué estados admite el caso y el resumen de sus cotizaciones. Los usos internos
+ // (envío de correo) no pagan esas lecturas.
+ async get(recurso:string,id:number,contexto=false){
  const record=await this.record(recurso,id);
  const item=await this.prisma.attentionRecord.findUnique({where:{recurso_registro_id:{recurso,registro_id:id}}});
  const estado=administrativeState(record.estado,item);
  const base=item?{...item,estado}:{estado,responsable:'',notas:'',respuesta:'',revision:1,historial:[] as unknown[]};
- return{ok:true,item:{...base,envios:this.envios(recurso,id,record.email,base)}};
+ const groups=contexto&&recurso==='messages'?await this.prisma.cotizacion.groupBy({by:['estado'],where:{contacto_id:id},orderBy:{estado:'asc'},_count:{_all:true}}):null;
+ const extra=groups?{transiciones_permitidas:allowedTransitions(estado),cotizaciones:summarizeQuotes(groups)}:{};
+ return{ok:true,item:{...base,envios:this.envios(recurso,id,record.email,base),...extra}};
+ }
+ // Cotizaciones que todavía esperan una decisión: borradores y enviadas con vigencia. Impiden archivar la consulta de origen.
+ private openQuotes(tx:Pick<PrismaService,'cotizacion'>,id:number){
+ return tx.cotizacion.count({where:{contacto_id:id,OR:[{estado:'borrador'},{estado:'enviada',validez:{gte:new Date(limaToday()+'T00:00:00Z')}}]}});
  }
  async save(recurso:string,id:number,dto:AttentionDto,user:number){
  const record=await this.record(recurso,id);
@@ -53,13 +63,25 @@ export class AttentionService {
  const where={recurso_registro_id:{recurso,registro_id:id}};
  const old=await tx.attentionRecord.findUnique({where});
  if(old&&old.revision!==dto.revision||!old&&dto.revision!==1)throw new ConflictException('El seguimiento cambió en otra sesión. Recarga el caso.');
- const historial=[...(old?.historial as Prisma.JsonArray||[]),{accion:'Seguimiento actualizado: '+dto.estado,usuario:user,fecha:new Date().toISOString()}];
+ const changes=changedFields(old,dto);
+ // Guardado idempotente: repetir exactamente lo ya guardado (misma revisión) no escribe, no sube la revisión ni duplica el historial.
+ if(old&&old.estado===dto.estado&&!changes.length)return{ok:true,item:old};
+ let from=old?old.estado:'nuevo';
+ if(recurso==='messages'){
+ // El estado de partida se lee DENTRO de la transacción, con la fila de origen ya bloqueada: el PUT heredado no puede cambiarlo entre medias.
+ if(!old)from=(await tx.contacto.findUnique({where:{id},select:{estado:true}}))?.estado??'nuevo';
+ const problem=checkMessageChange({from,to:dto.estado,respuesta:dto.respuesta,notas:dto.notas});
+ if(problem)throw new BadRequestException(problem);
+ if(dto.estado==='archivado'&&from!=='archivado'&&await this.openQuotes(tx,id))throw new BadRequestException(ARCHIVE_WITH_OPEN_QUOTES);
+ }
+ // `accion` conserva el texto que muestra el panel; los demás campos son aditivos y nunca contienen el contenido de notas ni respuestas.
+ const historial=[...(old?.historial as Prisma.JsonArray||[]),{accion:'Seguimiento actualizado: '+dto.estado,usuario:user,fecha:new Date().toISOString(),estado_anterior:from,estado_nuevo:dto.estado,cambios:changes}];
  const data={estado:dto.estado,responsable:dto.responsable,notas:dto.notas,respuesta:dto.respuesta,historial,revision:(old?.revision||1)+1};
  if(old){const result=await tx.attentionRecord.updateMany({where:{id:old.id,revision:dto.revision},data});if(result.count!==1)throw new ConflictException('El seguimiento cambió en otra sesión. Recarga el caso.');}
  else await tx.attentionRecord.create({data:{...data,recurso,registro_id:id,...(recurso==='messages'?{contacto_id:id}:{reclamacion_id:id})}});
  if(recurso==='messages')await tx.contacto.update({where:{id},data:{estado:dto.estado==='archivado'?'atendido':dto.estado}});
  return{ok:true,item:await tx.attentionRecord.findUniqueOrThrow({where})};
- });return{ok:true,item:{...saved.item,envios:this.envios(recurso,id,record.email,saved.item)}};}catch(e){if(e instanceof Prisma.PrismaClientKnownRequestError&&e.code==='P2003')throw new ConflictException('El registro de origen cambió. Recarga el caso.');if(isUniqueViolation(e))throw new ConflictException('El seguimiento cambió en otra sesión. Recarga el caso.');throw e;}
+ });return{ok:true,item:{...saved.item,envios:this.envios(recurso,id,record.email,saved.item),...(recurso==='messages'?{transiciones_permitidas:allowedTransitions(saved.item.estado)}:{})}};}catch(e){if(e instanceof Prisma.PrismaClientKnownRequestError&&e.code==='P2003')throw new ConflictException('El registro de origen cambió. Recarga el caso.');if(isUniqueViolation(e))throw new ConflictException('El seguimiento cambió en otra sesión. Recarga el caso.');throw e;}
  }
  // Reclama el envío ANTES de contactar al proveedor, en una transacción corta (sin red dentro): el intento queda en el historial como «iniciado»
  // y la revisión sube. Compare-and-swap sobre `revision`: de dos peticiones simultáneas solo una lo consigue; la otra recibe 409 sin llegar al proveedor.
@@ -132,6 +154,7 @@ export class AttentionService {
  async send(recurso:string,id:number,revision:number,user:number,confirmed=false){
  const record=await this.record(recurso,id);const {item}=await this.get(recurso,id);
  if(item.revision!==revision)throw new ConflictException(STALE);
+ if(recurso==='messages'&&item.estado==='archivado')throw new BadRequestException(SEND_ON_ARCHIVED);
  if(!item.respuesta.trim())throw new BadRequestException('Guarda una respuesta antes de enviarla.');
  // El contenido enviado es el de la revisión guardada que la persona vio (la comprobación de revisión de arriba y la del claim lo garantizan).
  const message={from:this.config.get<string>('MAIL_USER'),to:record.email,subject:record.subject,text:item.respuesta};

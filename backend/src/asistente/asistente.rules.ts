@@ -1,11 +1,12 @@
 import type { Permission } from '../permissions/permissions';
 import { can, canAll } from '../permissions/policy';
 import type { CertificadosStats, PreinscripcionesStats } from '../admin/stats/stats.academic';
+import { HORAS_CONSULTA_ANTIGUA } from '../attention/attention-rules';
 
 // Reglas DETERMINISTAS de HORUS Assistant: puras, sin base de datos ni NestJS ni IA. Cada pendiente nace de un conteo real y de una regla
 // escrita aquí; el modelo de lenguaje (opcional) solo puede redactar lo que estas reglas ya decidieron.
 
-export const HORAS_MENSAJE_ANTIGUO = 48;
+export const HORAS_MENSAJE_ANTIGUO = HORAS_CONSULTA_ANTIGUA; // una sola fuente: el filtro `antiguas=si` del listado de consultas usa el mismo valor
 export const MAX_PENDIENTES = 20; // tope de seguridad: con todas las reglas activas hay a lo sumo 16
 
 export type SectionKey = 'atencion' | 'chatbot' | 'cotizaciones' | 'preinscripciones' | 'aperturas' | 'ediciones' | 'sesiones' | 'matriculas' | 'certificados';

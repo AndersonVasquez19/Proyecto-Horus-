@@ -174,7 +174,11 @@ test('D4: primer seguimiento y PUT heredado se serializan con el mismo bloqueo d
               record={...record,...data}; return {count:1};
             },
           },
-          contacto: {update: async ({data}:{data:{estado:string}}) => { assert.equal(hasLock,true); state=data.estado; return {id:1,estado:state}; }},
+          contacto: {
+            findUnique: async () => { assert.equal(hasLock,true,'el estado de partida se lee con la fila de origen bloqueada'); return {estado:state}; },
+            update: async ({data}:{data:{estado:string}}) => { assert.equal(hasLock,true); state=data.estado; return {id:1,estado:state}; },
+          },
+          cotizacion: {count: async () => 0},
         };
         try { return await work(tx); } finally { release?.(); }
       },

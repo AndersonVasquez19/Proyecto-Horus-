@@ -4,7 +4,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { CreateAdminMessageDto } from './dto/create-message.dto';
 import { UpdateMessageStatusDto } from './dto/update-message-status.dto';
 
-import { ListQueryDto, pageResult } from '../../common/list-query.dto';
+import { pageResult } from '../../common/list-query.dto';
+import type { MessageQueryDto } from './dto/query-messages.dto';
 import { countMessages, lockMessage, messageTotals, readMessages } from '../../attention/message-state';
 @Injectable()
 export class MessagesService {
@@ -12,7 +13,7 @@ export class MessagesService {
     private readonly prisma: PrismaService,
   ) {}
 
-  async findAll(q: ListQueryDto = {}) {
+  async findAll(q: MessageQueryDto = {}) {
     const messages = await readMessages(this.prisma,q);
     if(q.page===undefined)return{ok:true,messages};
     const [total,counts]=await Promise.all([countMessages(this.prisma,q),messageTotals(this.prisma)]);
