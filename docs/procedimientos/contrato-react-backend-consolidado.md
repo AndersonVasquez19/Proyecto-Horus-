@@ -1,9 +1,17 @@
 # Contrato React del backend consolidado
 
-Referencia del código local de `anderson`, base `8869e2c`, revisada el 23 de octubre de 2026.
+Referencia del backend publicado de `anderson`, commit `88b8bdb6e4d4320cbf8c4f63dd316d1cad8339f6`,
+revisada el 23 de octubre de 2026.
 No describe un despliegue: Railway/Vercel no se han validado ni activado. No se modificó React.
 Antes de usar Preinscripciones, Ediciones, Matrículas y Horarios en una base habitual deben autorizarse
 y aplicarse las migraciones pendientes; `horus_db` aún no las tiene.
+
+La misión final volvió a comprobar ese destino: 16 migraciones y 27 tablas, con un respaldo nuevo restaurado
+en MySQL 8.0.46 desechable. El clon alcanzó 18 migraciones y pasó `db:check`; **el servidor habitual sigue sin activar**.
+El ensayo de privilegios de aplicación/mantenimiento también ocurre exclusivamente en el clon. La integración
+React y el despliegue corresponden al compañero; no se modifican componentes, contratos ni configuración React
+en esta misión. Estado operativo y límites: [entrega](entrega-backend-20261023.md) y
+[activación](activacion-preinscripciones-horarios.md).
 
 ## Reglas comunes
 

@@ -1,5 +1,111 @@
 # Entrega del backend consolidado
 
+## Misión final: preparación de activación y separación de privilegios
+
+23 de octubre de 2026, America/Lima. Esta sección registra la nueva operación sobre el backend publicado
+`88b8bdb6e4d4320cbf8c4f63dd316d1cad8339f6`. Se confirmó por `git ls-remote` su coincidencia con
+`origin/anderson`; el árbol inicial estaba limpio. No se modifica código de aplicación, React, configuración real
+ni CI. La autorización de publicación del registro histórico inferior **no se reutiliza para esta misión**.
+El encargo actual permite preparar el commit local documental; no se hace push ni despliegue.
+
+| Área | Estado de esta misión |
+| --- | --- |
+| Desarrollo backend | Código consolidado y publicado en el commit anterior; sin nuevas funcionalidades. |
+| Activación MySQL local | **Pendiente de aprobación separada (etapa C)**. `horus_db` conserva 16 migraciones. |
+| Privilegios MySQL | Separación ensayada en un clon 8.0.46; **sin cambios de cuentas o secretos reales**. Transición pendiente de etapa D. |
+| Integración React | Responsabilidad del compañero; sin modificaciones. |
+| Despliegue | Responsabilidad del compañero; sin ejecución ni reactivación de CI automática. |
+
+### Destino, respaldo y recuperación
+
+Identidad comprobada: `127.0.0.1:3306/horus_db`, MySQL **8.0.46**, UUID
+`dc5bb32a-a7b2-11f1-913f-14b5cd19372a`, **27 tablas InnoDB y 148 filas**.
+Las 16 migraciones registradas coinciden con las primeras 16 de la secuencia vigente. Faltan exclusivamente:
+
+1. `20261020-preinscripciones`.
+2. `20261023-convocatoria-horarios`.
+
+Sesiones sigue retirada y no se aplicará; se conservan Docentes, Certificados y sus datos históricos.
+`db:check` del origen devuelve 1 solo por las estructuras pendientes. La comprobación de integridad del origen
+verificó **17 claves foráneas sin huérfanos**.
+
+El respaldo nuevo del **23/10/2026 a las 15:28** contiene esquema y las 148 filas, incluidas las cuotas efímeras.
+Se verificaron firma SHA-256, manifiesto y sentencias; la restauración en otro MySQL **8.0.46** desechable
+recuperó exactamente **27 tablas, 148 filas y 16 migraciones**, con huellas idénticas por tabla e integridad referencial.
+Su archivo, firma completa, ACL y comandos están en [Activación y recuperación](activacion-preinscripciones-horarios.md).
+
+En el clon, la cuenta restringida de mantenimiento aplicó ambas migraciones, alcanzó **18 migraciones y 30 tablas**,
+pasó `db:check`, conservó los datos originales y repitió la migración sin cambios. Una cuenta con solo SELECT
+respaldó el clon actualizado; su restauración también coincidió exactamente. No se usa el servidor real para pruebas.
+Los servidores nativos propios se detienen al finalizar; no se eliminan recursos Docker ni worktrees antiguos.
+
+Una lectura posterior confirmó las mismas 148 filas y el mismo DDL del origen, además del hash inalterado de
+`backend/.env`. La muestra no tenía otras conexiones a `horus_db`; **no acredita una ventana futura sin escritores**.
+Antes de una activación aprobada deben repetirse identidad y huellas; si cambiaron los datos, repetir respaldo y restauración.
+
+**Activación real: sin fecha, no ejecutada.** MySQL DDL tiene commits implícitos: ante fallo parcial, mantener
+detenidos los escritores, conservar evidencia e inspeccionar el esquema. No reintentar a ciegas, editar migraciones
+históricas ni restaurar encima del origen. La recuperación comprobada restaura en una base aislada nueva;
+una reparación o cambio de destino real requiere otra autorización.
+
+### Comprobaciones de esta misión
+
+Se usó **Node 22.23.3** instalado en caché, sin instalar dependencias ni cambiar lockfiles. Node 24 permanece
+como versión predeterminada del shell; Node 22 se selecciona únicamente en los procesos propios.
+
+| Comprobación | Resultado nuevo |
+| --- | --- |
+| TypeScript, `tsc --noEmit --incremental false` | Salida 0. |
+| `npm run build` | Salida 0; sin migraciones de la base real. |
+| Cotizaciones PDF, prueba aislada con `isolate-env.cjs` | **14/14**, sin fallos ni omisiones. |
+| API con cuenta MySQL sin DDL, clon 8.0.46 | **48/48 comprobaciones HTTP sin instrumentación**, después de otra pasada instrumentada 48/48; AppModule y guards reales. |
+| SQL de cuentas restringidas | Migración y repetición, check/backup SELECT, restauración exacta y **14 denegaciones** aprobadas. Matriz de aplicación limitada a las operaciones usadas en cada una de 27 tablas. |
+| AccessGuard, suite existente 8.0.46 | Primer intento: **timeout de arranque**. Repetición aislada: **28/28**, cero fallos u omisiones; sin cambiar el límite de 60 s. |
+| Horarios, suite existente 8.0.46 | **14/14**, cero fallos, cancelaciones u omisiones. |
+| Preinscripciones, suite existente 8.0.46 | **27/27**, cero fallos, cancelaciones u omisiones. |
+
+El ensayo HTTP comprende login/JWT, 401/403, CRUD, catálogo, Cursos, Ediciones, Horarios, Estudiantes, Matrículas,
+ambos canales de Preinscripciones, reportes JSON/CSV/XLSX/PDF, verificación pública de certificado ficticio y su
+bloqueo histórico de matrícula. Comprueba revisión obsoleta, apertura sin mínimo y duplicados (409), solapamiento
+(422), rutas retiradas 404 y Swagger deshabilitado. Usa personas y credenciales ficticias solo en el clon; no envía
+correo ni invoca OpenAI. Las escrituras de prueba nunca apuntan a `horus_db`.
+
+Las **804/804 unitarias**, 82 regresiones H-01 a H-05 y las otras pasadas de la consolidación inferior son
+**evidencia histórica**; no presentar sus cifras como una repetición completa de esta misión.
+
+La lectura final de las **16:01 (America/Lima)** volvió a comprobar DDL, las 148 filas, las 16 migraciones,
+las 17 claves foráneas sin huérfanos y `.env` sin cambios. No había otras conexiones en esa muestra.
+Se confirmó después que no quedaba ningún proceso MySQL de los servidores creados por esta misión.
+El cierre local solo comprende estos cuatro procedimientos. Se revisan diff, finales CRLF y ausencia de secretos,
+y se exige `git diff --check` antes del commit. Los dos stashes históricos permanecen intactos.
+
+### Seguridad, incidencias y límites
+
+- La cuenta habitual mantiene privilegios administrativos globales y `GRANT OPTION`; **la aplicación real todavía
+  no usa una cuenta mínima**. MySQL escucha en `*`; no se comprobó acceso exterior ni firewall, ni se cambió su escucha.
+- La propuesta separa aplicación y mantenimiento por proceso. Una cuenta real adicional de respaldo es opcional;
+  solo se justifica si se necesita automatización de lectura. Plantillas, pruebas y reversión en
+  [Privilegios MySQL](privilegios-mysql-propuesta.md). No revocar la credencial anterior antes de revisar sus consumidores.
+  La matriz final retira UPDATE/DELETE de historiales e importaciones y DELETE de entidades conservadas;
+  su repetición HTTP sin instrumentación también pasó **48/48**. Se conserva DELETE para la retención oportunista del chatbot.
+- En el arnés privado se reprodujo autenticación 1045 por heredar la clave RSA de otra instancia; se corrigió la
+  variable del proceso de ensayo. Se normalizó además la clave pública del clon a PEM antes de pasarla al entorno.
+  No se modificaron credenciales reales ni código de producción por estas incidencias del arnés.
+- El primer arranque del ensayo HTTP excedió 30 s y el primer AccessGuard existente excedió su espera de 60 s.
+  El arranque instrumentado posterior completó importación, conexión y SELECT en unos 16,4 s y aprobó sus peticiones.
+  **No demuestra la causa de los timeouts anteriores**. Se conservan sus fallos; no se aumentan timeouts ni se desactivan guards.
+- Los respaldos están fuera del repositorio, con ACL de operador/SYSTEM. No se ha acreditado cifrado ni copia externa.
+  El respaldo de base no sustituye al respaldo separado de archivos subidos.
+- La verificación pública histórica de Certificados sigue provisional hasta comprobar sus QR en todos los entornos.
+  Swagger conserva cuota por proceso y debe permanecer deshabilitado públicamente.
+
+La evidencia privada nueva está en `%USERPROFILE%\.horus-respaldos\mision-final-20261023-a6421ba2\`.
+No se incluyen allí secretos reales nuevos ni se publican sus respaldos, logs o datos personales en Git.
+Las aprobaciones pendientes son independientes: primero migraciones sobre el UUID/base indicados y, después de
+verificarlas, creación de cuentas y cambio de secretos/configuración real. Una aprobación no autoriza la otra.
+
+## Registro de la consolidación y publicación anteriores
+
 23 de octubre de 2026, America/Lima. Rama `anderson`, base `8869e2c789e9b213d5c08a7e4c49a7c648360dd3`.
 La solicitud de esta operación autoriza commits y push normal a `origin/anderson`; mantiene prohibidas la activación
 real de MySQL, los cambios de cuentas/privilegios, React, Actions y los despliegues.

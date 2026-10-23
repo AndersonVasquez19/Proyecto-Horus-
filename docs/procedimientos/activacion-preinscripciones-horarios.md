@@ -3,6 +3,51 @@
 Preparado el 23 de octubre de 2026. **No ejecutado: falta autorización específica de escritura.**
 El push del código no activa MySQL. No desplegar ni usar los módulos afectados sobre una base sin migrar.
 
+## Verificación nueva de la misión final (23 de octubre de 2026)
+
+La inspección parte de `anderson`, commit publicado `88b8bdb6e4d4320cbf8c4f63dd316d1cad8339f6`,
+con árbol limpio y los dos stashes históricos intactos. El shell ofrecía Node 24; los comandos de esta operación
+usan **Node 22.23.3** ya instalado, sin instalar dependencias ni cambiar la configuración del usuario.
+
+Se confirma de nuevo `127.0.0.1:3306/horus_db`, MySQL **8.0.46**, UUID
+`dc5bb32a-a7b2-11f1-913f-14b5cd19372a`: **27 tablas InnoDB, 148 filas y 16 migraciones**.
+Solo están pendientes las dos migraciones enumeradas abajo; Sesiones sigue retirada y sin registro.
+`db:check` previo sale con código 1 exclusivamente por columnas, tablas, índices y restricciones de esas dos migraciones.
+La integridad referencial del origen pasa: **17 claves foráneas, sin huérfanos**.
+No se encontraron vistas, triggers, rutinas ni eventos que el respaldo de tablas pudiera omitir.
+Había aproximadamente **243 GiB libres** en C: antes de las operaciones.
+
+Respaldo nuevo tomado a las **15:28 del 23/10/2026 (America/Lima)**, fuera del repositorio:
+
+- Directorio privado: `%USERPROFILE%\.horus-respaldos\mision-final-20261023-a6421ba2\source-backup\`.
+- Archivo: `horus-horus_db-20261023-202804.sql.gz`, **13 884 bytes**, con manifiesto y archivo `.sha256`.
+- SHA-256: `ed82f63ab5229ba60855920b4cf3566f4f1f751cb91d0827ba3c1b1901a77daf`.
+- Incluye estructura y las **148 filas**, también `rate_limit_buckets` mediante `--include-rate-limits`.
+- ACL sin herencia: acceso únicamente al operador y SYSTEM. **No se ha demostrado cifrado ni copia externa**;
+  la ACL y SHA-256 no sustituyen esas medidas. No moverlo a Git ni a almacenamiento compartido sin protección.
+
+La copia se restauró con `scripts/restore.cjs` en un **MySQL nativo desechable 8.0.46**, con directorio, puerto
+y UUID distintos del origen. Se compararon todas las filas mediante SHA-256 por tabla, incluidas columnas generadas:
+**27/27 tablas y 148/148 filas idénticas**, 16 migraciones y las 17 claves foráneas íntegras.
+El manifiesto y el verificador también aprobaron firma, sentencias y recuentos.
+
+En un clon limpio, una cuenta de mantenimiento **sin privilegios globales ni DROP** aplicó las dos migraciones:
+**18 migraciones, 30 tablas, `db:check` 0, datos originales conservados** (excepto las dos filas nuevas del registro
+de migraciones), repetición idempotente e integridad referencial correcta. Otra cuenta con solo SELECT ejecutó
+`db:check` y un respaldo del clon actualizado; su restauración volvió a coincidir exactamente.
+La integridad del clon actualizado verifica **22 claves foráneas, sin huérfanos**.
+Las instancias propias se detienen al terminar; se conservan respaldos y evidencia privada.
+
+La comparación de lectura de las **15:41** confirmó que el esquema, las 148 filas y `backend/.env` del origen
+seguían idénticos. No había otras conexiones a `horus_db` en esa muestra; **eso no acredita una ventana futura
+sin escritores**. Si el origen cambia antes de aprobar la operación, repetir respaldo y restauración.
+La lectura final de las **16:01** volvió a confirmar esos mismos datos, DDL, migraciones y `.env`, sin huérfanos.
+
+**Fecha de activación real: pendiente. No se ejecutó `db:migrate` sobre `horus_db`.**
+La etapa C del encargo exige aprobación expresa y separada después de revisar esta evidencia. Los comandos reales
+siguen siendo `npm run db:migrate` y `npm run db:check` desde `backend/`, con Node 22, el destino anterior comprobado
+inmediatamente antes y una ventana sin escritores confirmada. No cambiar `.env` ni cuentas como parte de esta aprobación.
+
 ## Destino y evidencia
 
 Lectura de esta operación: `127.0.0.1:3306/horus_db`, MySQL **8.0.46**, UUID
@@ -54,7 +99,7 @@ aprobar su almacenamiento; no escribir contraseñas en comandos ni en el histori
 node --version # Debe ser 22.x.
 npm run db:check # Antes: salida 1 solo por las dos migraciones pendientes, revisar el detalle.
 $backupDir = '<DIRECTORIO_PRIVADO_AUTORIZADO>'
-npm run db:backup -- --dir=$backupDir
+npm run db:backup -- --dir=$backupDir --include-rate-limits
 if ($LASTEXITCODE -ne 0) { throw 'Respaldo fallido: detener.' }
 $backupFile = (Get-ChildItem -LiteralPath $backupDir -Filter '*.sql.gz' |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
