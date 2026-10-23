@@ -5,6 +5,11 @@
 sin activar: repetir este procedimiento en cada una, con su propia autorización. Las secciones posteriores conservan
 la preparación y la evidencia previas.
 
+**Actualización posterior del 23/10/2026:** la etapa B de separación de cuentas también quedó ejecutada y verificada
+en este destino: NestJS usa `horus_app` y `horus_migrator` se reserva para mantenimiento. Ver el
+[cierre de cuentas MySQL](privilegios-mysql-propuesta.md). Los límites de autorización y las credenciales anteriores
+descritos en el acta de activación corresponden a aquella operación, previa a la separación.
+
 ## Activación real (23 de octubre de 2026)
 
 Código `anderson` en `6f9e233` (código de aplicación idéntico a `88b8bdb`), Node **22.23.3**, scripts del repositorio.
@@ -109,7 +114,8 @@ Este ensayo no es una ventana real ni demuestra ausencia actual de escritores.
    clientes que escriban. Confirmar por separado la autorización. El código actual tiene columnas académicas nuevas
    que se seleccionan desde Ediciones y Matrículas: migrar antes de arrancarlo sobre ese destino.
 2. Inyectar `DB_*` en un proceso de mantenimiento privado con Node 22. No cambiar `.env` ni credenciales por comodidad.
-   La separación de cuentas se prepara en [Privilegios MySQL](privilegios-mysql-propuesta.md); todavía no está aplicada.
+   En la preparación inicial la separación aún no estaba aplicada; después se completó en la etapa B local
+   ([Privilegios MySQL](privilegios-mysql-propuesta.md)). Para otra base, verificar su propia cuenta de mantenimiento.
 3. Repetir la identidad y la lista de migraciones mediante consultas de lectura; detener si difieren del inventario.
 
 ```sql

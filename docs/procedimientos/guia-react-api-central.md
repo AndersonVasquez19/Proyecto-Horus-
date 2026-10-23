@@ -5,8 +5,10 @@ Complementa el [contrato React](contrato-react-backend-consolidado.md), que sigu
 endpoints, permisos y restricciones de los DTO. Aquí está lo necesario para empezar y los ejemplos verificados.
 
 **Estado:** la base local `horus_db` ya tiene las 18 migraciones (Preinscripciones y Horarios incluidas) y
-`db:check` pasa. **No hay despliegue en Railway ni en Vercel**: la API central descrita en la sección 7 está
-preparada, no operativa. Nada de esta guía requiere cambios del backend.
+`db:check` pasa. La separación MySQL local se ejecutó y verificó el 23/10/2026: NestJS usa `horus_app` y
+`horus_migrator` queda reservado para mantenimiento ([privilegios efectivos](privilegios-mysql-propuesta.md)).
+**No hay despliegue en Railway ni en Vercel**: la API central descrita en la sección 9 está preparada, no operativa.
+La separación de cuentas MySQL conserva los contratos HTTP y no requiere cambios de React.
 
 ## 1. Configurar la URL de la API
 
@@ -221,7 +223,7 @@ DB_PASS=<secreto en el gestor de Railway>
 DB_SYNC=false
 DB_SSL=false
 JWT_SECRET=<aleatorio, al menos 32 caracteres>
-CORS_ORIGINS=https://<proyecto>.vercel.app,http://localhost:5173
+CORS_ORIGINS=https://<proyecto>.vercel.app
 UPLOAD_DIR=/data/uploads
 TRUSTED_PROXY_CIDRS=<rangos confirmados con Railway>
 MAIL_PROVIDER=<resend|gmail> (ver backend/MAIL.md)
@@ -242,6 +244,7 @@ Una sola vez por base, por la persona responsable, desde la terminal del servici
 proceso automático crea gerentes**, y el arranque de la API no crea cuentas.
 
 1. Base vacía: `npm run db:init`, `npm run db:migrate`, `npm run db:check` (detenerse ante cualquier fallo).
+   Usar la credencial de mantenimiento verificada para ese destino, inyectada solo en su proceso; no la de la API.
 2. La persona que será gerente se registra desde React (`/admin/register`), con su correo real.
 3. `npm run admin:assign-role -- --listar` (solo lectura): anotar la línea `--destino=… --servidor=<server_uuid>`
    y comparar el `server_uuid` con `SELECT @@server_uuid` en la consola de MySQL de Railway.

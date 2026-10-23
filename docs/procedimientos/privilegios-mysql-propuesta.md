@@ -1,70 +1,72 @@
-# Separación de credenciales MySQL: propuesta para revisión
+# Separación de cuentas MySQL: cierre local y referencia de mantenimiento
 
-## Plan exacto para `horus_db` local, pendiente de autorización (23/10/2026)
+## Etapa B ejecutada y verificada en `horus_db` local (23/10/2026)
 
-**No ejecutado.** Requiere una autorización separada que cite este apartado. Hasta entonces la API local sigue usando
-la cuenta con privilegios administrativos globales y `GRANT OPTION`: **el endurecimiento MySQL no está cerrado**.
+**Separación local completada**, con autorización expresa en la operación anterior. NestJS utiliza
+`horus_app`@`localhost`; `horus_migrator`@`localhost` queda reservado para mantenimiento explícito en un proceso
+separado. La API conecta por TCP local y ambas cuentas usan `caching_sha2_password`, sin host `%`.
+Este cierre es exclusivamente documental: no cambia `.env`, cuentas, contraseñas, datos ni configuración MySQL.
+Railway, `horus_local` y otros destinos requieren comprobación y autorización propias; este resultado solo acredita
+`horus_db` local con MySQL 8.0.46.
 
-Datos leídos en solo lectura tras activar las 18 migraciones (evidencia privada `stageb-inspect.json`):
+### Privilegios efectivos
 
-- Servidor `dc5bb32a-a7b2-11f1-913f-14b5cd19372a`, MySQL 8.0.46, `bind_address=*`, `skip_name_resolve=0`,
-  `require_secure_transport=0`, autenticación `caching_sha2_password`.
-- La API local conecta por TCP a `127.0.0.1` y MySQL la identifica como **`localhost`**; la cuenta actual coincide
-  con un host concreto (no `%`). No existen todavía `horus_app`, `horus_migrator` ni `horus_backup`.
-- El generador de la sección «Plantilla SQL» devuelve **27 GRANT** sobre 30 tablas; quedan fuera exactamente
-  `docentes`, `docente_asignaciones` y `horus_migrations`, como se diseñó. Copia privada: `stageb-grants-propuesta.sql`.
-- `backend/.env` está en `.gitignore` y no aparece en ningún commit del historial. Los respaldos y secretos están fuera del repositorio.
-- Consumidores de la cuenta actual: `backend/.env` (NestJS y scripts `db:*`/`admin:*`) y, previsiblemente, MySQL
-  Workbench del operador. La pila Docker `horus-local` usa su propio MySQL. **No se modifica ni revoca la cuenta actual.**
+| Cuenta | Alcance verificado |
+| --- | --- |
+| `horus_app`@`localhost` | **27 GRANT por tabla**, exactamente la matriz inferior. Sin DDL, `GRANT OPTION` ni privilegios administrativos globales; sin acceso a `horus_migrations`, `docentes`, `docente_asignaciones` ni `mysql.user`. `certificados` solo admite SELECT. |
+| `horus_migrator`@`localhost` | **SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES** solo sobre `horus_db`.*. Sin DROP, `GRANT OPTION`, administración global ni acceso a `mysql.user`. |
 
-Cuenta de respaldo: **no se crea**. `db:backup` y `db:check` solo necesitan SELECT y los ejecuta el proceso de
-mantenimiento. La cuenta SELECT ensayada queda para una futura automatización que la justifique.
+`SHOW GRANTS` incluye `USAGE ON *.*` en ambas cuentas: representa ausencia de privilegios globales, no una concesión
+de administración. No se creó `horus_backup`: las copias manuales y `db:check` se ejecutaron con el migrador;
+una cuenta exclusiva de lectura queda como opción para una futura automatización autorizada.
+La cuenta administrativa anterior se conserva para sus otros consumidores; no se revocó ni se rotó.
 
-Ensayo previo: la matriz de 27 tablas se aplicó a una cuenta de aplicación en un MySQL 8.0.46 desechable con el esquema
-de 18 migraciones; la API real superó 74 solicitudes HTTP (cuentas, roles, académico, reportes, descargas) y se
-comprobaron cuatro denegaciones 1142 (DDL, lectura de `horus_migrations`, escritura de `certificados`, borrado de auditoría).
+### Resultados de la etapa B
 
-### Pasos (en una ventana autorizada, por el operador)
+Se revisaron los artefactos privados `apply-evidence.json`, `validate-evidence.json`, `api-proceso-evidence.json`,
+`switch-env-evidence.json`, `api-dotenv-evidence.json`, `main-boot-evidence.json` y las salidas del mantenimiento.
+Se publican solo resultados agregados; los secretos, las rutas privadas y la identidad del servidor quedan fuera
+de este documento.
 
-1. **Antes:** respaldo verificado si los datos cambiaron desde el posterior a la activación; copia privada de
-   `backend/.env` con su SHA-256 (fuera de Git/OneDrive); dos secretos aleatorios de al menos 32 caracteres guardados
-   en el gestor de contraseñas del responsable. Ningún secreto en comandos, historial, Git ni chat.
-2. **Identidad**, en una sesión administrativa (Workbench): `SELECT @@server_uuid, VERSION();` debe devolver el UUID anterior.
-3. **Cuentas**, en esa misma sesión, pegando los secretos desde el gestor:
+| Comprobación ejecutada el 23/10/2026 | Resultado registrado |
+| --- | --- |
+| Previo a la separación | 18 migraciones, 30 tablas, 150 filas y 22 FK sin huérfanos; respaldo previo verificado y matriz de 27 tablas coincidente. |
+| SQL con `horus_app` | **20/20**: tres lecturas y un `SELECT FOR UPDATE` con rollback correctos; **16 denegaciones esperadas** (1142, 1227 o 1044) de DDL, tablas excluidas, escrituras restringidas y administración. |
+| SQL con `horus_migrator` | **9/9**: lectura del registro de migraciones y de Docentes; **7 denegaciones esperadas** de DROP, lectura de `mysql.user`, CREATE USER, GRANT, SET GLOBAL, CREATE DATABASE y SHUTDOWN. Sin cambios de tablas en las sondas SQL. |
+| Mantenimiento con `horus_migrator` | `db:check` compatible; `db:backup` de 30 tablas y 150 filas, 18 migraciones, firma SHA-256 correcta, contenido permitido y recuentos coincidentes. No se aplicaron migraciones en esta etapa. |
+| API con credenciales de aplicación inyectadas por proceso | **21/21** respuestas esperadas: lecturas públicas, 401 sin token, rutas retiradas y Swagger 404. Solo cambió `rate_limit_buckets`, por el control de frecuencia. |
+| Configuración local durante la transición autorizada | Solo cambiaron `DB_USER` y `DB_PASS`; las demás claves permanecieron iguales y se conservó la copia privada anterior. |
+| API cargando la configuración local de aplicación | **20/20** respuestas esperadas, ambos guards activos; 0 tablas modificadas. |
+| Arranque normal del backend compilado | Listo en **5,5 s**; **7/7** respuestas esperadas, dos conexiones MySQL identificadas como `horus_app`, 0 líneas de error y 0 tablas modificadas. |
 
-   ```sql
-   CREATE USER 'horus_app'@'localhost' IDENTIFIED BY '<SECRETO_APP>';
-   -- Las 27 líneas generadas por la consulta de «Plantilla SQL», con HOST_APP = localhost.
-   CREATE USER 'horus_migrator'@'localhost' IDENTIFIED BY '<SECRETO_MIGRACION>';
-   GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON `horus_db`.* TO 'horus_migrator'@'localhost';
-   SHOW GRANTS FOR 'horus_app'@'localhost';
-   SHOW GRANTS FOR 'horus_migrator'@'localhost';
-   ```
+El ensayo funcional previo en MySQL desechable superó **74/74** solicitudes con una cuenta de aplicación de la misma
+matriz: cuentas, roles, académico, reportes y descargas; detalle en [la entrega](entrega-backend-20261023.md).
+Las pruebas locales de esta etapa no incluyen login con credenciales personales, escrituras de negocio ni navegador.
+El ensayo previo no equivale a probar esos flujos sobre datos reales; tampoco acredita correo real, OpenAI ni despliegues.
+En este cierre documental se revisó la evidencia existente, sin repetir pruebas contra MySQL.
 
-   Confirmar 27 líneas por tabla para `horus_app`, ninguna global, sin `GRANT OPTION` ni DDL.
-4. **Validación sin tocar `.env`:** en un proceso con `DB_USER`/`DB_PASS` de `horus_app` inyectados solo en ese proceso,
-   arrancar la API y repetir las lecturas de la etapa C sobre `horus_db` (health, públicas, 401, rutas retiradas 404) y
-   un login con una cuenta real del responsable. En otro proceso con `horus_migrator`: `npm run db:check` y
-   `npm run db:migrate` (sin pendientes, salida 0) y un `db:backup` a un directorio privado.
-5. **Cambio de configuración** (requiere autorizar expresamente la edición de `.env`): sustituir en `backend/.env` solo
-   `DB_USER`/`DB_PASS` por los de `horus_app`. El mantenimiento (`db:*`, `admin:*`) se ejecuta en una consola aparte con
-   las variables de `horus_migrator`, que prevalecen sobre `.env`, y se retiran al terminar.
-6. **Comprobación final:** reiniciar la API, verificar login y una pantalla de cada módulo, y registrar fecha y responsable.
+### Pendientes de infraestructura
 
-### Reversión
+- **Protección de credenciales:** transferir los secretos al gestor de contraseñas del responsable y revisar su
+  almacenamiento y permisos. El archivo privado de credenciales **se conserva intacto**, fuera de Git; no eliminarlo
+  antes de que el responsable confirme la transferencia. No se considera completada esta protección.
+- **Respaldos cifrados:** definir cifrado, copia externa protegida y retención. La firma SHA-256 y la ACL privada no
+  sustituyen el cifrado; este no está acreditado.
+- **Firewall y escucha:** revisar consumidores, reglas y accesibilidad. La inspección previa indicó `bind_address=*`;
+  no se verificó exposición desde otras máquinas ni se modificó la red o el servidor.
 
-Restaurar `DB_USER`/`DB_PASS` desde la copia privada de `.env` (comparar su SHA-256) y reiniciar la API. No afecta a
-datos ni migraciones. Retirar las cuentas nuevas (`DROP USER`) solo con otra autorización; no es necesario para revertir.
-La revocación o rotación de la cuenta administrativa actual queda para una decisión posterior, tras inventariar sus usos.
+### Recuperación y otros destinos
 
-En Railway el mismo esquema aplica con `HOST_APP`/`HOST_MANTENIMIENTO` de su red privada; la cuenta raíz que crea
-Railway no debe usarse como `DB_USER` de la API una vez creadas las cuentas separadas.
+Una reversión de la credencial de aplicación requiere una nueva ventana autorizada: restaurar `DB_USER`/`DB_PASS`
+desde la copia privada comprobada, reiniciar y verificar la API. No implica revertir migraciones ni borrar datos.
+Retirar cuentas o rotar secretos requiere autorización específica tras inventariar sus consumidores.
+En Railway el esquema debe adaptarse a los hosts y al transporte de su red privada; la cuenta raíz no debe usarse
+como credencial de la API una vez preparadas y verificadas las cuentas separadas.
 
-23 de octubre de 2026. **Preparación y ensayo aislado; sin ejecutar CREATE USER, GRANT, REVOKE ni cambios de configuración en el servidor real.**
-La sonda de solo lectura de `horus_db` confirmó que la credencial configurada tiene privilegios globales de administración.
-No es una credencial mínima de aplicación. No se reproducen nombre de cuenta, contraseña ni salida completa de configuración.
+## Ensayo previo de separación en MySQL 8.0.46 (histórico)
 
-## Evidencia nueva de separación en MySQL 8.0.46
+Esta sección conserva la evidencia anterior a la etapa B; las referencias a la cuenta habitual describen ese
+momento previo, no la credencial que NestJS utiliza tras la separación local.
 
 La misión final volvió a confirmar privilegios administrativos globales y `GRANT OPTION` en la credencial habitual.
 La escucha del servidor es `bind_address=*`; no se comprobó su accesibilidad desde otras máquinas ni el firewall.
@@ -97,11 +99,11 @@ por proceso; la conexión y las migraciones pasaron sin ampliar permisos. **No f
 La clave pública del clon se exporta como PEM canónico antes de incorporarla al entorno de procesos de prueba.
 Nunca copiar al clon ni al futuro servidor la clave pública de otra instancia.
 
-La transición real sigue pendiente de la autorización separada de la etapa D. Antes, elegir host/transportes,
-guardar los secretos de aplicación y mantenimiento por separado y confirmar sus consumidores. Conservar la
-configuración anterior mientras se valida la nueva; no revocar la credencial anterior por anticipado.
+La transición local preparada en este ensayo se ejecutó después en la etapa B descrita arriba. Para otros destinos
+siguen siendo necesarios autorización propia, hosts y transporte comprobados, secretos separados e inventario de
+consumidores. No revocar la credencial anterior por anticipado.
 
-Configuración preparada, **sin escribirla en `.env`**: conservar `DB_HOST=127.0.0.1`, `DB_PORT=3306` y
+Configuración preparada durante el ensayo, **sin escribirla entonces en `.env`**: conservar `DB_HOST=127.0.0.1`, `DB_PORT=3306` y
 `DB_NAME=horus_db`; inyectar `DB_USER`/`DB_PASS` de aplicación únicamente en NestJS y las credenciales de
 mantenimiento únicamente en su proceso separado. `DB_RSA_PUBLIC_KEY` debe ser la clave pública comprobada
 de ese servidor, y TLS debe corresponder al transporte validado. Mantener `DB_SYNC=false` y
@@ -118,10 +120,10 @@ a OpenAI es de código, no una cuenta MySQL diferente. No se cambia esta arquite
 
 Separar **procesos y secretos**, sin añadir configuración nueva:
 
-| Proceso | Credencial propuesta | Privilegios |
+| Proceso | Credencial y estado local | Privilegios |
 | --- | --- | --- |
-| API NestJS | `horus_app` restringida al host real | Solo operaciones por tabla de la matriz inferior; sin DDL, administración ni acceso a otros esquemas. |
-| Inicialización/migraciones explícitas | `horus_migrator` restringida al host de mantenimiento | SELECT/INSERT/UPDATE/DELETE/CREATE/ALTER/INDEX/REFERENCES sobre el esquema elegido. Sin GRANT OPTION ni privilegios globales. |
+| API NestJS | `horus_app`@`localhost`, en uso | Solo operaciones por tabla de la matriz inferior; sin DDL, administración ni acceso a otros esquemas. |
+| Mantenimiento explícito | `horus_migrator`@`localhost`, reservada | SELECT/INSERT/UPDATE/DELETE/CREATE/ALTER/INDEX/REFERENCES sobre `horus_db`.*. Sin GRANT OPTION ni privilegios globales. |
 | Backup/check de esquema, si requiere cuenta separada | `horus_backup` opcional | SELECT sobre el esquema; SHOW VIEW solo si se incorporan vistas (el backup actual no las incluye). |
 | Restore de ensayo | Cuenta administrativa del servidor desechable propio | CREATE DATABASE y DDL/DML únicamente dentro de ese servidor aislado. Nunca conceder estos permisos a la API. |
 
@@ -130,7 +132,10 @@ SUPER, CREATE USER, SHUTDOWN ni GRANT OPTION. El backup hace SELECT/SHOW/instant
 Las migraciones vigentes se revisan por su SQL; nuevas migraciones podrían requerir revisar esta lista.
 No conceder DROP preventivamente: las migraciones actuales no ejecutan DROP TABLE/DATABASE.
 
-## Plantilla SQL, pendiente de elegir destino y hosts
+## Plantilla SQL de referencia para otros destinos
+
+**No repetir en `horus_db` local:** las cuentas y la matriz ya están aplicadas. En otro destino hay que elegir
+servidor y hosts, verificar sus tablas y autorizar la operación por separado.
 
 Ejecutar **solo después de autorización**, mediante una sesión administrativa segura en el servidor/UUID comprobado.
 Sustituir los marcadores `HOST_*` y contraseñas dentro del canal privado autorizado; estos ejemplos no son credenciales.
@@ -155,7 +160,7 @@ GRANT SELECT ON `horus_db`.* TO 'horus_backup'@'HOST_RESPALDO';
 
 Para la API, se revisaron los modelos `@@map`, las operaciones Prisma, el delegado dinámico de Catálogo y el SQL
 de ejecución. El código no contiene DDL de ejecución; la API ensayada funciona sin CREATE/ALTER/DROP.
-La matriz preparada para las **27 tablas con consumidores activos** es:
+La matriz aplicada y verificada en `horus_db` local para las **27 tablas con consumidores activos** es:
 
 | Permisos | Tablas |
 | --- | --- |
@@ -201,14 +206,17 @@ permisos a tablas desconocidas. Docentes/Sesiones no tienen consumidor activo; l
 Las comprobaciones HTTP cubren los flujos enumerados en la entrega, no todas las combinaciones de negocio posibles.
 Mantener fuera `horus_migrations` evita que una API comprometida altere el registro de migraciones.
 
-## Secuencia propuesta de validación y transición
+## Secuencia de referencia para futuras transiciones autorizadas
+
+La separación local ya está completada. Esta secuencia se conserva para otro destino o una transición futura;
+no autoriza repetir cambios en el servidor local.
 
 1. Confirmar servidor, versión, UUID, esquema, hosts que MySQL ve y autorización. Inventariar cuenta actual con
    `SHOW GRANTS FOR CURRENT_USER()` sin registrar autenticadores ni secretos. Preparar recuperación y respaldo privado verificado.
 2. Ensayar las cuentas propuestas primero en un clon desechable, con los mismos hosts y transporte previstos.
    Crear tablas de fixture únicamente allí y comprobar DML válido, autenticación, cuotas, transacciones, FK y reportes.
    Intentar DDL como app debe fallar; además, comprobar `SHOW GRANTS` y falta de privilegios sobre `horus_migrations` y otros esquemas.
-   La misión final ejecutó el ensayo SQL anterior en un MySQL nativo propio; las cuentas reales siguen intactas.
+   La misión final ejecutó el ensayo SQL anterior en un MySQL nativo propio antes de la etapa B local.
 3. Probar `db:check`/`db:backup` con la cuenta de lectura y `db:migrate` con la administrativa, solo en el clon.
    Comprobar migración repetida y restauración con una tercera conexión al servidor desechable.
 4. En una ventana posterior autorizada, crear las cuentas reales y guardar secretos en el gestor privado.
@@ -247,7 +255,6 @@ npm run db:check
   Solo después de verificar todos sus usos, autorizar su bloqueo/revocación; si falla, volver al secreto anterior.
   Rotar por separado aplicación, mantenimiento y respaldo, registrando fecha y responsable sin guardar secretos.
 
-No se necesita `FLUSH PRIVILEGES` después de CREATE USER/GRANT. El procedimiento no habilita migraciones automáticas ni
-autoriza cambios de `horus_db`. La creación real de estas cuentas, la inyección de secretos y la retirada
-de privilegios actuales quedan pendientes de revisión y autorización específicas. El ensayo aislado descrito arriba
-no concede autorización para la transición real.
+No se necesita `FLUSH PRIVILEGES` después de CREATE USER/GRANT. El cierre local no habilita migraciones automáticas
+ni autoriza nuevos cambios de `horus_db`. Las operaciones en otros destinos, la rotación o retirada de cuentas y
+los pendientes de infraestructura requieren revisión del destino y autorización específicas.

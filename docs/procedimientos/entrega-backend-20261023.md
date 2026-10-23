@@ -1,5 +1,18 @@
 # Entrega del backend consolidado
 
+## Cierre documental definitivo local (23/10/2026)
+
+La **etapa B de separación MySQL está ejecutada y verificada**: NestJS utiliza `horus_app`@`localhost` y
+`horus_migrator`@`localhost` queda reservado para mantenimiento explícito. Privilegios efectivos y resultados
+en [el cierre de cuentas MySQL](privilegios-mysql-propuesta.md): 29/29 sondas SQL, 21/21 y 20/20 comprobaciones
+HTTP, arranque normal con 7/7 respuestas esperadas, `db:check` y respaldo verificado. La guía React se revisó y
+conserva los contratos vigentes. Este cierre solo modifica documentación; no repite operaciones contra MySQL.
+
+Siguen pendientes de infraestructura la protección de credenciales (transferencia al gestor del responsable,
+conservando intacto el archivo privado hasta entonces), los respaldos cifrados y la revisión de firewall/escucha.
+Railway/Vercel y otras bases no quedan validados por el cierre local. Las secciones siguientes son evidencia
+histórica de las operaciones anteriores: sus pendientes de activación y separación no describen el estado local actual.
+
 ## Cierre: activación local y entrega para React (23/10/2026, tarde)
 
 Rama `anderson`, base `6f9e233` (código de aplicación igual a `88b8bdb`). Autorizadas: las dos migraciones sobre
@@ -11,7 +24,7 @@ push, despliegues, React, `main` y CI. **No se modificó código de producción.
 | `horus_db` | **Activada**: 18 migraciones, 30 tablas, `db:check` 0, datos originales intactos, 22 FK sin huérfanos. Detalle en [activación](activacion-preinscripciones-horarios.md). |
 | API sobre `horus_db` | Arranque del AppModule compilado en 6,7 s con `PublicRateLimitGuard` y `AccessGuard`; 14 lecturas correctas (health, públicas, 401 sin token, retiradas 404, Swagger 404) y **0 tablas modificadas**. |
 | Cuentas y roles | Comprobado por HTTP real en MySQL desechable (ver abajo). `horus_db` ya tiene **un gerente activo**: no requiere inicialización. |
-| Privilegios MySQL | **No cerrado.** La API usa todavía la cuenta administrativa. Plan exacto preparado y pendiente de autorización: [privilegios](privilegios-mysql-propuesta.md). |
+| Privilegios MySQL | **Cerrado después en la etapa B del 23/10/2026**: API con `horus_app`, mantenimiento con `horus_migrator`; ver [privilegios efectivos](privilegios-mysql-propuesta.md). |
 | Guía React y API central | [Guía para React y API central](guia-react-api-central.md); contrato completo en [contrato React](contrato-react-backend-consolidado.md). |
 | Railway/Vercel | Preparado y documentado, **no desplegado**. Producción no está lista. |
 
