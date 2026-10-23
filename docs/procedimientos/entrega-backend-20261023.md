@@ -1,5 +1,64 @@
 # Entrega del backend consolidado
 
+## Cierre: activación local y entrega para React (23/10/2026, tarde)
+
+Rama `anderson`, base `6f9e233` (código de aplicación igual a `88b8bdb`). Autorizadas: las dos migraciones sobre
+`horus_db` y commits locales. No autorizados y no realizados: cambios de cuentas/privilegios MySQL, edición de `.env`,
+push, despliegues, React, `main` y CI. **No se modificó código de producción.**
+
+| Área | Estado |
+| --- | --- |
+| `horus_db` | **Activada**: 18 migraciones, 30 tablas, `db:check` 0, datos originales intactos, 22 FK sin huérfanos. Detalle en [activación](activacion-preinscripciones-horarios.md). |
+| API sobre `horus_db` | Arranque del AppModule compilado en 6,7 s con `PublicRateLimitGuard` y `AccessGuard`; 14 lecturas correctas (health, públicas, 401 sin token, retiradas 404, Swagger 404) y **0 tablas modificadas**. |
+| Cuentas y roles | Comprobado por HTTP real en MySQL desechable (ver abajo). `horus_db` ya tiene **un gerente activo**: no requiere inicialización. |
+| Privilegios MySQL | **No cerrado.** La API usa todavía la cuenta administrativa. Plan exacto preparado y pendiente de autorización: [privilegios](privilegios-mysql-propuesta.md). |
+| Guía React y API central | [Guía para React y API central](guia-react-api-central.md); contrato completo en [contrato React](contrato-react-backend-consolidado.md). |
+| Railway/Vercel | Preparado y documentado, **no desplegado**. Producción no está lista. |
+
+### Ensayo funcional HTTP (MySQL 8.0.46 desechable)
+
+Servidor propio con UUID distinto de `horus_db`. Se restauró el respaldo posterior a la activación y coincidió
+exactamente con `horus_db`. El flujo funcional usó una **base nueva** (`db:init` → `db:migrate` → `db:check`: 18
+migraciones, 30 tablas, cero cuentas creadas automáticamente) y una cuenta de aplicación con la matriz mínima de 27
+tablas (denegaciones 1142 de DDL, `horus_migrations`, escritura de certificados y borrado de auditoría).
+**74/74 solicitudes con el estado esperado**, personas y credenciales ficticias:
+
+- Registro público sin rol (201); campo `rol` en el registro rechazado (400); login sin rol con `permisos: []`; 403 en rutas administrativas.
+- Primer gerente por terminal: `admin:assign-role --listar`, simulación y `--apply` con destino y `server_uuid`;
+  la sesión anterior pasa a 401 y el nuevo login trae `GERENTE_GENERAL`. Un segundo gerente sin
+  `--permitir-otro-gerente` se rechaza. Sobre la copia de `horus_db` la simulación se negó porque ya existe un gerente.
+- «Roles y usuarios»: lista sin contraseñas; `rol_actual` obsoleto 409; rol inválido 400; asignación de `SECRETARIA`
+  con revocación (401) y permisos nuevos tras el login; la secretaria recibe 403 en `/admin/users`, al intentar
+  hacerse gerente y al crear cursos; el gerente no puede cambiar su propio rol ni desactivarse (409); desactivar
+  impide el login y reactivar deja la cuenta sin rol. Auditoría: altas, activación, desactivación y roles (panel y terminal).
+- Académico: curso, edición nueva (`planificada`, recepción cerrada, mínimo 10), Horarios (cambio, idempotencia
+  `cambios:false`, 409 por revisión, 422 `HORARIO_SOLAPADO`), recepción, apertura sin mínimo 409, ediciones públicas
+  sin ids, preinscripción web y chatbot, validación e historial, estudiante (409 por revisión), matrícula en edición
+  planificada 409, selectores y listas.
+- Reportes JSON y exportación CSV/XLSX/PDF con `Content-Disposition: attachment; filename="…"` y
+  `Access-Control-Expose-Headers: Content-Disposition`; 403 sin rol; cotizaciones; verificación pública de certificado
+  inexistente 404; rutas retiradas 404; Swagger 404; CORS permite el origen local y no un origen ajeno.
+
+Este ensayo no prueba correo real, OpenAI, navegador, React, proxy ni Railway/Vercel.
+
+### Validación de este cierre (Node 22.23.3)
+
+| Comprobación | Resultado |
+| --- | --- |
+| `tsc --noEmit --incremental false` | Salida 0. |
+| `npm run build` | Salida 0. |
+| AccessGuard HTTP, MySQL 8.0.46 desechable | **28/28** al primer intento; sin el timeout de arranque observado antes. |
+| Horarios, MySQL 8.0.46 desechable | **14/14**. |
+| Preinscripciones, MySQL 8.0.46 desechable | **27/27**. |
+| Ensayo funcional HTTP (base nueva, cuenta mínima) | **74/74**. |
+| Lecturas sobre `horus_db` activada | **14/14**, 0 tablas modificadas. |
+| `db:check` en `horus_db` y en el ensayo | Salida 0. |
+| `npm test` (suite unitaria completa, `isolate-env.cjs`) | **804/804**, sin fallos, cancelaciones ni omisiones (535 s; más lento que los 159 s anteriores, sin fallos asociados). |
+
+Las suites de integración no se modificaron ni se ampliaron sus timeouts. E3.6 no se reprodujo en esta sesión;
+su causa sigue sin demostrarse y se mantiene documentada como posible intermitencia.
+Evidencia privada: `%USERPROFILE%\.horus-respaldos\activacion-real-20261023-ad9bf238\`.
+
 ## Misión final: preparación de activación y separación de privilegios
 
 23 de octubre de 2026, America/Lima. Esta sección registra la nueva operación sobre el backend publicado

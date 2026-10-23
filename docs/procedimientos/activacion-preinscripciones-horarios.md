@@ -1,7 +1,43 @@
 # Activación controlada de Preinscripciones y Horarios
 
-Preparado el 23 de octubre de 2026. **No ejecutado: falta autorización específica de escritura.**
-El push del código no activa MySQL. No desplegar ni usar los módulos afectados sobre una base sin migrar.
+**Ejecutada en `horus_db` el 23 de octubre de 2026 a las 16:32 (America/Lima)**, con autorización expresa limitada a
+`20261020-preinscripciones` y `20261023-convocatoria-horarios`. Otras bases (Railway, `horus_local`, Docker) siguen
+sin activar: repetir este procedimiento en cada una, con su propia autorización. Las secciones posteriores conservan
+la preparación y la evidencia previas.
+
+## Activación real (23 de octubre de 2026)
+
+Código `anderson` en `6f9e233` (código de aplicación idéntico a `88b8bdb`), Node **22.23.3**, scripts del repositorio.
+Evidencia privada, fuera de Git y con ACL de operador/SYSTEM:
+`%USERPROFILE%\.horus-respaldos\activacion-real-20261023-ad9bf238\`.
+
+| Comprobación previa | Resultado |
+| --- | --- |
+| Destino | `127.0.0.1:3306/horus_db`, MySQL 8.0.46, UUID `dc5bb32a-a7b2-11f1-913f-14b5cd19372a`; servicio `MySQL80`. No es clon ni remoto. |
+| Migraciones históricas | Las 16 registradas coinciden con las 16 primeras de `versions`. Sus SQL no cambiaron después de crearse (la única edición, de `20261015-academico-estructura`, es del 15/10, anterior a su aplicación). |
+| Pendientes según el migrador | Exactamente las dos autorizadas. Sesiones retirada y sin registro. |
+| Datos | 27 tablas InnoDB, 148 filas; huellas por tabla **idénticas** a la instantánea de las 15:27. Sin vistas, triggers, rutinas ni eventos. 17 FK sin huérfanos. |
+| Respaldo previo | Existe; SHA-256 `ed82f63a…a77daf` intacto, restauración ya acreditada. |
+| Respaldo de la ventana | Nuevo a las 16:29, `horus-horus_db-20261023-212937.sql.gz`: **mismo SHA-256** que el anterior (contenido idéntico), firma y manifiesto verificados. |
+| Ensayo inmediato | Restaurado en MySQL 8.0.46 desechable (UUID distinto): datos exactos; migración, `db:check` 0, repetición idempotente, 18 migraciones, 30 tablas, 22 FK sin huérfanos. |
+| Escritores | Solo dos sesiones inactivas de MySQL Workbench (aplicación del usuario, no cerrada); 0 transacciones InnoDB y 0 bloqueos de metadatos ajenos en `horus_db`. Ninguna API conectada; la pila Docker `horus-local` usa su propio MySQL. |
+| Espacio y recuperación | ~241 GiB libres en C:. Recuperación por restauración aislada descrita abajo. |
+
+Inmediatamente antes de migrar se repitieron identidad, lista de pendientes, ausencia de transacciones/bloqueos,
+huellas de datos y hash de `backend/.env`. Se ejecutaron únicamente `scripts/migrate.cjs` y `scripts/check-database.cjs`.
+
+| Resultado | Valor |
+| --- | --- |
+| `npm run db:migrate` | Salida 0. Aplicadas `20261020-preinscripciones` (21:32:18 UTC) y `20261023-convocatoria-horarios` (21:32:19 UTC). |
+| `npm run db:check` | Salida 0: «Esquema compatible». |
+| Migraciones | **18**; Sesiones no registrada y sin tabla. |
+| Estructuras nuevas | `preinscripciones`, `preinscripciones_historial`, `convocatoria_horarios` presentes y vacías; columnas, índices, FK y CHECK nuevos verificados por `db:check`. |
+| Datos originales | Huellas de todas las columnas originales de las 27 tablas iguales al respaldo; solo `horus_migrations` ganó sus dos filas. `convocatorias` no tenía filas, así que no hay ediciones antiguas afectadas. |
+| Integridad referencial | **22 FK, sin huérfanos.** |
+| Respaldo posterior | `horus-horus_db-20261023-213314.sql.gz`, SHA-256 `f284d736e61f9a0d74837673a6cb0e2cbeff7d4cf9862f39f5be9b4c6e549a9a`, 30 tablas, 150 filas, 18 migraciones; firma verificada y restauración exacta en clon desechable. |
+
+No se ejecutó SQL de escritura adicional, no se cambiaron cuentas, credenciales ni `.env`, y no se insertaron datos
+de prueba en `horus_db`. Los respaldos no están cifrados ni tienen copia externa: sigue pendiente esa política.
 
 ## Verificación nueva de la misión final (23 de octubre de 2026)
 
@@ -43,8 +79,8 @@ seguían idénticos. No había otras conexiones a `horus_db` en esa muestra; **e
 sin escritores**. Si el origen cambia antes de aprobar la operación, repetir respaldo y restauración.
 La lectura final de las **16:01** volvió a confirmar esos mismos datos, DDL, migraciones y `.env`, sin huérfanos.
 
-**Fecha de activación real: pendiente. No se ejecutó `db:migrate` sobre `horus_db`.**
-La etapa C del encargo exige aprobación expresa y separada después de revisar esta evidencia. Los comandos reales
+**Nota posterior:** la activación real se ejecutó después; ver «Activación real» al inicio.
+En el momento de esta verificación, la etapa C del encargo exigía aprobación expresa y separada. Los comandos reales
 siguen siendo `npm run db:migrate` y `npm run db:check` desde `backend/`, con Node 22, el destino anterior comprobado
 inmediatamente antes y una ventana sin escritores confirmada. No cambiar `.env` ni cuentas como parte de esta aprobación.
 

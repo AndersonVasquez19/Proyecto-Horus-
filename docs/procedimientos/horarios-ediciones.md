@@ -1,6 +1,6 @@
 # Horarios de las ediciones
 
-Fecha: 23 de octubre de 2026 (America/Lima). Estado: **backend implementado y probado; sin pantallas; migración pendiente de activar** (no se aplicó a `horus_db`, `horus_local` ni a ninguna base habitual).
+Fecha: 23 de octubre de 2026 (America/Lima). Estado: **backend implementado y probado; sin pantallas; migración activada en `horus_db` local el 23/10/2026** ([activación](activacion-preinscripciones-horarios.md)); pendiente en `horus_local`, Railway y demás bases.
 
 Los horarios son los **días y horas recurrentes** en que se dicta una edición (por ejemplo, lunes y miércoles de 19:00 a 22:00 y sábado de 09:00 a 13:00). **No son clases individuales**: no tienen fecha, estado, reprogramaciones ni seguimiento. El módulo de Sesiones, que administraba clases concretas, se **retiró** (ver [Sesiones retiradas](#sesiones-retiradas)).
 

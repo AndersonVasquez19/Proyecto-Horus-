@@ -3,15 +3,12 @@
 Referencia del backend publicado de `anderson`, commit `88b8bdb6e4d4320cbf8c4f63dd316d1cad8339f6`,
 revisada el 23 de octubre de 2026.
 No describe un despliegue: Railway/Vercel no se han validado ni activado. No se modificó React.
-Antes de usar Preinscripciones, Ediciones, Matrículas y Horarios en una base habitual deben autorizarse
-y aplicarse las migraciones pendientes; `horus_db` aún no las tiene.
 
-La misión final volvió a comprobar ese destino: 16 migraciones y 27 tablas, con un respaldo nuevo restaurado
-en MySQL 8.0.46 desechable. El clon alcanzó 18 migraciones y pasó `db:check`; **el servidor habitual sigue sin activar**.
-El ensayo de privilegios de aplicación/mantenimiento también ocurre exclusivamente en el clon. La integración
-React y el despliegue corresponden al compañero; no se modifican componentes, contratos ni configuración React
-en esta misión. Estado operativo y límites: [entrega](entrega-backend-20261023.md) y
-[activación](activacion-preinscripciones-horarios.md).
+**Actualización 23/10/2026:** `horus_db` local ya tiene las 18 migraciones (Preinscripciones y Horarios) y `db:check`
+pasa; el contrato se volvió a comprobar por HTTP real en un MySQL desechable (74 solicitudes) y en lectura sobre
+`horus_db`. Cualquier otra base (Railway, `horus_local`) debe migrarse antes de usar Preinscripciones, Ediciones,
+Matrículas y Horarios. Guía práctica, ejemplos y API central: [guía para React](guia-react-api-central.md).
+Estado operativo y límites: [entrega](entrega-backend-20261023.md) y [activación](activacion-preinscripciones-horarios.md).
 
 ## Reglas comunes
 
