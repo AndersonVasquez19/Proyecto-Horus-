@@ -413,10 +413,11 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       const enrollments = routes.filter(route => /^admin\/matriculas(?:\/|$)/.test(route.path));
       assert.deepEqual(enrollments.map(route => route.label), [
         'GET admin/matriculas', 'GET admin/matriculas/ediciones', 'GET admin/matriculas/999999', 'GET admin/matriculas/999999/historial',
-        'POST admin/matriculas', 'PUT admin/matriculas/999999/anulacion', 'PUT admin/matriculas/999999/reactivacion',
+        'POST admin/matriculas', 'PUT admin/matriculas/999999/anulacion', 'PUT admin/matriculas/999999/cumplimiento', 'PUT admin/matriculas/999999/reactivacion',
       ]);
+      // Confirmar el cumplimiento (matriculas:confirmar) es solo de Gerencia y Coordinación, como anular y reactivar.
       assert.deepEqual(ROLE_KEYS.map(key => enrollments.map(route => expectation(key, route))), [
-        Array(7).fill('pasa'), Array(7).fill('pasa'), [...Array(5).fill('pasa'), ...Array(2).fill('sinPermiso')], Array(7).fill('sinRol'),
+        Array(8).fill('pasa'), Array(8).fill('pasa'), [...Array(5).fill('pasa'), ...Array(3).fill('sinPermiso')], Array(8).fill('sinRol'),
       ]);
       assert.deepEqual(editions.map(route => route.label), [
         'GET admin/convocatorias', 'GET admin/convocatorias/cursos', 'GET admin/convocatorias/999999', 'POST admin/convocatorias',
@@ -460,6 +461,14 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       const statuses = {};
       for (const { key, route } of plan.filter(item => item.expected === 'pasa')) {
         const r = await call(route.path, { method: route.method, token: tokens[key], body: route.body });
+        // El resumen del asistente es una ruta autenticada sin permiso propio: la guard deja pasar a la cuenta sin rol y es el
+        // servicio quien la rechaza con el rol leído de la base (ver admin-access-readiness). POST admin/asistente/consultar con
+        // cuerpo vacío responde 400 por la validación del DTO antes del servicio, así que sigue la regla general.
+        if (key === 'sinrol' && route.label === 'GET admin/asistente/resumen') {
+          denied(r, key + ' ' + route.label + ' (denegación del servicio)', NO_ROLE_MESSAGE);
+          statuses[r.status] = (statuses[r.status] ?? 0) + 1;
+          continue;
+        }
         passed(r, key + ' ' + route.label);
         statuses[r.status] = (statuses[r.status] ?? 0) + 1;
       }
@@ -478,7 +487,15 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       // Sesiones: seis rutas para Gerencia y Coordinación; Secretaría y básica +0. Los totales pasan de [110, 92, 24, 1] a [116, 98, 24, 1].
       // Preinscripciones: nueve rutas administrativas para Gerencia, Coordinación y Secretaría (leer, editar y convertir) y una de recepción en Ediciones
       // (convocatorias:editar) solo para Gerencia y Coordinación: [126, 108, 33, 1].
-      assert.deepEqual(ROLE_KEYS.map(count), [126, 108, 33, 1]);
+      // Rutas añadidas después (la matriz de roles no cambia):
+      // - Cumplimiento de matrícula (matriculas:confirmar): G +1, C +1.
+      // - Certificados: cuatro lecturas y emisión G/C +5; anulación y sustitución (certificados:anular) solo G +2; S y básica +0.
+      // - Asistente (resumen y consultar, autenticadas sin permiso propio): +2 para cada rol, también la cuenta básica
+      //   (la guard la deja pasar; el servicio la deniega, comprobado arriba y en admin-access-readiness).
+      // - Cotizaciones: PDF (cotizaciones:leer) y duplicar (cotizaciones:crear): G/C +2.
+      // - Mensajes: exportar CSV (mensajes:exportar) solo G +1; comprobar duplicados (mensajes:crear) G/C/S +1.
+      // Totales: [140, 119, 36, 3].
+      assert.deepEqual(ROLE_KEYS.map(count), [140, 119, 36, 3]);
       for (const key of ROLE_KEYS) {
         const own = plan.filter(item => item.key === key && item.route.path.startsWith('admin/seguimiento/cotizaciones/'));
         // Un requisito «denegada» se resuelve antes de mirar el rol: 403 genérico también para la cuenta sin rol.
