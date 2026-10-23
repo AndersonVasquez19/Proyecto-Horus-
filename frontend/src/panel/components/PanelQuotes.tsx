@@ -5,7 +5,7 @@ import { PanelApiError, panelRequest, errorMessage } from '../services/panelApi'
 import { mailResultFromFailure, mailResultFromSuccess, type MailResult } from '../services/mailOutcome';
 import { useRequestStatus } from '../hooks/useRequestStatus';
 import type { Quote, QuoteInput } from '../types/quotes';
-import { quoteTransitions } from '../types/quotes';
+import { quoteTransitions, canMoveQuote } from '../types/quotes';
 import QuoteForm from './QuoteForm';
 import QuotePrint from './QuotePrint';
 import PanelDialog from './PanelDialog';
@@ -18,9 +18,10 @@ import { PANEL_ACTIONS } from '../context/panelAccess';
 import { PanelReadOnlyNotice } from './PanelAccessNotice';
 export default function PanelQuotes() {
  const {token}=useAdminAuth();
- // Operaciones según los permisos de la sesión (E3.4.3, fase 2). Pasar a «anulada» exige además anular; ?contacto= (preparar desde una consulta) exige crear.
+ // Operaciones según los permisos de la sesión (E3.4.3, fase 2). Pasar a «anulada» exige además anular y a «enviada» exige además enviar
+ // (canMoveQuote, espejo del inventario del backend); ?contacto= (preparar desde una consulta) exige crear.
  const access=usePanelAccess();const canCreate=access.can(PANEL_ACTIONS.crearCotizacion),canEdit=access.can(PANEL_ACTIONS.editarCotizacion),canSend=access.can(PANEL_ACTIONS.enviarCotizacion),canVoid=access.can(PANEL_ACTIONS.anularCotizacion);
- const canMove=(target:string)=>canEdit&&(target!=='anulada'||canVoid);const [params,setParams]=useSearchParams();const location=useLocation(),navigate=useNavigate();const fromState=(location.state as {from?:unknown}|null)?.from;const origin=typeof fromState==='string'&&/^\/admin\/[\w?=&%.-]*$/.test(fromState)?fromState:'';const [readOnlyForm,setReadOnlyForm]=useState(false);const [related,setRelated]=useState<{numero:string;estado:string}[]>([]);
+ const canMove=(target:string)=>canMoveQuote(target,{edit:canEdit,send:canSend,void:canVoid});const [params,setParams]=useSearchParams();const location=useLocation(),navigate=useNavigate();const fromState=(location.state as {from?:unknown}|null)?.from;const origin=typeof fromState==='string'&&/^\/admin\/[\w?=&%.-]*$/.test(fromState)?fromState:'';const [readOnlyForm,setReadOnlyForm]=useState(false);const [related,setRelated]=useState<{numero:string;estado:string}[]>([]);
  const [revision,setRevision]=useState(0),[page,setPage]=useState(1),[search,setSearch]=useState(''),[query,setQuery]=useState(''),[state,setState]=useState('');
  const [list,setList]=useState<{items:Quote[];pagination:{total:number;pages:number}}|null>(null);
  const [detail,setDetail]=useState<Quote|null>(null),[editing,setEditing]=useState<Quote|QuoteInput|null>(null),[creating,setCreating]=useState(false);
