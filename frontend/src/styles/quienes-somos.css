@@ -231,50 +231,64 @@
 
 /* ---------- Quiénes somos: Horus identity (tokens from horus-theme.css) ---------- */
 .ns-hero {
-  position: relative; overflow: hidden; text-align: center; color: #fff;
+  position: relative; overflow: hidden; text-align: center; color: var(--horus-navy);
   padding: calc(var(--nav-h) + clamp(2.5rem, 6vw, 4.5rem)) 0 clamp(2rem, 5vw, 3rem);
-  background: radial-gradient(ellipse at 15% 20%, #1e497655, transparent 60%),
-    radial-gradient(ellipse at 85% 0%, #1e497644, transparent 55%), var(--horus-navy-deep);
+  background: radial-gradient(ellipse at 15% 20%, #ead9b880, transparent 60%),
+    radial-gradient(ellipse at 85% 15%, #cde3f280, transparent 60%),
+    linear-gradient(135deg, #fffaf0, #f2f7fc);
   border-bottom: 1px solid #c9a96140;
 }
 .ns-hero::before {
   content: ''; position: absolute; inset: 0; pointer-events: none;
-  background-image: linear-gradient(#ffffff09 1px, transparent 1px), linear-gradient(90deg, #ffffff09 1px, transparent 1px);
+  background-image: linear-gradient(#1e497609 1px, transparent 1px), linear-gradient(90deg, #1e497609 1px, transparent 1px);
   background-size: 48px 48px;
   -webkit-mask-image: radial-gradient(ellipse at center, #000 25%, transparent 78%);
   mask-image: radial-gradient(ellipse at center, #000 25%, transparent 78%);
 }
 .ns-hero-inner { position: relative; display: flex; flex-direction: column; align-items: center; gap: 1rem; }
 .ns-hero-pill {
-  padding: .55rem 1.15rem; border: 1px solid #c9a96150; border-radius: 999px; background: #ffffff0a;
-  color: var(--horus-gold); font-size: .72rem; font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
+  padding: .55rem 1.15rem; border: 1px solid #c9a96170; border-radius: 999px; background: #ffffffa6;
+  color: #795b21; font-size: .72rem; font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
 }
 .ns-hero-title {
   margin: 0; font-family: var(--horus-font-display); font-size: clamp(2.1rem, 6vw, 4rem); font-weight: 800;
-  line-height: 1.12; letter-spacing: -.03em; color: #fff; text-wrap: balance;
+  line-height: 1.2; letter-spacing: -.03em; color: var(--horus-navy); text-wrap: balance;
 }
-.ns-typed-rest { visibility: hidden; }
-.ns-caret { display: inline-block; position: relative; width: 0; height: 1em; vertical-align: -.12em; }
-.ns-caret::after {
-  content: ''; position: absolute; left: .06em; top: .08em; width: .075em; height: .9em;
-  background: var(--horus-gold); border-radius: 2px; animation: ns-caret-blink .8s steps(1) infinite;
-}
-.ns-caret.is-done::after { animation: ns-caret-blink .8s steps(1) 2, ns-caret-out .4s ease 1.6s forwards; }
-.ns-hero-sub { margin: 0; max-width: 40ch; color: #d5e0eb; font-size: clamp(1rem, 2vw, 1.2rem); line-height: 1.6; }
+.ns-title-word { display: inline-block; white-space: nowrap; }
+.ns-title-letter { display: inline-block; }
+.ns-hero-sub { margin: 0; max-width: 40ch; color: var(--horus-muted); font-size: clamp(1rem, 2vw, 1.2rem); line-height: 1.6; }
 .ns-sticker-wrap { margin-top: .25rem; }
 .ns-sticker {
   display: block; width: clamp(88px, 10vw, 128px); height: auto;
   filter: drop-shadow(0 6px 16px #c9a96130);
 }
-@keyframes ns-caret-blink { 50% { opacity: 0; } }
-@keyframes ns-caret-out { to { opacity: 0; } }
+@keyframes ns-letter-enter {
+  from { opacity: 0; transform: translateY(18px) rotate(-5deg); }
+  to { opacity: 1; transform: translateY(0) rotate(0); }
+}
+@keyframes ns-letter-wave {
+  0%, 10%, 24%, 100% { transform: translateY(0) rotate(0); }
+  17% { transform: translateY(-5px) rotate(-2deg); }
+}
 @keyframes ns-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-@keyframes ns-sway { from { transform: translateX(-10px) rotate(-2deg); } to { transform: translateX(10px) rotate(2deg); } }
+@keyframes ns-sticker-dance {
+  0%, 100% { transform: translate(0, 0) rotate(0) scale(1); }
+  15% { transform: translate(-12px, -10px) rotate(-6deg) scale(1.03); }
+  30% { transform: translate(0, -20px) rotate(3deg) scale(1.06); }
+  45% { transform: translate(12px, -8px) rotate(6deg) scale(1.02); }
+  60% { transform: translate(0, 0) rotate(-3deg) scale(.98); }
+  75% { transform: translate(-8px, -14px) rotate(-5deg) scale(1.04); }
+  88% { transform: translate(8px, -6px) rotate(4deg) scale(1.02); }
+}
 @media (prefers-reduced-motion: no-preference) {
+  .ns-title-letter {
+    animation: ns-letter-enter .7s var(--horus-ease) calc(.2s + var(--letter-index) * .055s) both,
+      ns-letter-wave 5s ease-in-out calc(2s + var(--letter-index) * .065s) infinite;
+  }
   .ns-hero-pill { animation: ns-rise .7s var(--horus-ease) both; }
   .ns-hero-sub { animation: ns-rise .8s var(--horus-ease) 1.5s both; }
   .ns-sticker-wrap { animation: ns-rise .9s var(--horus-ease) 1.8s both; }
-  .ns-sticker { animation: ns-sway 6s ease-in-out 2.7s infinite alternate; }
+  .ns-sticker { animation: ns-sticker-dance 3.8s ease-in-out 1.8s infinite; }
 }
 
 .ns-section-head { max-width: 720px; margin: 0 auto 2.75rem; text-align: center; }
@@ -342,7 +356,7 @@
   text-transform: uppercase; color: var(--horus-navy); overflow-wrap: anywhere;
 }
 .ns-member-role { margin: .35rem 0 1rem; color: #8b6825; font-size: .7rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
-.ns-member-socials { display: flex; justify-content: center; gap: .6rem; }
+.ns-member-socials { display: flex; flex-wrap: wrap; justify-content: center; gap: .6rem; }
 .ns-member-socials a {
   display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border: 1px solid var(--horus-line); border-radius: 50%;
   background: var(--horus-soft); color: var(--horus-ink); font-size: .85rem; transition: background .2s ease, color .2s ease, border-color .2s ease;
