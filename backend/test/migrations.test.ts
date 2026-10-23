@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 
 // Comprobaciones sin base de datos: el orden, el registro y la seguridad de las migraciones SQL. La aplicación real se prueba en test:integration (MySQL aislado).
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { versions } = require('../scripts/migrate.cjs') as { versions: string[] };
+const { versions, retired } = require('../scripts/migrate.cjs') as { versions: string[]; retired: Record<string, string> };
 const dir = join(__dirname, '..', 'migrations');
 const read = (name: string) => readFileSync(join(dir, name + '.sql'), 'utf8');
 const statements = (sql: string) => sql.split(';').map(s => s.trim()).filter(Boolean); // mismo criterio que scripts/migrate.cjs
@@ -19,10 +20,14 @@ const REQUIRED_ORDER = ['20260909-create-catalogo', '20260921-create-cotizacione
 const REQUIRED_BEFORE_DEPLOY = ['20261009-chatbot-metrics', '20261011-cotizaciones-idempotencia', '20261014-admin-rol', '20261014-admin-auditoria'];
 const ALLOWED_UPDATES = new Set(['20261002-complete-institutional', '20261009-chatbot-metrics']);
 
-test('migraciones: cada archivo SQL está registrado en migrate.cjs y viceversa, sin duplicados', () => {
+test('migraciones: cada archivo SQL está registrado en migrate.cjs (activo o retirado) y viceversa, sin duplicados', () => {
   const files = readdirSync(dir).filter(f => f.endsWith('.sql')).map(f => f.slice(0, -4)).filter(f => f !== '00000000-initial'); // la inicial la aplica db:init
-  assert.deepEqual([...files].sort(), [...versions].sort());
+  assert.deepEqual([...files].sort(), [...versions, ...Object.keys(retired)].sort());
   assert.equal(new Set(versions).size, versions.length);
+  for (const name of Object.keys(retired)) {
+    assert.ok(!versions.includes(name), name + ': una migración retirada no puede seguir en la secuencia');
+    assert.ok(retired[name].trim().length > 20, name + ': la retirada se justifica');
+  }
 });
 
 test('migraciones: el orden de ejecución es el de migrate.cjs y sus fechas nunca retroceden', () => {
@@ -186,4 +191,98 @@ test('migraciones: DocumentoTipo de Prisma y db:check reflejan el esquema efecti
   assert.match(checks.estudiantes_documento_completo_chk, /`doc_pais` IS NULL AND `doc_tipo` IS NULL AND `doc_numero` IS NULL/, 'la regla de todo o nada de E4.2 se conserva');
   const check = readFileSync(join(__dirname, '..', 'scripts', 'check-database.cjs'), 'utf8');
   assert.ok(check.includes(`DOC = "ENUM('DNI')"`));
+});
+
+test('migraciones: la 20261020-docentes crea dos tablas restrictivas y solo amplía el ENUM del historial, sin cuentas ni datos, reflejada en schema.prisma y db:check', () => {
+  const sql = statements(read('20261020-docentes'));
+  assert.deepEqual(sql.map(s => (s.match(/^(?:CREATE TABLE IF NOT EXISTS|ALTER TABLE) `(\w+)`/) ?? [])[1]), ['docentes', 'docente_asignaciones', 'academico_historial'], 'cada sentencia es idempotente y atómica');
+  assert.ok(versions.indexOf('20261020-docentes') > versions.indexOf('20261019-importaciones-academicas'), 'va después de la estructura académica y de Ediciones (capacidad)');
+  const [teachers, assignments, history] = sql;
+  const all = sql.join('\n');
+  assert.ok(!/ON (DELETE|UPDATE) (CASCADE|SET NULL|SET DEFAULT)/i.test(all), 'ninguna relación borra ni modifica en cascada');
+  assert.equal((all.match(/FOREIGN KEY/g) ?? []).length, 3); assert.equal((all.match(/ON DELETE RESTRICT ON UPDATE RESTRICT/g) ?? []).length, 3);
+  assert.ok(!/admin_users|`(password|rol|token|cuenta_id|admin_user_id)`/i.test(teachers), 'un docente no es una cuenta: sin contraseña, rol ni vínculo con admin_users');
+  assert.match(teachers, /`doc_tipo` ENUM\('DNI'\) NULL/, 'documento opcional y solo DNI');
+  assert.match(teachers, /UNIQUE KEY `docentes_documento_uq` \(`doc_pais`, `doc_tipo`, `doc_numero`\)/);
+  assert.match(teachers, /UNIQUE KEY `docentes_email_uq` \(`email`\)/);
+  assert.ok(!/telefono`\)/.test(teachers.replace(/CONSTRAINT[^\n]*\n/g, '')), 'el teléfono se puede compartir: sin índice ni UNIQUE');
+  assert.match(assignments, /UNIQUE KEY `docente_asignaciones_docente_edicion_uq` \(`docente_id`, `convocatoria_id`\)/, 'sin asignaciones duplicadas');
+  assert.match(assignments, /`principal_activo_convocatoria_id` INT GENERATED ALWAYS AS \(CASE WHEN `rol` = 'principal' AND `estado` = 'activa' THEN `convocatoria_id` ELSE NULL END\) STORED/);
+  assert.match(assignments, /UNIQUE KEY `docente_asignaciones_principal_uq` \(`principal_activo_convocatoria_id`\)/, 'un solo principal activo por edición');
+  assert.match(assignments, /FOREIGN KEY \(`sustituye_a_id`, `convocatoria_id`\) REFERENCES `docente_asignaciones` \(`id`, `convocatoria_id`\)/, 'la sustitución es de la misma edición');
+  assert.match(history, /^ALTER TABLE `academico_historial` MODIFY `entidad` ENUM\('estudiante','convocatoria','matricula','certificado','docente','asignacion_docente'\) NOT NULL$/, 'solo se AÑADEN valores al final del ENUM');
+  assert.ok(!/DROP|DELETE|TRUNCATE|RENAME|UPDATE |INSERT /i.test(all.replace(/ON (UPDATE|DELETE) (RESTRICT|CURRENT_TIMESTAMP\(3\))/g, '')), 'sin sentencias destructivas ni de datos');
+  const schema = readFileSync(join(__dirname, '..', 'prisma', 'schema.prisma'), 'utf8'), check = readFileSync(join(__dirname, '..', 'scripts', 'check-database.cjs'), 'utf8');
+  for (const [model, table] of [['Docente', 'docentes'], ['DocenteAsignacion', 'docente_asignaciones']]) {
+    assert.match(schema, new RegExp('model ' + model + ' \\{[\\s\\S]*?@@map\\("' + table + '"\\)'), model);
+    assert.ok(check.includes(table + ': ['), 'db:check debe comprobar las columnas de ' + table);
+  }
+  assert.match(schema, /enum AcademicoEntidad \{[^}]*docente[^}]*asignacion_docente[^}]*\}/);
+  assert.ok(!/^\s+principal_activo_convocatoria_id\b/m.test(schema.match(/model DocenteAsignacion \{([\s\S]*?)\n\}/)![1]), 'Prisma no declara (ni escribe) la columna generada');
+  assert.ok(!/onDelete: (Cascade|SetNull)|onUpdate: (Cascade|SetNull)/.test(schema.slice(schema.indexOf('model Docente '))), 'relaciones restrictivas también en Prisma');
+  for (const name of [...all.matchAll(/(?:KEY|CONSTRAINT) `(\w+)`/g)].map(match => match[1])) assert.ok(check.includes("'" + name + "'"), 'db:check debe verificar ' + name);
+  assert.ok(check.includes("'20261020-docentes'"), 'db:check recorre la migración');
+});
+
+test('migraciones: la 20261020-sesiones-academicas está RETIRADA: su SQL histórico se conserva intacto, db:migrate ya no la aplica y db:check conoce su estructura histórica', () => {
+  const RETIRED = '20261020-sesiones-academicas';
+  assert.ok(RETIRED in retired, 'figura en la lista explícita de migraciones retiradas');
+  assert.ok(!versions.includes(RETIRED), 'ya no forma parte de la secuencia: ni las bases nuevas ni las que no la tienen la aplican');
+  // Contenido histórico INTACTO (SHA-256 del archivo de la rama, con finales de línea normalizados): retirarla no reescribe su SQL.
+  const sql = read(RETIRED).replace(/\r\n/g, '\n');
+  assert.equal(createHash('sha256').update(sql).digest('hex'), '71f12f0c952b34c08afd66ab8c1655af5c472f16baf88e3603bde869c42d2bd1', 'el SQL histórico no se modificó');
+  // Nada que dependa de ella sigue en la secuencia: ni Preinscripciones ni Horarios leen o referencian `sesiones` ni sus valores de ENUM.
+  for (const name of versions.slice(versions.indexOf('20261020-docentes') + 1)) assert.ok(!/`sesiones`|'sesion'|'reprogramacion'/.test(read(name)), name + ' no depende de la migración retirada');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { academicDefinitions, academicSchema, ACADEMIC_MIGRATIONS, RETIRED_SESIONES } = require('../scripts/check-database.cjs') as {
+    academicDefinitions: (legacy?: boolean) => { checks: Record<string, string> }; ACADEMIC_MIGRATIONS: string[]; RETIRED_SESIONES: string;
+    academicSchema: (legacy?: boolean) => { tables: Record<string, [string, string, boolean][]>; indexes: unknown[][]; foreignKeys: unknown[][]; checks: Record<string, string[]> };
+  };
+  assert.equal(RETIRED_SESIONES, RETIRED);
+  assert.ok(!ACADEMIC_MIGRATIONS.includes(RETIRED));
+  // Base SIN la migración retirada registrada: no se espera la tabla ni los valores añadidos al historial.
+  const current = academicSchema(false);
+  assert.ok(!('sesiones' in current.tables) && !('sesiones' in current.checks));
+  const enumOf = (schema: ReturnType<typeof academicSchema>, column: string) => schema.tables.academico_historial.find(([name]) => name === column)![1];
+  assert.equal(enumOf(current, 'entidad'), "ENUM('estudiante','convocatoria','matricula','certificado','docente','asignacion_docente')");
+  assert.equal(enumOf(current, 'operacion'), "ENUM('creacion','edicion','archivado','restauracion','cambio_estado','anulacion','confirmacion','emision','sustitucion')");
+  assert.ok(!('sesiones_horas_chk' in academicDefinitions(false).checks));
+  // Base que SÍ la registra: se verifica entera su estructura histórica (columnas, índices, claves, CHECK y ENUM ampliados), sin tolerancias.
+  const legacy = academicSchema(true);
+  assert.deepEqual(legacy.tables.sesiones.map(([name]) => name), [...sql.matchAll(/^\s*`(\w+)` [A-Z]/gm)].map(match => match[1]));
+  assert.equal(enumOf(legacy, 'entidad'), "ENUM('estudiante','convocatoria','matricula','certificado','docente','asignacion_docente','sesion')");
+  assert.equal(enumOf(legacy, 'operacion'), "ENUM('creacion','edicion','archivado','restauracion','cambio_estado','anulacion','confirmacion','emision','sustitucion','reprogramacion')");
+  const names = [...legacy.indexes, ...legacy.foreignKeys].filter(entry => entry[0] === 'sesiones').map(entry => entry[1] as string).concat(legacy.checks.sesiones);
+  assert.deepEqual(names.sort(), [...sql.matchAll(/(?:KEY|CONSTRAINT) `(\w+)`/g)].map(match => match[1]).sort(), 'cada índice, clave y CHECK de la migración retirada');
+  for (const name of legacy.checks.sesiones) assert.ok(academicDefinitions(true).checks[name], name + ': expresión tomada del SQL histórico');
+  // Prisma ya no declara el modelo (no hay código que lo use), pero conserva los valores de ENUM para leer filas históricas del historial.
+  const schema = readFileSync(join(__dirname, '..', 'prisma', 'schema.prisma'), 'utf8');
+  assert.ok(!/model Sesion \{|enum SesionEstado|enum SesionModalidad/.test(schema), 'sin modelo Prisma de sesiones');
+  assert.match(schema, /enum AcademicoEntidad \{[^}]*asignacion_docente[^}]*sesion[^}]*\}/); assert.match(schema, /enum AcademicoOperacion \{[^}]*sustitucion[^}]*reprogramacion[^}]*\}/);
+});
+
+test('migraciones: la 20261023-convocatoria-horarios crea solo la tabla de horarios recurrentes, restrictiva y sin datos, reflejada en schema.prisma y db:check', () => {
+  const NAME = '20261023-convocatoria-horarios';
+  const sql = statements(read(NAME));
+  assert.equal(sql.length, 1, 'una sola sentencia CREATE TABLE IF NOT EXISTS: atómica e idempotente');
+  assert.equal(versions[versions.length - 1], NAME, 'va al final de la secuencia');
+  assert.ok(versions.indexOf(NAME) > versions.indexOf('20261020-preinscripciones') && versions.indexOf(NAME) > versions.indexOf('20261018-convocatorias-capacidad'), 'después de sus dependencias (convocatorias)');
+  const [table] = sql;
+  assert.match(table, /^CREATE TABLE IF NOT EXISTS `convocatoria_horarios` \(/);
+  const columns = [...table.matchAll(/^\s*`([a-z_A-Z]+)` [A-Z]/gm)].map(match => match[1]);
+  assert.deepEqual(columns, ['id', 'convocatoria_id', 'dia_semana', 'hora_inicio', 'hora_fin', 'createdAt']);
+  assert.match(table, /`dia_semana` TINYINT NOT NULL/); assert.match(table, /CONSTRAINT `convocatoria_horarios_dia_chk` CHECK \(`dia_semana` >= 1 AND `dia_semana` <= 7\)/, 'ISO-8601: 1 = lunes … 7 = domingo');
+  assert.match(table, /`hora_inicio` TIME NOT NULL/); assert.match(table, /`hora_fin` TIME NOT NULL/);
+  assert.match(table, /CONSTRAINT `convocatoria_horarios_horas_chk` CHECK \(`hora_inicio` >= '00:00:00' AND `hora_inicio` < `hora_fin` AND `hora_fin` <= '23:59:00' AND SECOND\(`hora_inicio`\) = 0 AND SECOND\(`hora_fin`\) = 0\)/, 'fin estrictamente posterior al inicio, sin cruzar la medianoche');
+  assert.match(table, /UNIQUE KEY `convocatoria_horarios_inicio_uq` \(`convocatoria_id`, `dia_semana`, `hora_inicio`\)/, 'sin dos horarios que empiecen a la misma hora el mismo día');
+  assert.match(table, /FOREIGN KEY \(`convocatoria_id`\) REFERENCES `convocatorias` \(`id`\) ON DELETE RESTRICT ON UPDATE RESTRICT/, 'borrar una edición con horarios se rechaza: nada se borra en cascada');
+  assert.ok(!/CASCADE|SET NULL|`(fecha|estado|titulo|docente_id|asignacion_id|sesion_id)`/i.test(table), 'sin cascadas y sin datos de clases individuales');
+  assert.ok(!/TIMESTAMP|DATETIME/i.test(table.replace(/`createdAt` DATETIME\(3\) NOT NULL DEFAULT CURRENT_TIMESTAMP\(3\)/, '')), 'la hora local de Lima no se guarda en tipos dependientes de la zona');
+  const schema = readFileSync(join(__dirname, '..', 'prisma', 'schema.prisma'), 'utf8'), check = readFileSync(join(__dirname, '..', 'scripts', 'check-database.cjs'), 'utf8');
+  assert.match(schema, /model ConvocatoriaHorario \{[\s\S]*?@@map\("convocatoria_horarios"\)/);
+  const model = schema.match(/model ConvocatoriaHorario \{([\s\S]*?)\n\}/)![1];
+  assert.match(model, /dia_semana Int @db\.TinyInt/); assert.match(model, /hora_inicio DateTime @db\.Time\(0\)/); assert.match(model, /onDelete: Restrict, onUpdate: Restrict/);
+  assert.ok(check.includes('convocatoria_horarios: ['), 'db:check comprueba las columnas');
+  for (const name of [...table.matchAll(/(?:KEY|CONSTRAINT) `(\w+)`/g)].map(match => match[1])) assert.ok(check.includes("'" + name + "'"), 'db:check debe verificar ' + name);
+  assert.ok(check.includes("'" + NAME + "'"), 'db:check recorre la migración');
 });

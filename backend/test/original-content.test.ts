@@ -34,7 +34,7 @@ test('courses require modality and duration while unscheduled programs may omit 
  await assert.rejects(()=>validate({...base,tipo:'capacitacion',modalidad:null},CreateCursoDto),BadRequestException);
  let writes=0;
  const model={findFirst:async()=>({id:1,tipo:'capacitacion',modalidad:null,duracion:null}),update:async()=>{writes++;return{id:1}}};
- const service=new CatalogoService({curso:model} as unknown as PrismaService);
+ const service=new CatalogoService({curso:model,$transaction:async(run:(tx:unknown)=>unknown)=>run({curso:model,$queryRaw:async()=>[{id:1}]})} as unknown as PrismaService);
  await assert.rejects(()=>service.update('cursos',1,{tipo:'curso'}),BadRequestException);
  assert.equal(writes,0);
  await service.update('cursos',1,{titulo:'Título revisado'});assert.equal(writes,1);

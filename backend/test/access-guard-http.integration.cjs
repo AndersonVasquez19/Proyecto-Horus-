@@ -409,22 +409,29 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       };
       // Contrato independiente de la política: exactamente cinco rutas; secretaría solo lee y crea; la cuenta básica no accede.
       const students = routes.filter(route => /^admin\/estudiantes(?:\/|$)/.test(route.path));
-      const editions = routes.filter(route => /^admin\/convocatorias(?:\/|$)/.test(route.path));
+      const editions = routes.filter(route => /^admin\/convocatorias(?:\/|$)/.test(route.path)); // incluye los horarios de la edición (convocatorias:leer/editar)
       const enrollments = routes.filter(route => /^admin\/matriculas(?:\/|$)/.test(route.path));
       assert.deepEqual(enrollments.map(route => route.label), [
         'GET admin/matriculas', 'GET admin/matriculas/ediciones', 'GET admin/matriculas/999999', 'GET admin/matriculas/999999/historial',
-        'POST admin/matriculas', 'PUT admin/matriculas/999999/anulacion', 'PUT admin/matriculas/999999/reactivacion',
+        'POST admin/matriculas', 'PUT admin/matriculas/999999/anulacion', 'PUT admin/matriculas/999999/cumplimiento', 'PUT admin/matriculas/999999/reactivacion',
       ]);
+      // Confirmar el cumplimiento (matriculas:confirmar) es solo de Gerencia y Coordinación, como anular y reactivar.
       assert.deepEqual(ROLE_KEYS.map(key => enrollments.map(route => expectation(key, route))), [
-        Array(7).fill('pasa'), Array(7).fill('pasa'), [...Array(5).fill('pasa'), ...Array(2).fill('sinPermiso')], Array(7).fill('sinRol'),
+        Array(8).fill('pasa'), Array(8).fill('pasa'), [...Array(5).fill('pasa'), ...Array(3).fill('sinPermiso')], Array(8).fill('sinRol'),
       ]);
       assert.deepEqual(editions.map(route => route.label), [
         'GET admin/convocatorias', 'GET admin/convocatorias/cursos', 'GET admin/convocatorias/999999', 'POST admin/convocatorias',
-        'PUT admin/convocatorias/999999', 'PUT admin/convocatorias/999999/apertura', 'PUT admin/convocatorias/999999/cierre', 'PUT admin/convocatorias/999999/archivo',
+        'PUT admin/convocatorias/999999', 'PUT admin/convocatorias/999999/apertura', 'PUT admin/convocatorias/999999/cierre', 'PUT admin/convocatorias/999999/archivo', 'PUT admin/convocatorias/999999/preinscripcion',
+        'GET admin/convocatorias/999999/horarios', 'PUT admin/convocatorias/999999/horarios',
       ]);
+      // Horarios: la secretaría los consulta (convocatorias:leer) pero no los reemplaza (convocatorias:editar).
       assert.deepEqual(ROLE_KEYS.map(key => editions.map(route => expectation(key, route))), [
-        Array(8).fill('pasa'), Array(8).fill('pasa'), [...Array(3).fill('pasa'), ...Array(5).fill('sinPermiso')], Array(8).fill('sinRol'),
+        Array(11).fill('pasa'), Array(11).fill('pasa'), [...Array(3).fill('pasa'), ...Array(6).fill('sinPermiso'), 'pasa', 'sinPermiso'], Array(11).fill('sinRol'),
       ]);
+      // Preinscripciones: nueve rutas administrativas. Gerencia, Coordinación y Secretaría las usan todas (leer, editar y convertir); la cuenta básica ninguna.
+      const preregistrations = routes.filter(route => /^admin\/preinscripciones(?:\/|$)/.test(route.path));
+      assert.equal(preregistrations.length, 9);
+      assert.deepEqual(ROLE_KEYS.map(key => preregistrations.map(route => expectation(key, route))), [Array(9).fill('pasa'), Array(9).fill('pasa'), Array(9).fill('pasa'), Array(9).fill('sinRol')]);
       assert.deepEqual(students.map(route => route.label), [
         'GET admin/estudiantes', 'GET admin/estudiantes/999999', 'POST admin/estudiantes',
         'PUT admin/estudiantes/999999', 'PUT admin/estudiantes/999999/archivo',
@@ -435,6 +442,10 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
         ['pasa', 'pasa', 'pasa', 'sinPermiso', 'sinPermiso'], // secretaría
         ['sinRol', 'sinRol', 'sinRol', 'sinRol', 'sinRol'], // cuenta básica
       ]);
+      // Docentes y certificados se retiraron del alcance académico: ya no existe ninguna ruta administrativa de ninguno de los dos.
+      assert.deepEqual(routes.filter(route => /^admin\/(docentes|asignaciones-docentes|certificados)(?:\/|$)/.test(route.path)), []);
+      // Sesiones se retiró: ya no existe ninguna ruta de sesiones (ni la general ni la de una edición).
+      assert.deepEqual(routes.filter(route => /^admin\/sesiones(?:\/|$)/.test(route.path) || /\/sesiones$/.test(route.path)), []);
       const plan = ROLE_KEYS.flatMap(key => routes.map(route => ({ key, route, expected: expectation(key, route) })));
       const before = await businessSnapshot();
       for (const route of [...students, ...editions, ...enrollments]) {
@@ -447,6 +458,14 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       const statuses = {};
       for (const { key, route } of plan.filter(item => item.expected === 'pasa')) {
         const r = await call(route.path, { method: route.method, token: tokens[key], body: route.body });
+        // El resumen del asistente es una ruta autenticada sin permiso propio: la guard deja pasar a la cuenta sin rol y es el
+        // servicio quien la rechaza con el rol leído de la base (ver admin-access-readiness). POST admin/asistente/consultar con
+        // cuerpo vacío responde 400 por la validación del DTO antes del servicio, así que sigue la regla general.
+        if (key === 'sinrol' && route.label === 'GET admin/asistente/resumen') {
+          denied(r, key + ' ' + route.label + ' (denegación del servicio)', NO_ROLE_MESSAGE);
+          statuses[r.status] = (statuses[r.status] ?? 0) + 1;
+          continue;
+        }
         passed(r, key + ' ' + route.label);
         statuses[r.status] = (statuses[r.status] ?? 0) + 1;
       }
@@ -461,7 +480,22 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       // Importaciones: Gerencia +5; Coordinación +4 (solo aplicar se deniega); Secretaría y básica +0.
       // Reportes académicos: Gerencia +3 (catálogo, consulta y exportación); Coordinación +2 (sin reportes_academicos:exportar);
       // Secretaría y básica +0 (sin reportes_academicos:leer). La matriz de roles no cambia.
-      assert.deepEqual(ROLE_KEYS.map(count), [97, 79, 24, 1]);
+      // Docentes y asignaciones: sus trece rutas se retiraron (Gerencia y Coordinación −13).
+      // Sesiones: seis rutas para Gerencia y Coordinación; Secretaría y básica +0. Los totales pasan de [110, 92, 24, 1] a [116, 98, 24, 1].
+      // Preinscripciones: nueve rutas administrativas para Gerencia, Coordinación y Secretaría (leer, editar y convertir) y una de recepción en Ediciones
+      // (convocatorias:editar) solo para Gerencia y Coordinación: [126, 108, 33, 1].
+      // Rutas añadidas después (la matriz de roles no cambia):
+      // - Cumplimiento de matrícula (matriculas:confirmar): G +1, C +1.
+      // - Certificados (retirados): cuatro lecturas y emisión G/C +5; anulación y sustitución solo G +2 ya no existen: G −7, C −5; S y básica +0.
+      // - Asistente (resumen y consultar, autenticadas sin permiso propio): +2 para cada rol, también la cuenta básica
+      //   (la guard la deja pasar; el servicio la deniega, comprobado arriba y en admin-access-readiness).
+      // - Cotizaciones: PDF (cotizaciones:leer) y duplicar (cotizaciones:crear): G/C +2.
+      // - Mensajes: exportar CSV (mensajes:exportar) solo G +1; comprobar duplicados (mensajes:crear) G/C/S +1.
+      // Totales tras retirar Docentes (−13 G/C) y Certificados (−7 G, −5 C): [120, 101, 36, 3].
+      // - Sesiones (retiradas): sus seis rutas G/C ya no existen (G −6, C −6).
+      // - Horarios de la edición: GET (convocatorias:leer) G/C/S +1 y PUT (convocatorias:editar) G/C +1.
+      // Totales actuales: [116, 97, 37, 3].
+      assert.deepEqual(ROLE_KEYS.map(count), [116, 97, 37, 3]);
       for (const key of ROLE_KEYS) {
         const own = plan.filter(item => item.key === key && item.route.path.startsWith('admin/seguimiento/cotizaciones/'));
         // Un requisito «denegada» se resuelve antes de mirar el rol: 403 genérico también para la cuenta sin rol.
@@ -602,7 +636,9 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
         await post('admin/register', tokens.coord, valid), await post('admin/register', tokens.sec, valid), await post('admin/register', tokens.gerente, valid)];
       assert.deepEqual(reg.map(r => r.status), [401, 401, 403, 403, 403, 429]);
       assert.deepEqual([reg[2].data?.mensaje, reg[3].data?.mensaje], [NO_ROLE_MESSAGE, FORBIDDEN_MESSAGE]);
-      assert.equal(bucketGrowth(quotas, await buckets()), 12, 'seis intentos × (cuota individual + global de la ruta)');
+      // Solo las solicitudes ADMITIDAS consumen cuota: cinco intentos × (cuota individual + global de la ruta). El sexto, rechazado con 429, no suma
+      // nada (antes sumaba 2 y así una IP abusiva agotaba el global de todos).
+      assert.equal(bucketGrowth(quotas, await buckets()), 10, 'cinco intentos admitidos × (individual + global); el 429 no consume cuota');
       assert.equal(Number((await q('SELECT COUNT(*) AS n FROM admin_users WHERE email = ?', [valid.email]))[0].n), 0, 'el 429 no crea la cuenta');
 
       // b) POST admin/password (5/min, autoservicio): 401 sin sesión válida y 400 con la contraseña actual incorrecta consumen cuota;

@@ -32,7 +32,7 @@ test('complaint rejects strings longer than its storage and newsletter requires 
 test('explicit optional clearing cannot erase required fields or accept an empty update',async()=>{
  let updates:unknown;
  const mock={curso:{findFirst:async()=>({id:1}),update:async({data}:{data:unknown})=>{updates=data;return{id:1}}}};
- const service=new CatalogoService(mock as unknown as PrismaService);
+ const service=new CatalogoService({...mock,$transaction:async(run:(tx:unknown)=>unknown)=>run({...mock,$queryRaw:async()=>[{id:1}]})} as unknown as PrismaService);
  const dto=await validate({limpiar:['imagen_url','fecha_inicio','temario']},UpdateCursoDto);
  await service.update('cursos',1,dto);assert.deepEqual(updates,{imagen_url:null,fecha_inicio:null,temario:null});
  for(const value of [{limpiar:['titulo']},{limpiar:[]},{limpiar:['temario'],temario:'Texto'}])await assert.rejects(()=>service.update('cursos',1,value),BadRequestException);

@@ -1,9 +1,9 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Convocatoria, Matricula, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { isSchemaOutdated, isUniqueViolation } from '../database/serialization';
 import { can } from '../permissions/policy';
-import { AnularMatriculaDto, CreateMatriculaDto, EdicionesMatriculaQueryDto, MatriculasQueryDto, ReactivarMatriculaDto } from './matriculas.dto';
+import { AnularMatriculaDto, ConfirmarCumplimientoDto, CreateMatriculaDto, EdicionesMatriculaQueryDto, MatriculasQueryDto, ReactivarMatriculaDto } from './matriculas.dto';
 import { CursosConvocatoriaQueryDto } from '../convocatorias/convocatorias.dto';
 
 const student = { id: true, nombres: true, apellidos: true, doc_numero: true, archivado_at: true } as const;
@@ -103,6 +103,35 @@ export class MatriculasService {
     const item = await tx.matricula.create({ data: { estudiante_id: dto.estudiante_id, convocatoria_id: dto.convocatoria_id }, include: relations });
     await this.audit(tx, item, actor, 'creacion', undefined, motivo);
     return { ok: true, item: serialize(item) };
+  }
+  // Confirmación administrativa del cumplimiento (cumplido / no_cumplido / vuelta a pendiente). Solo roles con matriculas:confirmar
+  // (gerente y coordinadora); MySQL rechaza además un confirmador SECRETARIA. Bloqueo: curso → edición → estudiante → matrícula,
+  // el mismo orden que el resto del módulo. Con un certificado vigente el cumplimiento no se toca: primero se anula el certificado.
+  confirm(id: number, dto: ConfirmarCumplimientoDto, actor: number) {
+    return this.execute(() => this.prisma.$transaction(async tx => {
+      const initial = await tx.matricula.findUnique({ where: { id }, select: { convocatoria_id: true, estudiante_id: true } });
+      if (!initial) throw new NotFoundException('La matrícula no existe.');
+      await this.lockEdition(tx, initial.convocatoria_id);
+      await this.lockStudent(tx, initial.estudiante_id, false);
+      await tx.$queryRaw`SELECT id FROM matriculas WHERE id = ${id} FOR UPDATE`;
+      const before = await tx.matricula.findUniqueOrThrow({ where: { id } });
+      const account = await tx.adminUser.findUniqueOrThrow({ where: { id: actor }, select: { rol: true } });
+      if (account.rol !== 'GERENTE_GENERAL' && account.rol !== 'COORDINADORA_INSTITUCIONAL' || !can(account.rol, 'matriculas:confirmar')) throw new ForbiddenException('No tienes permiso para confirmar el cumplimiento.');
+      if (before.revision !== dto.revision) throw new ConflictException('La matrícula cambió desde que la abriste. Consulta su versión actual antes de continuar.');
+      if (before.estado !== 'activa') throw new ConflictException('Solo se confirma el cumplimiento de matrículas activas.');
+      if (before.cumplimiento === dto.cumplimiento) throw new ConflictException('La matrícula ya tiene ese cumplimiento. Consulta su detalle.');
+      if (before.cumplimiento !== 'pendiente' && !dto.motivo) throw new BadRequestException('Indica el motivo para corregir una confirmación de cumplimiento.');
+      if (await tx.certificado.count({ where: { matricula_id: id, estado: 'vigente' } })) throw new ConflictException('La matrícula tiene un certificado vigente. Anúlalo antes de cambiar el cumplimiento.');
+      const confirmed = dto.cumplimiento !== 'pendiente';
+      const item = await tx.matricula.update({ where: { id }, include: relations, data: {
+        cumplimiento: dto.cumplimiento, revision: { increment: 1 },
+        confirmado_por: confirmed ? actor : null, confirmado_rol: confirmed ? account.rol as 'GERENTE_GENERAL' | 'COORDINADORA_INSTITUCIONAL' : null, confirmado_at: confirmed ? new Date() : null,
+      } });
+      await tx.academicoHistorial.create({ data: { entidad: 'matricula', entidad_id: id, origen: 'panel', actor_id: actor, actor_rol: account.rol,
+        operacion: 'confirmacion', estado_anterior: before.cumplimiento, estado_nuevo: item.cumplimiento, revision: item.revision, motivo: dto.motivo,
+        campos: ['cumplimiento', 'confirmado_por', 'confirmado_rol', 'confirmado_at'] } });
+      return { ok: true, item: serialize(item) };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }));
   }
   annul(id: number, dto: AnularMatriculaDto, actor: number) { return this.change(id, dto, actor, false); }
   reactivate(id: number, dto: ReactivarMatriculaDto, actor: number) { return this.change(id, dto, actor, true); }

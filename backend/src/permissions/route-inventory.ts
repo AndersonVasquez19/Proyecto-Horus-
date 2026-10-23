@@ -6,7 +6,7 @@ import type { FollowUpOperation, RouteAccess } from './access';
 // ruta sin clasificar o si un decorador no coincide con este inventario. Las rutas van sin el prefijo global «api».
 export type { RouteAccess } from './access';
 
-export interface RouteEntry { method: 'GET' | 'POST' | 'PUT' | 'DELETE'; path: string; access: RouteAccess; note?: string }
+export interface RouteEntry { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string; access: RouteAccess; note?: string }
 
 const pub = (method: RouteEntry['method'], path: string, note?: string): RouteEntry => ({ method, path, access: { kind: 'publica' }, note });
 const auth = (method: RouteEntry['method'], path: string, note?: string): RouteEntry => ({ method, path, access: { kind: 'autenticada' }, note });
@@ -29,6 +29,10 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   pub('POST', 'contacto'), pub('POST', 'reclamaciones'),
   pub('POST', 'newsletter'), pub('POST', 'newsletter/unsubscribe'),
   pub('POST', 'chatbot/message'), pub('POST', 'chatbot/contact'),
+  pub('GET', 'preinscripciones/convocatorias', 'Ediciones que reciben preinscripciones: código opaco, sin IDs secuenciales, cupos, conteos ni datos personales.'),
+  pub('POST', 'preinscripciones', 'Formulario público. El servidor fija el canal; consentimiento obligatorio; respuesta idéntica ante un duplicado; límite compartido en MySQL.'),
+  pub('GET', 'certificados/verificar/:codigo', 'Verificación por código aleatorio (100 bits). Respuesta mínima: nombre, curso y fechas; nunca el DNI ni el motivo de anulación. Código inexistente o mal formado: el mismo 404. Límite de frecuencia por IP, subred y global (PublicRateLimitGuard).'),
+  pub('POST', 'chatbot/preinscripcion', 'Misma operación que el formulario (un solo servicio), activada por el chatbot tras confirmar el visitante. El modelo de OpenAI no la invoca ni recibe sus datos.'),
 
   // --- Autenticación y cuentas ---
   pub('POST', 'admin/login'), pub('POST', 'admin/forgot-password'), pub('POST', 'admin/reset-password'),
@@ -77,34 +81,53 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('GET', 'admin/matriculas', 'matriculas:leer'), perm('GET', 'admin/matriculas/ediciones', 'matriculas:leer'),
   perm('GET', 'admin/matriculas/:id', 'matriculas:leer'), perm('GET', 'admin/matriculas/:id/historial', 'matriculas:leer'),
   perm('POST', 'admin/matriculas', 'matriculas:crear'), perm('PUT', 'admin/matriculas/:id/anulacion', 'matriculas:anular'),
+  perm('PUT', 'admin/matriculas/:id/cumplimiento', 'matriculas:confirmar', 'Confirma cumplido / no cumplido o devuelve a pendiente (con motivo al corregir). Solo Gerencia y Coordinación; no es una calificación. Bloqueado con un certificado vigente.'),
   perm('PUT', 'admin/matriculas/:id/reactivacion', 'matriculas:anular', 'Revertir una anulación exige anular; el servicio exige además editar.'),
   perm('GET', 'admin/estudiantes', 'estudiantes:leer'), perm('GET', 'admin/estudiantes/:id', 'estudiantes:leer'),
   perm('GET', 'admin/convocatorias', 'convocatorias:leer'), perm('GET', 'admin/convocatorias/cursos', 'convocatorias:leer'),
   perm('GET', 'admin/convocatorias/:id', 'convocatorias:leer'), perm('POST', 'admin/convocatorias', 'convocatorias:crear'),
   perm('PUT', 'admin/convocatorias/:id', 'convocatorias:editar'), perm('PUT', 'admin/convocatorias/:id/apertura', 'convocatorias:editar'),
   perm('PUT', 'admin/convocatorias/:id/cierre', 'convocatorias:cerrar'), perm('PUT', 'admin/convocatorias/:id/archivo', 'convocatorias:archivar'),
+  perm('PUT', 'admin/convocatorias/:id/preinscripcion', 'convocatorias:editar', 'Habilita o cierra la recepción de preinscripciones (independiente de la apertura académica). Solo Gerencia y Coordinación.'),
+  perm('GET', 'admin/preinscripciones', 'preinscripciones:leer', 'Datos personales de visitantes: nunca públicos.'),
+  perm('GET', 'admin/preinscripciones/resumen', 'preinscripciones:leer', 'Conteos por edición y estado, mínimo de apertura y cupos. Sin datos personales.'),
+  perm('GET', 'admin/preinscripciones/:id', 'preinscripciones:leer'), perm('GET', 'admin/preinscripciones/:id/historial', 'preinscripciones:leer'),
+  perm('PATCH', 'admin/preinscripciones/:id', 'preinscripciones:editar', 'Corrección de nombres, correo o teléfono con revisión. Estado y canal no se editan aquí.'),
+  perm('PUT', 'admin/preinscripciones/:id/validacion', 'preinscripciones:editar', 'recibida → validada. Es la única que cuenta para el mínimo de apertura (junto con matriculada).'),
+  perm('PUT', 'admin/preinscripciones/:id/descarte', 'preinscripciones:editar', 'Con motivo; estado final. No se borra.'),
+  perm('PUT', 'admin/preinscripciones/:id/desistimiento', 'preinscripciones:editar', 'El visitante deja de estar interesado; estado final. No se borra.'),
+  perm('POST', 'admin/preinscripciones/:id/conversion', 'preinscripciones:convertir', 'Crea la matrícula oficial reutilizando Matrículas (capacidad, edición abierta, estudiante existente o nuevo con DNI) en UNA transacción. La secretaría la puede usar sin recibir matriculas:* nuevos ni convocatorias:editar.'),
   perm('POST', 'admin/estudiantes', 'estudiantes:crear'), perm('PUT', 'admin/estudiantes/:id', 'estudiantes:editar'),
   perm('PUT', 'admin/estudiantes/:id/archivo', 'estudiantes:archivar', 'Archivar y restaurar con revisión; nunca elimina al estudiante.'),
+  perm('GET', 'admin/convocatorias/:id/horarios', 'convocatorias:leer', 'Horarios recurrentes de la edición (día ISO 1–7 y horas HH:MM de Lima) con la revisión vigente de la edición; 404 si no existe.'),
+  perm('PUT', 'admin/convocatorias/:id/horarios', 'convocatorias:editar', 'Reemplaza el conjunto completo de horarios con la revisión de la edición, en una transacción con bloqueo curso → edición: sin duplicados ni solapamientos (422), revisión obsoleta 409, edición archivada o cancelada 409. Solo Gerencia y Coordinación.'),
   perm('GET', 'admin/reportes', 'reportes_academicos:leer', 'Catálogo de reportes y capacidades de la cuenta. Solo lectura.'),
-  perm('GET', 'admin/reportes/:tipo', 'reportes_academicos:leer', 'Consulta JSON paginada. Estudiantes y matrículas (datos personales) exigen además estudiantes:leer (y matriculas:leer), comprobados en el servicio.'),
-  perm('GET', 'admin/reportes/:tipo/exportar', 'reportes_academicos:exportar', 'CSV, XLSX o PDF. Estudiantes y matrículas (datos personales) exigen además estudiantes:exportar, comprobado en el servicio.'),
+  perm('GET', 'admin/reportes/:tipo', 'reportes_academicos:leer', 'Consulta JSON paginada. Estudiantes y matrículas (datos personales) exigen además estudiantes:leer (y matriculas:leer en el reporte de matrículas), comprobados en el servicio. Los reportes comerciales y de atención (cotizaciones-*, consultas-*, actividad-comercial) exigen además cotizaciones:leer o mensajes:leer + seguimiento_mensajes:leer, también en el servicio; no tienen permiso propio ni cambian la matriz.'),
+  perm('GET', 'admin/reportes/:tipo/exportar', 'reportes_academicos:exportar', 'CSV, XLSX o PDF. Estudiantes y matrículas (datos personales) exigen además estudiantes:exportar, comprobado en el servicio. Los reportes comerciales y de atención exigen además el permiso de lectura de su módulo (cotizaciones o mensajes + seguimiento).'),
 
   // --- Atención ---
   perm('GET', 'admin/messages', 'mensajes:leer'), perm('GET', 'admin/messages/:id', 'mensajes:leer'),
+  perm('GET', 'admin/messages/exportar', 'mensajes:exportar', 'CSV controlado de consultas: mismos filtros de la bandeja, tope de filas, sin el texto del mensaje ni notas, celdas neutralizadas contra fórmulas y registro de la descarga sin datos personales. Declarada antes de :id.'),
   perm('POST', 'admin/messages', 'mensajes:crear'), perm('PUT', 'admin/messages/:id', 'mensajes:editar'),
+  perm('POST', 'admin/messages/duplicados', 'mensajes:crear', 'Comprobación de duplicados (lectura): coincidencia exacta de correo, asunto y mensaje en los últimos 7 días; responde solo { hayCoincidencias, cantidad }. Límite de 30 por cuenta cada 15 minutos (rate_limit_buckets).'),
   perm('DELETE', 'admin/messages/:id', 'mensajes:eliminar'),
   follow('GET', 'admin/seguimiento/:recurso/:id', 'leer'), follow('PUT', 'admin/seguimiento/:recurso/:id', 'editar'),
   follow('POST', 'admin/seguimiento/:recurso/:id/constancia', 'enviar'), follow('POST', 'admin/seguimiento/:recurso/:id/correo', 'enviar'),
   perm('GET', 'admin/cotizaciones', 'cotizaciones:leer'), perm('GET', 'admin/cotizaciones/:id', 'cotizaciones:leer'),
-  perm('POST', 'admin/cotizaciones', 'cotizaciones:crear'), perm('PUT', 'admin/cotizaciones/:id', 'cotizaciones:editar'),
+  perm('GET', 'admin/cotizaciones/:id/pdf', 'cotizaciones:leer', 'PDF A4 para el cliente; solo lectura. Sin historial, revisiones, correo ni teléfono del cliente. Borrador y anulada se imprimen con su estado visible.'),
+  perm('POST', 'admin/cotizaciones', 'cotizaciones:crear'),
+  perm('POST', 'admin/cotizaciones/:id/duplicar', 'cotizaciones:crear', 'Crea una cotización NUEVA en borrador a partir de otra; la original no se modifica. Es crear, no editar.'),
+  perm('PUT', 'admin/cotizaciones/:id', 'cotizaciones:editar'),
   perm('POST', 'admin/cotizaciones/:id/correo', 'cotizaciones:enviar'),
-  byField('POST', 'admin/cotizaciones/:id/estado', 'estado', 'cotizaciones:editar', { anulada: 'cotizaciones:anular' }, 'Cambiar el estado es edición; el destino «anulada» exige además cotizaciones:anular.'),
+  byField('POST', 'admin/cotizaciones/:id/estado', 'estado', 'cotizaciones:editar', { anulada: 'cotizaciones:anular', enviada: 'cotizaciones:enviar' }, 'Cambiar el estado es edición; el destino «anulada» exige además cotizaciones:anular y «enviada» (declarar la propuesta como entregada) cotizaciones:enviar.'),
   perm('GET', 'admin/reclamaciones', 'reclamaciones:leer'), perm('GET', 'admin/reclamaciones/:id', 'reclamaciones:leer'),
   perm('DELETE', 'admin/reclamaciones/:id', 'reclamaciones:eliminar', 'Pendiente de criterio legal: podría exigirse conservarlas.'),
   perm('GET', 'admin/newsletter', 'boletin:leer', 'Devuelve la lista completa de correos; no existe endpoint de exportación (la exportación es del navegador).'),
   perm('DELETE', 'admin/newsletter/:id', 'boletin:eliminar'),
   perm('GET', 'admin/chatbot/sin-respuesta', 'chatbot_consultas:leer'),
   perm('GET', 'admin/stats', 'estadisticas:leer'), perm('GET', 'admin/stats/actividad', 'estadisticas:leer'),
+  auth('POST', 'admin/asistente/consultar', 'HORUS Assistant v2, solo lectura (POST solo porque envía una pregunta; no escribe nada). Sin permiso propio: el servicio lee el rol VIGENTE de la base y la IA solo puede elegir herramientas del catálogo de ese rol (cada una hereda los permisos de lectura de su área). Sin DNI, correos ni teléfonos en la pregunta ni hacia OpenAI. Límite por IP (PublicRateLimitGuard, MySQL compartido) y por cuenta. Sin IA disponible responde 503.'),
+  auth('GET', 'admin/asistente/resumen', 'HORUS Assistant, solo lectura. Sin permiso propio: el servicio lee el rol VIGENTE de la base (nunca del token) y consulta cada área solo si el rol ya tiene su permiso de lectura; una cuenta sin rol recibe 403. Límite de frecuencia por cuenta, compartido entre instancias (MySQL, rate_limit_buckets; sin el almacén responde 503). La explicación opcional con IA se valida con marcadores y, si no se puede comprobar, se entrega el resumen determinista. Sin acciones de escritura.'),
 
   // --- Andamiaje genérico (sin uso en el panel; sin clasificar → solo gerente) ---
   perm('GET', 'admin/items', 'items:leer', 'Sin clasificar: ninguna pantalla del panel lo usa. Solo gerente hasta decidir si se conserva.'),

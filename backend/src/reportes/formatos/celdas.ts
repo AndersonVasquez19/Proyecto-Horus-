@@ -27,12 +27,13 @@ export function cellText(value: CellValue, kind: ColumnKind, target: 'csv' | 'pd
     return text;
   }
   if (kind === 'decimal') return value.toFixed(1);
+  if (kind === 'importe') return value.toFixed(2);
   return String(value);
 }
 
 export function summaryText(entry: ReportSummaryItem): string {
   if (entry.valor === null) return NOT_APPLICABLE;
-  return entry.tipo === 'decimal' ? entry.valor.toFixed(1) : String(entry.valor);
+  return entry.tipo === 'decimal' ? entry.valor.toFixed(1) : entry.tipo === 'importe' ? entry.valor.toFixed(2) : String(entry.valor);
 }
 
 // Nombre de archivo ASCII seguro para Content-Disposition: horus-reporte-<tipo>-<AAAAMMDD-HHmm>.<ext>

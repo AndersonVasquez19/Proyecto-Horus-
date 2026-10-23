@@ -362,7 +362,8 @@ const caben = (tabla: Tabla, fila: Record<string, string | null>) =>
 // columnas: longitud máxima de CHAR(n)/VARCHAR(n) (null en las demás). En modo estricto MySQL rechaza un valor más largo (1406).
 type Tabla = { enums: Record<string, { valores: string[]; nulo: boolean }>; columnas: Record<string, number | null>; checks: Record<string, string> };
 type Modelo = Record<string, Tabla>;
-const TABLAS_DOCUMENTO = ['estudiantes', 'certificados'];
+// docentes (20261020) guarda el mismo documento opcional que estudiantes: se modela para exigir que su regla sea idéntica.
+const TABLAS_DOCUMENTO = ['estudiantes', 'certificados', 'docentes'];
 
 // Contenido entre el paréntesis de apertura en `desde` y su cierre; devuelve también la posición del cierre.
 function parentesis(texto: string, desde: number): { dentro: string; fin: number } {
@@ -566,6 +567,31 @@ function discrepancias(migraciones: string[]): string[] {
     if (sqlAcepta !== tsSinCambios) problemas.push(`certificados y TS difieren: ${JSON.stringify(fila)}`);
   }
 
+  // Docentes (si la sucesión ya incluye 20261020-docentes): documento opcional con exactamente la regla de estudiantes y la de normalizarDocumento.
+  const docentes = m.docentes;
+  if (docentes) {
+    const tiposDoc = docentes.enums.doc_tipo;
+    if (!tiposDoc) problemas.push('docentes.doc_tipo no es un ENUM');
+    else {
+      if (JSON.stringify(tiposDoc.valores) !== JSON.stringify(TIPOS_DOCUMENTO)) problemas.push(`ENUM de docentes.doc_tipo: ${tiposDoc.valores.join(',')}`);
+      if (!tiposDoc.nulo) problemas.push('docentes.doc_tipo debe admitir NULL (documento opcional)');
+      const reglasDoc = checksDocumento(docentes);
+      for (const fila of corpus()) {
+        const etiqueta = JSON.stringify(fila);
+        const enumOkDoc = fila.doc_tipo === null || tiposDoc.valores.includes(fila.doc_tipo);
+        const aceptaDocente = enumOkDoc && caben(docentes, fila) && cumplen(reglasDoc, fila);
+        const aceptaEstudiante = (fila.doc_tipo === null || tiposEst.valores.includes(fila.doc_tipo)) && caben(est, fila) && cumplen(reglasEst, fila);
+        if (aceptaDocente !== aceptaEstudiante) problemas.push(`docentes y estudiantes difieren: ${etiqueta}`);
+        if (!enumOkDoc && cumplen(reglasDoc, { ...fila, doc_tipo: '' })) problemas.push(`docentes acepta '' en modo no estricto: ${etiqueta}`);
+        const ts = normalizarDocumento(fila);
+        if (ts.ok && ts.documento) {
+          const n = { doc_pais: ts.documento.doc_pais, doc_tipo: ts.documento.doc_tipo, doc_numero: ts.documento.doc_numero };
+          if (!(tiposDoc.valores.includes(n.doc_tipo) && caben(docentes, n) && cumplen(reglasDoc, n))) problemas.push(`TS entrega algo que docentes rechaza: ${etiqueta}`);
+        }
+      }
+    }
+  }
+
   // Salvaguarda contra una prueba vacía: el corpus debe contener ambos resultados.
   if (aceptadasSql < 5 || rechazadasSql < 500) problemas.push('el corpus no ejerce suficientes casos aceptados y rechazados');
   return problemas;
@@ -587,6 +613,10 @@ test('paridad: el esquema efectivo (E4.2 + solo DNI) y normalizarDocumento acept
   assert.deepEqual(Object.keys(m.estudiantes.checks).sort(), ['estudiantes_documento_completo_chk', 'estudiantes_documento_formato_chk', 'estudiantes_nombres_chk', 'estudiantes_revision_chk']);
   assert.deepEqual(Object.keys(m.certificados.checks).sort(), ['certificados_anulacion_chk', 'certificados_codigo_chk', 'certificados_documento_chk', 'certificados_fechas_chk', 'certificados_nombres_chk']);
   assert.equal(m.estudiantes.checks.estudiantes_documento_completo_chk, modelo([sqlE42]).estudiantes.checks.estudiantes_documento_completo_chk);
+  // Docentes: mismo documento opcional de solo DNI; las demás restricciones (nombres, texto, estado y revisión) no leen el documento.
+  assert.deepEqual(m.docentes.enums.doc_tipo, { valores: ['DNI'], nulo: true });
+  assert.deepEqual([m.docentes.columnas.doc_pais, m.docentes.columnas.doc_numero], [2, 20]);
+  assert.deepEqual(Object.keys(m.docentes.checks).sort(), ['docentes_activo_chk', 'docentes_documento_completo_chk', 'docentes_documento_formato_chk', 'docentes_nombres_chk', 'docentes_revision_chk', 'docentes_texto_chk']);
   assert.deepEqual(discrepancias(SQL), []);
 });
 
@@ -606,6 +636,25 @@ test('paridad: el esquema de E4.2 sin la migración de solo DNI se detecta (toda
   assert.ok(problemas.some(p => p.startsWith('certificados y TS difieren') && p.includes('"PASAPORTE"')));
   // Y el «$» de ICU: E4.2 aceptaba un DNI con salto de línea final.
   assert.ok(problemas.some(p => p.startsWith('SQL acepta y TS no') && p.includes('"12345678\\n"')));
+});
+
+test('paridad: docentes aplica la misma regla de documento que estudiantes y se detecta una regla alterada en su migración', () => {
+  const DOCENTES = '20261020-docentes';
+  assert.ok(ACADEMICAS.includes(DOCENTES), 'la migración de docentes forma parte de la sucesión académica');
+  const sqlDocentes = leer(DOCENTES);
+  const sucesion = (sql: string) => ACADEMICAS.map((nombre, i) => (nombre === DOCENTES ? sql : SQL[i]));
+  assert.deepEqual(discrepancias(sucesion(sqlDocentes)), []);
+  const mutaciones: [string, string, string][] = [
+    ['quitar CHAR_LENGTH (aceptaría un salto de línea final)', ' AND CHAR_LENGTH(`doc_numero`) = 8', ''],
+    ['reintroducir CE en el ENUM', "ENUM('DNI') NULL", "ENUM('DNI','CE') NULL"],
+    ['DNI de 9 dígitos', '^[0-9]{8}$', '^[0-9]{9}$'],
+    ['país distinto de PE', "'^PE$', 'c'", "'^[A-Z]{2}$', 'c'"],
+    ['quitar el tipo = DNI (modo no estricto)', " AND `doc_tipo` = 'DNI'", ''],
+  ];
+  for (const [etiqueta, de, a] of mutaciones) {
+    assert.ok(sqlDocentes.includes(de), `la mutación «${etiqueta}» no encuentra su objetivo`);
+    assert.ok(discrepancias(sucesion(sqlDocentes.split(de).join(a))).length > 0, `la paridad no detectó en docentes: ${etiqueta}`);
+  }
 });
 
 test('paridad: la prueba detecta reglas SQL alteradas en la migración de solo DNI', () => {

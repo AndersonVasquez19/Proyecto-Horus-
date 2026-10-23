@@ -5,6 +5,7 @@ import * as bcrypt from 'bcryptjs';
 import helmet from 'helmet';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { corsOrigins } from '../deployment.config';
+import { isAdminRole } from '../permissions/roles';
 
 // Seguridad HTTP del backend: cabeceras (Helmet), CORS y acceso a Swagger. La usan main.ts y las pruebas,
 // de modo que lo que se prueba es exactamente lo que se despliega.
@@ -97,6 +98,7 @@ export function configureCors(app: NestExpressApplication, env: Env) {
     origin: corsOrigins(env), // lista exacta, nunca '*'
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     credentials: true,
+    exposedHeaders: ['Content-Disposition'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'], // Idempotency-Key: creación de cotizaciones (sin él, el preflight entre orígenes la rechazaría)
   });
 }
@@ -111,18 +113,19 @@ export function configureHttpSecurity(app: NestExpressApplication, env: Env) {
 const FAILURE_LIMIT = 5, FAILURE_WINDOW_MS = 60_000;
 const DUMMY_HASH = bcrypt.hashSync('no-es-una-cuenta', 10);
 
-// Valida con una cuenta de administrador activa; el tiempo es parecido exista o no la cuenta.
+// Solo los roles administrativos aprobados pueden consultar la documentación (sin conceder permisos de API).
+// El tiempo es parecido exista o no la cuenta.
 export function adminDocsAuthenticator(prisma: { adminUser: { findFirst: (args: any) => Promise<any> } }): DocsAuthenticator {
   return async (email, password) => {
     const user = await prisma.adminUser.findFirst({ where: { email: email.toLowerCase().trim() } });
     const matches = await bcrypt.compare(password, user?.password ?? DUMMY_HASH);
-    return Boolean(user) && user.activo !== false && matches;
+    return Boolean(user) && user.activo === true && isAdminRole(user.rol) && matches;
   };
 }
 
 // HTTP Basic con credenciales de un administrador, nunca en la URL. Solo por HTTPS. Limita los fallos por IP.
 export function docsAccess(authenticate: DocsAuthenticator, options: { requireHttps: boolean; now?: () => number }): RequestHandler {
-  const failures = new Map<string, { count: number; resetAt: number }>();
+  const failures = new Map<string, { count: number; pending: number; resetAt: number }>();
   const now = options.now ?? Date.now;
   const deny = (res: Response, status: number, mensaje: string, challenge = false) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -135,20 +138,29 @@ export function docsAccess(authenticate: DocsAuthenticator, options: { requireHt
     if (options.requireHttps && !req.secure) return deny(res, 403, 'La documentación solo se sirve por HTTPS.');
     const key = req.ip || 'unknown', time = now();
     for (const [ip, entry] of failures) if (entry.resetAt <= time) failures.delete(ip);
-    const entry = failures.get(key);
-    if (entry && entry.count >= FAILURE_LIMIT) { res.setHeader('Retry-After', String(Math.ceil((entry.resetAt - time) / 1000))); return deny(res, 429, 'Demasiados intentos. Espera un minuto.'); }
+    let entry = failures.get(key);
+    if (entry && entry.count + entry.pending >= FAILURE_LIMIT) { res.setHeader('Retry-After', String(Math.ceil((entry.resetAt - time) / 1000))); return deny(res, 429, 'Demasiados intentos. Espera un minuto.'); }
     const header = req.headers.authorization || '';
     const match = /^Basic ([A-Za-z0-9+/=]{1,1024})$/.exec(header);
     let granted = false;
     if (match) {
+      // Reserva síncrona ANTES del primer await: las comprobaciones en vuelo también consumen cuota.
+      if (!entry) { entry = { count: 0, pending: 0, resetAt: time + FAILURE_WINDOW_MS }; failures.set(key, entry); }
+      entry.pending++;
       const decoded = Buffer.from(match[1], 'base64').toString('utf8'), separator = decoded.indexOf(':');
       const email = separator > 0 ? decoded.slice(0, separator) : '', password = separator > 0 ? decoded.slice(separator + 1) : '';
       if (email && password && email.length <= 254 && Buffer.byteLength(password, 'utf8') <= 72) {
         try { granted = await authenticate(email, password); } catch { granted = false; }
       }
+      entry.pending--;
+      // Una autenticación lenta de una ventana anterior no modifica ni revive el cubo actual.
+      if (failures.get(key) === entry) {
+        if (granted) entry.count = 0;
+        else entry.count++;
+        if (!entry.count && !entry.pending) failures.delete(key);
+      }
     }
-    if (granted) { failures.delete(key); return next(); }
-    if (match) failures.set(key, { count: (entry?.count ?? 0) + 1, resetAt: entry && entry.resetAt > time ? entry.resetAt : time + FAILURE_WINDOW_MS });
+    if (granted) return next();
     return deny(res, 401, 'Se requiere una cuenta de administrador para ver la documentación.', true);
   };
 }

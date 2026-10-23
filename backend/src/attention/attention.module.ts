@@ -12,7 +12,7 @@ import { AttentionService } from './attention.service';
 @Controller('admin/seguimiento/:recurso/:id')
 export class AttentionController {
  constructor(private readonly service:AttentionService){}
- @Get() @RequireFollowUp('leer') get(@Param('recurso') recurso:string,@Param('id',ParseIntPipe) id:number){return this.service.get(recurso,id);}
+ @Get() @RequireFollowUp('leer') get(@Param('recurso') recurso:string,@Param('id',ParseIntPipe) id:number){return this.service.get(recurso,id,true);}
  @Put() @RequireFollowUp('editar') save(@Param('recurso') recurso:string,@Param('id',ParseIntPipe) id:number,@Body() dto:AttentionDto,@CurrentUser('id') user:number){return this.service.save(recurso,id,dto,user);}
  @Post('constancia') @RequireFollowUp('enviar') receipt(@Param('recurso') recurso:string,@Param('id',ParseIntPipe) id:number,@Body() dto:AttentionResendDto,@CurrentUser('id') user:number){return this.service.receipt(recurso,id,user,dto?.confirmar_reenvio===true);}
  @Post('correo') @RequireFollowUp('enviar') send(@Param('recurso') recurso:string,@Param('id',ParseIntPipe) id:number,@Body() dto:AttentionSendDto,@CurrentUser('id') user:number){return this.service.send(recurso,id,dto.revision,user,dto.confirmar_reenvio===true);}

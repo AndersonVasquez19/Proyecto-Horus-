@@ -2,6 +2,10 @@
 
 Implementación de fase 2 sobre Curso → Convocatoria. No crea matrículas ni modifica el catálogo público.
 
+> **Horarios (octubre de 2026):** los días y horas recurrentes de cada edición se consultan y reemplazan con `GET`/`PUT /api/admin/convocatorias/:id/horarios`
+> (permisos `convocatorias:leer`/`convocatorias:editar`). Reemplazar los horarios **sube la revisión de la edición**: tras guardarlos, Editar, abrir, cerrar o
+> archivar deben usar la revisión nueva. Contrato: [Horarios de las ediciones](horarios-ediciones.md).
+
 ## Plan de trabajo
 
 1. Añadir capacidad nullable para conservar filas anteriores sin inventar cupos. Exigir capacidad positiva en altas nuevas y antes de abrir. Probar la migración en MySQL desechable.

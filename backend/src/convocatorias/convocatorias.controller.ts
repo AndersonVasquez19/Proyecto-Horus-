@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RequirePermission } from '../permissions/access.decorators';
-import { ArchivoConvocatoriaDto, CierreConvocatoriaDto, ConvocatoriaIdDto, ConvocatoriasQueryDto, CreateConvocatoriaDto, CursosConvocatoriaQueryDto, RevisionConvocatoriaDto, UpdateConvocatoriaDto } from './convocatorias.dto';
+import { ArchivoConvocatoriaDto, CierreConvocatoriaDto, ConvocatoriaIdDto, ConvocatoriasQueryDto, CreateConvocatoriaDto, CursosConvocatoriaQueryDto, RecepcionPreinscripcionDto, RevisionConvocatoriaDto, UpdateConvocatoriaDto } from './convocatorias.dto';
 import { ConvocatoriasService } from './convocatorias.service';
 
 type ActorRequest = { user: { id: number } };
@@ -18,6 +18,7 @@ export class ConvocatoriasController {
   @Post() @RequirePermission('convocatorias:crear') create(@Body() dto: CreateConvocatoriaDto, @Req() req: ActorRequest) { return this.service.create(dto, req.user.id); }
   @Put(':id') @RequirePermission('convocatorias:editar') update(@Param() p: ConvocatoriaIdDto, @Body() dto: UpdateConvocatoriaDto, @Req() req: ActorRequest) { return this.service.update(p.id, dto, req.user.id); }
   @Put(':id/apertura') @RequirePermission('convocatorias:editar') open(@Param() p: ConvocatoriaIdDto, @Body() dto: RevisionConvocatoriaDto, @Req() req: ActorRequest) { return this.service.open(p.id, dto.revision, req.user.id); }
+  @Put(':id/preinscripcion') @RequirePermission('convocatorias:editar') setReception(@Param() p: ConvocatoriaIdDto, @Body() dto: RecepcionPreinscripcionDto, @Req() req: ActorRequest) { return this.service.setReception(p.id, dto, req.user.id); }
   @Put(':id/cierre') @RequirePermission('convocatorias:cerrar') close(@Param() p: ConvocatoriaIdDto, @Body() dto: CierreConvocatoriaDto, @Req() req: ActorRequest) { return this.service.close(p.id, dto, req.user.id); }
   @Put(':id/archivo') @RequirePermission('convocatorias:archivar') archive(@Param() p: ConvocatoriaIdDto, @Body() dto: ArchivoConvocatoriaDto, @Req() req: ActorRequest) { return this.service.archive(p.id, dto, req.user.id); }
 }

@@ -186,6 +186,9 @@ test('Reportes académicos: HTTP real, permisos, filtros, coherencia entre forma
     };
     const before = await snapshot();
     const TYPES = ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'resumen'];
+    // El catálogo también lista los reportes comerciales y de atención (mismo motor; datos y permisos cubiertos en reportes-comerciales.test.ts).
+    // Este barrido de integración sigue sembrando solo datos académicos, así que el recorrido de formatos usa TYPES.
+    const COMMERCIAL_TYPES = ['cotizaciones-por-estado', 'cotizaciones-vencidas', 'cotizaciones-importes', 'consultas-por-estado', 'consultas-abiertas-antiguas', 'actividad-comercial'];
 
     await t.test('sin sesión 401; cuenta básica y secretaría 403; coordinación consulta pero no exporta', async () => {
       const paths = ['/admin/reportes', '/admin/reportes/matriculas', '/admin/reportes/matriculas/exportar?formato=csv'];
@@ -196,7 +199,7 @@ test('Reportes académicos: HTTP real, permisos, filtros, coherencia entre forma
       }
       const catalog = await json('/admin/reportes', tokens.c);
       assert.equal(catalog.status, 200);
-      assert.deepEqual(catalog.body.reportes.map(r => [r.tipo, r.puede_consultar, r.puede_exportar]), TYPES.map(tipo => [tipo, true, false]));
+      assert.deepEqual(catalog.body.reportes.map(r => [r.tipo, r.puede_consultar, r.puede_exportar]), [...TYPES, ...COMMERCIAL_TYPES].map(tipo => [tipo, true, false]));
       for (const tipo of TYPES) assert.equal((await json('/admin/reportes/' + tipo, tokens.c)).status, 200, tipo);
       for (const formato of ['csv', 'xlsx', 'pdf']) assert.equal((await raw('/admin/reportes/ocupacion/exportar?formato=' + formato, tokens.c)).status, 403);
       const gerente = await json('/admin/reportes', tokens.g);
@@ -282,7 +285,10 @@ test('Reportes académicos: HTTP real, permisos, filtros, coherencia entre forma
           return column.tipo === 'decimal' ? cell.number.toFixed(1) : String(cell.number);
         }));
         assert.deepEqual(fromXlsx, expectedRows, entry + ': tabla XLSX');
-        const summarySheet = [...sheetRows(files.get('xl/worksheets/sheet1.xml')).values()];
+        // Los indicadores se buscan bajo la cabecera «Indicador»: el título del reporte (fila 2, solo columna A) puede coincidir con una etiqueta,
+        // como «Pendientes de certificación».
+        const summaryAll = [...sheetRows(files.get('xl/worksheets/sheet1.xml')).values()];
+        const summarySheet = summaryAll.slice(summaryAll.findIndex(row => row.get('A')?.text === 'Indicador') + 1);
         for (const item of doc.resumen) {
           const cell = summarySheet.find(row => row.get('A')?.text === item.etiqueta).get('B');
           assert.equal(cell.text ?? (item.tipo === 'decimal' ? cell.number.toFixed(1) : String(cell.number)), item.valor === null ? 'No aplica' : item.tipo === 'decimal' ? item.valor.toFixed(1) : String(item.valor), entry + ' xlsx ' + item.clave);

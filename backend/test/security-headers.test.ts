@@ -16,7 +16,8 @@ import { PrismaService } from '../src/database/prisma.service';
 import { HealthController } from '../src/health.controller';
 import { validateDeployment } from '../src/deployment.config';
 import { createValidationPipe } from '../src/common/validation';
-import { adminDocsAuthenticator, configureHttpSecurity, isLocalRequest, isPrivateAddress, setupSwagger, swaggerMode } from '../src/common/security';
+import { adminDocsAuthenticator, configureHttpSecurity, docsAccess, isLocalRequest, isPrivateAddress, setupSwagger, swaggerMode } from '../src/common/security';
+import type { Request, Response } from 'express';
 
 // Aplicación mínima con la MISMA configuración de seguridad que main.ts (configureHttpSecurity + setupSwagger).
 // Sin MySQL, sin cuentas reales y sin correo.
@@ -26,10 +27,13 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 @Controller('uploads')
 class UploadsStub { @Get(':file') @Header('Content-Type', 'image/png') @Header('X-Content-Type-Options', 'nosniff') read() { return new StreamableFile(PNG, { type: 'image/png' }); } }
 
-const accounts = [
-  { id: 1, email: 'admin@example.test', password: bcrypt.hashSync('Password-docs-123', 4), activo: true, session_version: 1, nombre: 'Admin' },
-  { id: 2, email: 'inactivo@example.test', password: bcrypt.hashSync('Password-docs-456', 4), activo: false, session_version: 1, nombre: 'Off' },
+const accounts: { id: number; email: string; password: string; activo: boolean; rol: string | null; session_version: number; nombre: string }[] = [
+  { id: 1, email: 'admin@example.test', password: bcrypt.hashSync('Password-docs-123', 4), activo: true, rol: 'GERENTE_GENERAL', session_version: 1, nombre: 'Admin' },
+  { id: 2, email: 'inactivo@example.test', password: bcrypt.hashSync('Password-docs-456', 4), activo: false, rol: 'GERENTE_GENERAL', session_version: 1, nombre: 'Off' },
 ];
+for (const [email, rol] of [['sinrol@example.test', null], ['desconocido@example.test', 'ADMIN'], ['coordinacion@example.test', 'COORDINADORA_INSTITUCIONAL'], ['secretaria@example.test', 'SECRETARIA']] as const) {
+  accounts.push({ id: accounts.length + 1, email, rol, password: accounts[0].password, activo: true, session_version: 1, nombre: 'Prueba' });
+}
 const fakePrisma = { adminUser: {
   findFirst: async ({ where }: any) => accounts.find(account => account.email === where.email) ?? null,
   findUnique: async ({ where }: any) => accounts.find(account => account.id === where.id) ?? null,
@@ -170,6 +174,56 @@ test('production with Swagger enabled: repeated failures are throttled, even for
     const blocked = await call('/api/docs-json', { headers: { ...secure, Authorization: goodBasic } });
     assert.equal(blocked.status, 429);
     assert.ok(Number(blocked.headers['retry-after']) > 0);
+  } finally { await app.close(); }
+});
+
+test('Swagger: el rol vigente autoriza UI, JSON y YAML; sin rol o rol desconocido no acceden', async () => {
+  const { app, call } = await boot({ ...prod, SWAGGER_ENABLED: 'true' }, { trustProxy: true });
+  try {
+    for (const email of ['sinrol@example.test', 'desconocido@example.test', 'coordinacion@example.test', 'secretaria@example.test']) {
+      for (const path of ['/api/docs/', '/api/docs-json', '/api/docs-yaml']) {
+        const response = await call(path, { headers: fromNewIp({ Authorization: basic(email, 'Password-docs-123') }) });
+        assert.equal(response.status, ['sinrol@example.test', 'desconocido@example.test'].includes(email) ? 401 : 200, email + path);
+      }
+    }
+  } finally { await app.close(); }
+});
+
+test('Swagger: reserva cuota antes de autenticar y no revive ventanas vencidas', async () => {
+  let time = 1000, calls = 0;
+  const pending: ((value: boolean) => void)[] = [];
+  const middleware = docsAccess(async () => { calls++; return new Promise<boolean>(resolve => pending.push(resolve)); }, { requireHttps: true, now: () => time });
+  const request = () => {
+    let status = 200;
+    const headers: Record<string, unknown> = {};
+    const res = { setHeader: (key: string, value: unknown) => { headers[key] = value; }, status: (code: number) => { status = code; return res; }, json: () => res };
+    const done = Promise.resolve(middleware({ path: '/api/docs-json', secure: true, ip: '203.0.113.1', headers: { authorization: goodBasic } } as Request, res as unknown as Response, () => {}));
+    return { done, status: () => status, headers };
+  };
+  const burst = Array.from({ length: 12 }, request);
+  assert.equal(calls, 5, 'solo cinco verificaciones costosas pueden quedar en vuelo');
+  assert.equal(burst.filter(item => item.status() === 429).length, 7);
+  assert.equal(burst[5].headers['Retry-After'], '60');
+  time += 60_000;
+  const fresh = request();
+  assert.equal(calls, 6, 'la nueva ventana admite otro intento');
+  pending.splice(0, 5).forEach(resolve => resolve(false));
+  await Promise.all(burst.map(item => item.done));
+  pending.shift()!(true); await fresh.done;
+  const after = request();
+  assert.equal(calls, 7, 'los fallos de la ventana anterior no vuelven a bloquear');
+  pending.shift()!(false); await after.done;
+});
+
+test('CORS: expone Content-Disposition a React sin cambiar orígenes ni credenciales', async () => {
+  const { app, call } = await boot(prod);
+  try {
+    const allowed = await call('/api/health', { headers: { Origin: 'https://web.example.test', Authorization: 'Bearer ficticio' } });
+    assert.equal(allowed.headers['access-control-expose-headers']?.toLowerCase(), 'content-disposition');
+    assert.equal(allowed.headers['access-control-allow-origin'], 'https://web.example.test');
+    assert.equal(allowed.headers['access-control-allow-credentials'], 'true');
+    const rejected = await call('/api/health', { headers: { Origin: 'https://otro.example.test' } });
+    assert.equal(rejected.headers['access-control-allow-origin'], undefined);
   } finally { await app.close(); }
 });
 

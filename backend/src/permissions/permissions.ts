@@ -5,8 +5,8 @@
 // Operaciones específicas de un recurso: enviar (correo), restaurar, asignar_rol, cerrar, registrar,
 // corregir_cerradas, emitir, previsualizar, aplicar.
 //
-// No existen permisos de eliminación física para estudiantes, matrículas, calificaciones ni certificados:
-// el historial académico se archiva o se anula, nunca se borra.
+// No existen permisos de eliminación física para estudiantes, matrículas ni calificaciones:
+// el historial académico se archiva, se desactiva o se anula, nunca se borra.
 export const RESOURCE_OPERATIONS = {
   // --- Recursos que ya existen en el backend ---
   cuentas: ['leer', 'crear', 'editar', 'asignar_rol'],
@@ -18,7 +18,7 @@ export const RESOURCE_OPERATIONS = {
   galeria: ['leer', 'crear', 'editar', 'eliminar'],
   convenios: ['leer', 'crear', 'editar', 'eliminar'],
   archivos: ['crear'],
-  mensajes: ['leer', 'crear', 'editar', 'eliminar'],
+  mensajes: ['leer', 'crear', 'editar', 'eliminar', 'exportar'], // exportar = descargar en CSV correos y teléfonos de muchos clientes; distinto de leer y reservado al gerente hasta decidir la matriz (Etapa 4A)
   seguimiento_mensajes: ['leer', 'editar', 'enviar'],
   seguimiento_reclamaciones: ['leer', 'editar', 'enviar'],
   cotizaciones: ['leer', 'crear', 'editar', 'enviar', 'anular'],
@@ -30,11 +30,10 @@ export const RESOURCE_OPERATIONS = {
   // --- Gestión académica ---
   estudiantes: ['leer', 'crear', 'editar', 'archivar', 'exportar'],
   convocatorias: ['leer', 'crear', 'editar', 'cerrar', 'archivar'],
+  preinscripciones: ['leer', 'editar', 'convertir', 'exportar'], // editar = validar, corregir, descartar y registrar desistimientos; convertir = pasar una preinscripción validada a matrícula (operación controlada que reutiliza Matrículas); exportar queda RESERVADO para una etapa futura: ninguna ruta lo exige todavía. Sin crear (la crea el visitante) ni eliminar.
   matriculas: ['leer', 'crear', 'editar', 'anular', 'confirmar'], // confirmar = declarar administrativamente que se completó o no la capacitación (no es una calificación)
-  sesiones: ['leer', 'crear', 'editar'],
   asistencia: ['leer', 'registrar'],
   calificaciones: ['leer', 'registrar', 'corregir_cerradas'],
-  certificados: ['leer', 'emitir', 'anular'],
   importaciones: ['previsualizar', 'aplicar'],
   reportes_academicos: ['leer', 'exportar'],
   auditoria: ['leer'],
@@ -45,7 +44,7 @@ export type Permission = { [R in Resource]: `${R}:${(typeof RESOURCE_OPERATIONS)
 
 // Recursos cuyos módulos todavía no existen: sus permisos están definidos pero ninguna ruta actual los exige.
 export const FUTURE_RESOURCES = [
-  'sesiones', 'asistencia', 'calificaciones', 'certificados',
+  'asistencia', 'calificaciones',
   'auditoria',
 ] as const satisfies readonly Resource[];
 

@@ -16,6 +16,7 @@ import { JwtStrategy } from '../src/admin/auth/jwt.strategy';
 import { BCRYPT_COST } from '../src/admin/auth/password-security';
 import { JwtAuthGuard } from '../src/common/guards/jwt-auth.guard';
 import { PublicRateLimitGuard } from '../src/common/public-rate-limit.guard';
+import { memoryBuckets } from './fixtures/rate-limit-memory';
 import { createValidationPipe } from '../src/common/validation';
 import { PrismaService } from '../src/database/prisma.service';
 import { AccessGuard, AccountAccessService, FORBIDDEN_MESSAGE, NO_ROLE_MESSAGE } from '../src/permissions/access.guard';
@@ -249,9 +250,7 @@ test('base sin la estructura esperada (migraciones pendientes): login y registro
 
 // ---- Límites de frecuencia del registro público ----
 function limiter() {
-  const buckets = new Map<string, number>();
-  const tx = { $executeRaw: async (_strings: TemplateStringsArray, id: string) => { buckets.set(id, (buckets.get(id) ?? 0) + 1); }, rateLimitBucket: { findUniqueOrThrow: async ({ where }: any) => ({ count: buckets.get(where.id) }) } };
-  const prisma = { $transaction: async (run: any) => run(tx), rateLimitBucket: { deleteMany: async () => ({ count: 0 }) } } as any;
+  const { prisma } = memoryBuckets();
   const guard = new PublicRateLimitGuard(prisma);
   const call = (path: string, ip = '203.0.113.1') => guard.canActivate({ switchToHttp: () => ({ getRequest: () => ({ method: 'POST', path, ip, socket: { remoteAddress: ip } }) }) } as any);
   return { call };

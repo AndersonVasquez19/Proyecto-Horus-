@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { PANEL_ACTIONS, PANEL_SECTIONS, RESOURCE_READ, RESOURCE_WRITE, panelNavigation } from '../src/panel/context/panelAccess.ts'
 import { parseSession } from '../src/panel/context/sessionAccess.ts'
 import { canRemove, educationSections, resources, supportsRemove } from '../src/panel/types/workspace.ts'
+import { canMoveQuote, quoteTransitionPermission, quoteTransitions } from '../src/panel/types/quotes.ts'
 
 // Navegación del panel según los permisos de la sesión (E3.4.3, fase 1). Todo ficticio.
 // Las listas de permisos de cada rol NO se copian aquí: se leen del código del backend (policy.ts y permissions.ts), de modo que si la
@@ -220,7 +221,7 @@ test('las demás operaciones del panel coinciden con sus rutas', () => {
   assert.equal(routePermission('POST', 'admin/cotizaciones'), A.crearCotizacion)
   assert.equal(routePermission('PUT', 'admin/cotizaciones/:id'), A.editarCotizacion)
   assert.equal(routePermission('POST', 'admin/cotizaciones/:id/correo'), A.enviarCotizacion)
-  assert.deepEqual(routeByField('POST', 'admin/cotizaciones/:id/estado'), { field: 'estado', base: A.editarCotizacion, when: { anulada: A.anularCotizacion } })
+  assert.deepEqual(routeByField('POST', 'admin/cotizaciones/:id/estado'), { field: 'estado', base: A.editarCotizacion, when: { anulada: A.anularCotizacion, enviada: A.enviarCotizacion } })
   assert.equal(routePermission('POST', 'admin/messages'), A.crearMensaje)
   assert.equal(routePermission('DELETE', 'admin/messages/:id'), A.eliminarMensaje)
   assert.equal(routePermission('PUT', 'admin/settings'), A.editarConfiguracion)
@@ -243,6 +244,33 @@ test('las demás operaciones del panel coinciden con sus rutas', () => {
   }
   assert.ok(catalog.includes("if (recurso === 'messages') return `seguimiento_mensajes:${operation}`;"))
   assert.deepEqual([A.leerSeguimiento, A.editarSeguimiento, A.enviarSeguimiento], ['seguimiento_mensajes:leer', 'seguimiento_mensajes:editar', 'seguimiento_mensajes:enviar'])
+})
+
+// Regresión: el commit que añadió `enviada: cotizaciones:enviar` al inventario y al guard real dejó atrás el panel, que seguía ofreciendo
+// «Marcar enviada» a una cuenta con editar pero sin enviar (403 seguro al pulsarlo). El botón sale de canMoveQuote, así que se prueba
+// esa función, no el texto del componente, y su tabla de permisos se compara con el `when` del backend en vez de copiarlo.
+test('cambiar el estado de una cotización: el panel nunca ofrece una transición que el backend rechazaría', () => {
+  const A = PANEL_ACTIONS
+  const accion = { enviar: A.enviarCotizacion, anular: A.anularCotizacion }
+  const esperado = Object.fromEntries(Object.entries(quoteTransitionPermission).map(([estado, op]) => [estado, accion[op]]))
+  assert.deepEqual(routeByField('POST', 'admin/cotizaciones/:id/estado').when, esperado, 'la tabla del panel debe coincidir con el `when` del inventario')
+
+  const perms = (edit, send, voidQuote) => ({ edit, send, void: voidQuote })
+  // Sin editar no se mueve nada, por muchos otros permisos que tenga la cuenta.
+  for (const estado of Object.values(quoteTransitions).flat()) assert.equal(canMoveQuote(estado, perms(false, true, true)), false, 'sin editar: ' + estado)
+  // El caso del fallo: editar SIN enviar y SIN anular. Solo quedan las transiciones que no exigen permiso adicional.
+  const soloEdita = perms(true, false, false)
+  assert.equal(canMoveQuote('enviada', soloEdita), false, 'editar sin enviar no habilita «enviada»')
+  assert.equal(canMoveQuote('anulada', soloEdita), false, 'editar sin anular no habilita «anulada»')
+  for (const estado of ['aceptada', 'rechazada']) assert.equal(canMoveQuote(estado, soloEdita), true, estado + ' solo exige editar')
+  // Cada permiso adicional habilita el suyo y únicamente el suyo.
+  assert.deepEqual([canMoveQuote('enviada', perms(true, true, false)), canMoveQuote('anulada', perms(true, true, false))], [true, false])
+  assert.deepEqual([canMoveQuote('enviada', perms(true, false, true)), canMoveQuote('anulada', perms(true, false, true))], [false, true])
+  // Ninguna transición declarada queda sin clasificar: o no exige nada más, o exige un permiso que el catálogo del panel conoce.
+  for (const estado of new Set(Object.values(quoteTransitions).flat())) {
+    const extra = quoteTransitionPermission[estado]
+    assert.ok(extra === undefined || Object.keys(accion).includes(extra), estado + ': permiso adicional desconocido')
+  }
 })
 
 const allWrites = [...Object.values(RESOURCE_WRITE).flatMap(ops => Object.values(ops)), ...Object.values(PANEL_ACTIONS)]

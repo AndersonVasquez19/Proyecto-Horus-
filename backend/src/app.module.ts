@@ -9,6 +9,10 @@ import { CatalogoModule } from './catalogo/catalogo.module';
 import { EstudiantesModule } from './estudiantes/estudiantes.module';
 import { ConvocatoriasModule } from './convocatorias/convocatorias.module';
 import { MatriculasModule } from './matriculas/matriculas.module';
+import { CertificadosModule } from './certificados/certificados.module';
+import { AsistenteModule } from './asistente/asistente.module';
+import { HorariosModule } from './horarios/horarios.module';
+import { PreinscripcionesModule } from './preinscripciones/preinscripciones.module';
 import { ImportacionesModule } from './importaciones/importaciones.module';
 import { ReportesModule } from './reportes/reportes.module';
 import { Module } from '@nestjs/common';
@@ -55,9 +59,13 @@ import { HealthController } from './health.controller';
     EstudiantesModule,
     ConvocatoriasModule,
     MatriculasModule,
+    CertificadosModule,
+    HorariosModule,
+    PreinscripcionesModule,
     ImportacionesModule,
     ReportesModule,
     ChatbotModule,
+    AsistenteModule,
     MailModule,
     ContactoModule,
     ReclamacionesModule,

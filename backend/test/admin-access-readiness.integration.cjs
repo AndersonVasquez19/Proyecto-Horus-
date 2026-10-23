@@ -67,6 +67,16 @@ test('E3.5 fase 1: cuentas administrativas preparadas para AccessGuard en un MyS
   const { LAST_GERENTE_MESSAGE } = require(join(dist, 'admin/auth/account-rules.js'));
   const { FORBIDDEN_MESSAGE, NO_ROLE_MESSAGE } = require(join(dist, 'permissions/access.guard.js'));
   assert.equal(ACCESS_MODE, 'por_roles', 'E3.6: el código probado declara la autorización por roles');
+  // Rutas admin/ que la guard concede a CUALQUIER sesión válida, incluso sin rol (kind 'autenticada'). Se cuentan desde el inventario en
+  // lugar de fijar un número, pero el conjunto exacto se declara aquí: añadir una ruta de autoservicio obliga a justificarla en esta lista
+  // y a comprobar abajo, con una solicitud real, que una cuenta sin rol sigue sin alcanzar datos de gestión.
+  const SELF_SERVICE = ROUTE_INVENTORY.filter(e => e.path.startsWith('admin/') && e.access.kind === 'autenticada').map(e => e.method + ' ' + e.path);
+  assert.deepEqual(sorted(SELF_SERVICE), sorted([
+    'GET admin/me', 'POST admin/password', // autoservicio de la propia cuenta
+    // HORUS Assistant: la guard las deja pasar porque no tienen un permiso propio, pero el servicio lee el rol VIGENTE de la base y
+    // deniega con 403 a una cuenta sin rol, y limita cada herramienta a los permisos de lectura de ese rol (comprobado más abajo).
+    'GET admin/asistente/resumen', 'POST admin/asistente/consultar',
+  ]), 'rutas concedidas a cualquier sesión válida: solo autoservicio y HORUS Assistant');
 
   const host = process.env.DB_HOST || '', port = Number(process.env.DB_PORT || 0);
   const expectedUuid = String(process.env.ACCESS_READINESS_TEST_SERVER_UUID ?? '').trim().toLowerCase();
@@ -212,12 +222,19 @@ test('E3.5 fase 1: cuentas administrativas preparadas para AccessGuard en un MyS
         const user = await freshLogin(key);
         assert.deepEqual([user.rol, user.permisos], [null, []], key + ': sin rol y sin permisos');
         const p = await predict(key);
-        assert.equal(p.pasa, 2, key + ' [PREVISTO]: solo /admin/me y /admin/password');
-        assert.equal(p.sinRol, p.total - p.publica - 2, key + ' [PREVISTO]: 403 «sin rol» en todas las rutas con permiso');
+        assert.equal(p.pasa, SELF_SERVICE.length, key + ' [PREVISTO]: solo las rutas sin permiso propio (' + SELF_SERVICE.join(', ') + ')');
+        assert.equal(p.sinRol, p.total - p.publica - SELF_SERVICE.length, key + ' [PREVISTO]: 403 «sin rol» en todas las rutas con permiso');
         // Real (guard activa): la muestra coincide con lo previsto.
         for (const route of ['admin/cursos', 'admin/users', 'admin/stats', 'admin/messages']) {
           const r = await call(route, { token: tokens[key] });
           assert.deepEqual([r.status, r.data?.mensaje], [403, NO_ROLE_MESSAGE], key + ' ' + route + ': 403 «sin rol» real');
+        }
+        // Las dos rutas del asistente SÍ pasan la guard: la denegación la hace el servicio con el rol leído de la base. Sin esta
+        // comprobación, «pasa» subiría en silencio al añadir una ruta autenticada y nadie vería que expone datos. No llama a OpenAI:
+        // el rol se comprueba antes de usar la IA. El cuerpo es válido para que la validación del DTO no responda 400 antes.
+        for (const [route, options] of [['admin/asistente/resumen', {}], ['admin/asistente/consultar', { method: 'POST', body: { pregunta: '¿Que pendientes tengo hoy?' } }]]) {
+          const r = await call(route, { ...options, token: tokens[key] });
+          assert.deepEqual([r.status, r.data?.mensaje], [403, NO_ROLE_MESSAGE], key + ' ' + route + ': el servicio deniega sin rol aunque la guard deje pasar');
         }
       }
       t.diagnostic('Con cero gerentes la guard activa deja las 4 cuentas solo con autoservicio (bloqueo total): previsto y comprobado por muestra.');
@@ -260,7 +277,7 @@ test('E3.5 fase 1: cuentas administrativas preparadas para AccessGuard en un MyS
       assert.equal(report.gerente.pasa, report.gerente.total - report.gerente.publica, '[PREVISTO] el gerente pasa por todas las rutas administrativas');
       assert.equal(report.gerente.denegada, 0, 'ninguna ruta del inventario queda sin clasificar');
       assert.ok(report.coord.pasa > report.sec.pasa && report.sec.pasa > report.sinrol.pasa);
-      assert.equal(report.sinrol.sinRol, report.sinrol.total - report.sinrol.publica - 2);
+      assert.equal(report.sinrol.sinRol, report.sinrol.total - report.sinrol.publica - SELF_SERVICE.length);
       t.diagnostic('[PREVISTO] rutas admin no públicas que pasarían (de ' + (report.gerente.total - report.gerente.publica) + '): gerente ' + report.gerente.pasa + ', coordinadora ' + report.coord.pasa + ', secretaria ' + report.sec.pasa + ', sin rol ' + report.sinrol.pasa + '. Permisos: G ' + g.size + ', C ' + c.size + ', S ' + s.size + '.');
     });
 

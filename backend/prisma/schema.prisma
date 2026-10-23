@@ -30,6 +30,7 @@ model AdminUser {
   certificados_emitidos Certificado[] @relation("CertificadoEmitidoPor")
   certificados_anulados Certificado[] @relation("CertificadoAnuladoPor")
   importaciones ImportacionAcademica[]
+  preinscripciones_convertidas Preinscripcion[]
   @@map("admin_users")
 }
 
@@ -405,6 +406,11 @@ model Estudiante {
   @@map("estudiantes")
 }
 
+enum ConvocatoriaPreinscripcionEstado {
+  abierta
+  cerrada
+}
+
 // abierta = admite matrículas; cerrada = ya no las admite (terminada o completa); cancelada = no se dictará.
 enum ConvocatoriaEstado {
   planificada
@@ -418,6 +424,9 @@ enum ConvocatoriaEstado {
 model Convocatoria {
   id Int @id @default(autoincrement())
   capacidad Int? // NULL conserva ediciones anteriores cuya capacidad aún no se ha definido.
+  minimo_apertura Int? // Preinscripciones validadas necesarias para confirmar la apertura (20261020-preinscripciones). NULL = edición anterior sin requisito; el alta por API fija 10.
+  preinscripcion_estado ConvocatoriaPreinscripcionEstado @default(cerrada) // ¿Recibe preinscripciones? Lo decide Gerencia o Coordinación; independiente de la apertura académica.
+  codigo_publico String? @unique(map: "convocatorias_codigo_publico_uq") @db.Char(32) // Identificador opaco para el público (NO secuencial). Se genera al crear la edición o al habilitar la recepción.
   curso_id Int
   curso Curso @relation(fields: [curso_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "convocatorias_curso_fk")
   nombre String @db.VarChar(160)
@@ -430,6 +439,9 @@ model Convocatoria {
   updatedAt DateTime @updatedAt @db.DateTime(3)
   matriculas Matricula[]
   importaciones ImportacionAcademica[]
+  docentes DocenteAsignacion[]
+  horarios ConvocatoriaHorario[]
+  preinscripciones Preinscripcion[]
   @@index([curso_id, fecha_inicio], map: "convocatorias_curso_idx")
   @@index([estado, fecha_inicio], map: "convocatorias_estado_idx")
   @@map("convocatorias")
@@ -492,6 +504,8 @@ model Matricula {
   createdAt DateTime @default(now()) @db.DateTime(3)
   updatedAt DateTime @updatedAt @db.DateTime(3)
   certificados Certificado[]
+  preinscripciones Preinscripcion[] // MySQL limita a una (UNIQUE sobre preinscripciones.matricula_id)
+  @@unique([id, estudiante_id, convocatoria_id], map: "matriculas_id_relaciones_uq") // 20261020-preinscripciones: clave compuesta que obliga a que la preinscripción convertida apunte a una matrícula de la MISMA edición y del MISMO estudiante
   @@unique([estudiante_id, convocatoria_id], map: "matriculas_estudiante_convocatoria_uq")
   @@index([convocatoria_id, estado], map: "matriculas_convocatoria_idx")
   @@index([confirmado_por], map: "matriculas_confirmado_por_idx")
@@ -551,6 +565,9 @@ enum AcademicoEntidad {
   convocatoria
   matricula
   certificado
+  docente // 20261020-docentes
+  asignacion_docente // 20261020-docentes
+  sesion // 20261020-sesiones-academicas (migración RETIRADA): solo filas históricas de bases que la aplicaron; el código ya no lo escribe
 }
 
 enum AcademicoOperacion {
@@ -563,6 +580,7 @@ enum AcademicoOperacion {
   confirmacion
   emision
   sustitucion
+  reprogramacion // 20261020-sesiones-academicas (migración RETIRADA): solo filas históricas; el código ya no lo escribe
 }
 
 enum AcademicoOrigen {
@@ -592,4 +610,195 @@ model AcademicoHistorial {
   @@index([entidad, entidad_id, createdAt], map: "academico_historial_entidad_idx")
   @@index([actor_id, createdAt], map: "academico_historial_actor_idx")
   @@map("academico_historial")
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Docentes y ponentes (migración 20261020-docentes). Son una entidad académica, NO una cuenta: no tienen contraseña, rol ni
+// relación con admin_users, y registrar un docente nunca crea una cuenta de acceso. Nada se borra: un docente se desactiva
+// (activo = false) y sus asignaciones se conservan (relaciones RESTRICT). Las reglas CHECK, la columna generada y las claves
+// foráneas viven en MySQL; Prisma no las valida ni las crea.
+// ---------------------------------------------------------------------------------------------------------------------------
+
+// Documento opcional y de solo DNI peruano, con la misma regla que Estudiante: doc_pais, doc_tipo y doc_numero son los tres NULL
+// o los tres completos. Duplicados: UNIQUE sobre el documento y sobre el correo (ambos admiten varios NULL, sin comparar la
+// colación unicode_ci, que ignora mayúsculas y tildes). El nombre NO es único (existen homónimos): el servicio avisa con 409
+// salvo que se confirme que es otra persona.
+model Docente {
+  id Int @id @default(autoincrement())
+  nombres String @db.VarChar(120)
+  apellidos String @db.VarChar(120)
+  doc_pais String? @db.Char(2)
+  doc_tipo DocumentoTipo?
+  doc_numero String? @db.VarChar(20)
+  especialidad String? @db.VarChar(120)
+  profesion String? @db.VarChar(120)
+  email String? @unique(map: "docentes_email_uq") @db.VarChar(254)
+  telefono String? @db.VarChar(30)
+  activo Boolean @default(true)
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  asignaciones DocenteAsignacion[]
+  @@unique([doc_pais, doc_tipo, doc_numero], map: "docentes_documento_uq")
+  @@index([apellidos, nombres], map: "docentes_nombre_idx")
+  @@map("docentes")
+}
+
+// principal = responsable de la edición (como máximo uno activo); participante = ponente o docente adicional (sin límite).
+enum DocenteRol {
+  principal
+  participante
+}
+
+// activa = figura en el equipo docente; retirada = ya no, pero la fila y su motivo se conservan (historial).
+enum DocenteAsignacionEstado {
+  activa
+  retirada
+}
+
+// Un docente y una edición tienen UNA sola fila (UNIQUE docente_id + convocatoria_id, incluidas las retiradas): retirar y volver
+// a asignar reactiva esa fila, no crea otra. Un solo principal activo por edición: MySQL mantiene la columna generada STORED
+// `principal_activo_convocatoria_id` (= convocatoria_id si rol principal y estado activa, NULL en otro caso) con UNIQUE
+// `docente_asignaciones_principal_uq`. Esa columna NO se declara aquí a propósito: Prisma no admite columnas generadas y nunca
+// debe escribirla. Sustitución: la fila nueva apunta con sustituye_a_id a la retirada; la clave foránea compuesta exige que ambas
+// sean de la MISMA edición. Que la anterior esté retirada, que el docente nuevo esté activo y que la edición admita cambios lo
+// comprueba el servicio, en una transacción con bloqueo curso → edición → docente.
+model DocenteAsignacion {
+  id Int @id @default(autoincrement())
+  docente_id Int
+  docente Docente @relation(fields: [docente_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "docente_asignaciones_docente_fk")
+  convocatoria_id Int
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "docente_asignaciones_convocatoria_fk")
+  rol DocenteRol @default(participante)
+  estado DocenteAsignacionEstado @default(activa)
+  sustituye_a_id Int?
+  sustituye_a DocenteAsignacion? @relation("DocenteSustitucion", fields: [sustituye_a_id, convocatoria_id], references: [id, convocatoria_id], onDelete: Restrict, onUpdate: Restrict, map: "docente_asignaciones_sustituye_fk")
+  sustituciones DocenteAsignacion[] @relation("DocenteSustitucion")
+  retirado_at DateTime? @db.DateTime(3)
+  retiro_motivo String? @db.VarChar(300)
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  @@unique([docente_id, convocatoria_id], map: "docente_asignaciones_docente_edicion_uq")
+  @@unique([id, convocatoria_id], map: "docente_asignaciones_id_edicion_uq")
+  @@index([convocatoria_id, estado], map: "docente_asignaciones_edicion_idx")
+  @@index([sustituye_a_id, convocatoria_id], map: "docente_asignaciones_sustituye_idx")
+  @@map("docente_asignaciones")
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Horarios recurrentes de una edición (migración 20261023-convocatoria-horarios). Cada fila es un tramo semanal en el que se dicta la
+// edición: día de la semana + hora de inicio y de fin (por ejemplo, lunes 19:00–22:00). NO son clases individuales: no tienen fecha, estado
+// ni seguimiento (el módulo de Sesiones se retiró; su tabla histórica `sesiones`, si existe, ya no tiene modelo Prisma ni código).
+//
+// dia_semana: ISO-8601, 1 = lunes … 7 = domingo (TINYINT con CHECK 1–7). hora_inicio y hora_fin son hora de pared de America/Lima (TIME,
+// sin zona horaria; ver common/lima-time.ts), en minutos exactos, sin cruzar la medianoche: inicio < fin ≤ 23:59. Intervalos [inicio, fin):
+// un tramo puede empezar justo cuando termina otro. MySQL impide dos tramos que empiecen a la misma hora el mismo día (UNIQUE); los
+// solapamientos parciales los rechaza el servicio, que reemplaza el conjunto completo en una transacción con bloqueo curso → edición.
+// Relación RESTRICT, como el resto del esquema académico: una edición con horarios no se puede borrar (las ediciones no se borran, se archivan).
+model ConvocatoriaHorario {
+  id Int @id @default(autoincrement())
+  convocatoria_id Int
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "convocatoria_horarios_convocatoria_fk")
+  dia_semana Int @db.TinyInt
+  hora_inicio DateTime @db.Time(0)
+  hora_fin DateTime @db.Time(0)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  @@unique([convocatoria_id, dia_semana, hora_inicio], map: "convocatoria_horarios_inicio_uq")
+  @@map("convocatoria_horarios")
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Preinscripciones (migración 20261020-preinscripciones). Solicitud pública de interés en una edición, hecha por el formulario web o
+// por el chatbot (el servidor fija el canal). NO es una matrícula: no ocupa cupo, no pide DNI, pagos ni comprobantes. Un
+// administrador la valida y, más tarde, la convierte en matrícula con el servicio de Matrículas. Nada se borra: los estados finales
+// son desistida, descartada y matriculada.
+//
+// recibida → validada | descartada | desistida;  validada → matriculada | descartada | desistida;  los demás son finales.
+// Cuentan para el mínimo de apertura SOLO validada y matriculada (nunca recibida).
+//
+// Duplicados: MySQL mantiene la columna generada STORED `vigente_email` (= email mientras el estado sea recibida, validada o
+// matriculada; NULL si desistida o descartada) con UNIQUE (convocatoria_id, vigente_email). Esa columna NO se declara aquí a
+// propósito: Prisma no admite columnas generadas y nunca debe escribirla. Un segundo vigente con el mismo correo falla con P2002.
+// Tras desistir o descartar, la misma persona puede volver a preinscribirse.
+//
+// Conversión: estudiante_id, matricula_id, convertida_por y convertida_at son todos NULL o todos completos (CHECK según el estado), y
+// la clave foránea compuesta (matricula_id, estudiante_id, convocatoria_id) → matriculas obliga a que la matrícula sea de la misma
+// edición y del mismo estudiante. Los datos personales viven solo aquí; preinscripciones_historial guarda NOMBRES de campos.
+// ---------------------------------------------------------------------------------------------------------------------------
+
+enum PreinscripcionEstado {
+  recibida
+  validada
+  matriculada
+  desistida
+  descartada
+}
+
+enum PreinscripcionCanal {
+  formulario
+  chatbot
+}
+
+enum PreinscripcionOperacion {
+  creacion
+  correccion
+  validacion
+  descarte
+  desistimiento
+  conversion
+}
+
+model Preinscripcion {
+  id Int @id @default(autoincrement())
+  convocatoria_id Int
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_convocatoria_fk")
+  nombres String @db.VarChar(120)
+  apellidos String @db.VarChar(120)
+  email String @db.VarChar(254)
+  telefono String @db.VarChar(30)
+  canal PreinscripcionCanal
+  estado PreinscripcionEstado @default(recibida)
+  consentimiento_at DateTime @db.DateTime(3)
+  aviso_version String @db.VarChar(30)
+  estudiante_id Int?
+  matricula_id Int?
+  matricula Matricula? @relation(fields: [matricula_id, estudiante_id, convocatoria_id], references: [id, estudiante_id, convocatoria_id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_matricula_fk")
+  convertida_por Int?
+  convertidor AdminUser? @relation(fields: [convertida_por], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_convertida_por_fk")
+  convertida_at DateTime? @db.DateTime(3)
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  historial PreinscripcionHistorial[]
+  @@unique([matricula_id], map: "preinscripciones_matricula_uq")
+  @@index([convocatoria_id, estado, createdAt], map: "preinscripciones_edicion_idx")
+  @@index([email], map: "preinscripciones_email_idx")
+  @@index([estado, createdAt], map: "preinscripciones_estado_idx")
+  @@index([matricula_id, estudiante_id, convocatoria_id], map: "preinscripciones_matricula_rel_idx")
+  @@index([estudiante_id], map: "preinscripciones_estudiante_idx")
+  @@index([convertida_por], map: "preinscripciones_convertida_por_idx")
+  @@map("preinscripciones")
+}
+
+// Historial de solo inserción, en la MISMA transacción que el cambio. Propio de las preinscripciones: no toca el ENUM de
+// academico_historial. `campos` guarda los NOMBRES de los campos modificados, nunca sus valores. Sin actor en la creación (la hace el
+// visitante); con actor en todo lo demás.
+model PreinscripcionHistorial {
+  id Int @id @default(autoincrement())
+  preinscripcion_id Int
+  preinscripcion Preinscripcion @relation(fields: [preinscripcion_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_historial_fk")
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  operacion PreinscripcionOperacion
+  canal PreinscripcionCanal?
+  actor_id Int?
+  actor_rol AdminRol?
+  estado_anterior PreinscripcionEstado?
+  estado_nuevo PreinscripcionEstado?
+  campos Json?
+  revision Int
+  motivo String? @db.VarChar(300)
+  @@index([preinscripcion_id, createdAt], map: "preinscripciones_historial_item_idx")
+  @@index([actor_id, createdAt], map: "preinscripciones_historial_actor_idx")
+  @@map("preinscripciones_historial")
 }

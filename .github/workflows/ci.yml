@@ -2,10 +2,13 @@
 # Los comandos son los de AGENTS.md / los scripts reales de cada package.json. Guía y límites: docs/procedimientos/ci.md
 name: CI
 
+# CI automática SUSPENDIDA TEMPORALMENTE en la rama `anderson` hasta terminar el proyecto (push y pull_request hacia `anderson`).
+# Para reactivarla: añadir `anderson` a `push.branches` y quitar `branches-ignore` de `pull_request`. Ver docs/procedimientos/ci.md.
 on:
   push:
-    branches: [main, anderson]
+    branches: [main]
   pull_request:
+    branches-ignore: [anderson]
   workflow_dispatch:
     inputs:
       smokes:
@@ -190,6 +193,16 @@ jobs:
         run: node test/run-academic-isolated.cjs matriculas
       - name: Integración de Reportes académicos (HTTP, permisos, CSV/XLSX/PDF y solo lectura)
         run: node test/run-academic-isolated.cjs reportes
+      # Docentes y ponentes (20261020-docentes): contenedor MySQL 8.4 propio y desechable (horus-fase3-<hex>), con identidad verificada por server_uuid;
+      # el ejecutor lo retira en su bloque finally y devuelve código distinto de 0 si falla cualquier aserción, migración, permiso o restricción.
+      - name: Integración de Docentes y ponentes (HTTP, permisos, asignaciones, sustituciones y migración)
+        run: node test/run-academic-isolated.cjs docentes
+      # Horarios y sesiones (20261020-sesiones-academicas): mismo ejecutor aislado y desechable que Docentes; nunca horus_db ni horus_local.
+      - name: Integración de Horarios y sesiones (HTTP, solapamientos, concurrencia, zona horaria y migración)
+        run: node test/run-academic-isolated.cjs sesiones
+      # Preinscripciones (20261020-preinscripciones): mismo ejecutor aislado y desechable; nunca horus_db ni horus_local.
+      - name: Integración de Preinscripciones (HTTP, canales, mínimo de apertura, conversión a matrícula, concurrencia y migración)
+        run: node test/run-academic-isolated.cjs preinscripciones
       - name: Integración de importación CSV (HTTP, atomicidad y concurrencia)
         run: node test/run-importaciones-disposable.cjs importaciones.integration.cjs
       - name: Retirar MySQL

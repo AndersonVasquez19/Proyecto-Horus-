@@ -75,7 +75,7 @@ function stubs(calls: string[]): Provider[] {
     { provide: AuthService, useValue: stub(['register', 'login']) },
     { provide: AccountsService, useValue: stub(['forgot', 'reset', 'password', 'list', 'status', 'role']) },
     { provide: AttentionService, useValue: stub(['get', 'save', 'receipt', 'send']) },
-    { provide: CotizacionesService, useValue: stub(['list', 'detail', 'create', 'edit', 'email', 'status']) },
+    { provide: CotizacionesService, useValue: { ...stub(['list', 'detail', 'create', 'edit', 'email', 'status', 'duplicate']), pdf: async () => { calls.push('pdf'); return { buffer: Buffer.from('%PDF-1.3\n'), fileName: 'cotizacion-prueba.pdf' }; } } },
     { provide: CatalogoService, useValue: stub(['list', 'detail', 'create', 'update', 'remove', 'archive']) },
     { provide: SettingsService, useValue: stub(['getAllSettingsAdmin', 'updateSettings']) },
   ];
@@ -334,6 +334,14 @@ test('acciones condicionadas al recurso: seguimiento según :recurso y cambios d
     assert.equal((await call('PUT', 'admin/cursos/1', token(3), { estado: 'archivado' })).status, 403);
     assert.equal((await call('POST', 'admin/cotizaciones/1/estado', token(2), { estado: 'anulada', revision: 1 })).status, 201);
     assert.equal((await call('POST', 'admin/cotizaciones/1/estado', token(3), { estado: 'aceptada', revision: 1 })).status, 403);
+    // PDF de la cotización: mismo permiso que el detalle. Secretaria, cuenta sin rol y sesión anónima nunca llegan al servicio.
+    for (const id of [1, 2]) { const ok = await call('GET', 'admin/cotizaciones/1/pdf', token(id)); assert.equal(ok.status, 200); assert.ok(ok.reached); }
+    for (const id of [3, 4, 6]) { const denied = await call('GET', 'admin/cotizaciones/1/pdf', token(id)); assert.equal(denied.status, 403); assert.equal(denied.reached, false); }
+    const anonymous = await call('GET', 'admin/cotizaciones/1/pdf'); assert.equal(anonymous.status, 401); assert.equal(anonymous.reached, false);
+    // Duplicar = crear una cotización nueva: exige cotizaciones:crear (gerente y coordinadora); secretaria, sin rol y anónimo nunca llegan al servicio.
+    for (const id of [1, 2]) { const ok = await call('POST', 'admin/cotizaciones/1/duplicar', token(id), {}); assert.equal(ok.status, 201); assert.ok(ok.reached); }
+    for (const id of [3, 4, 6]) { const denied = await call('POST', 'admin/cotizaciones/1/duplicar', token(id), {}); assert.equal(denied.status, 403); assert.equal(denied.reached, false); }
+    const anonymousCopy = await call('POST', 'admin/cotizaciones/1/duplicar', undefined, {}); assert.equal(anonymousCopy.status, 401); assert.equal(anonymousCopy.reached, false);
   } finally { await app.close(); }
 });
 

@@ -12,6 +12,12 @@ export function parseIdempotencyKey(value: unknown): string | undefined {
   return value;
 }
 
+// Huella de «duplicar la cotización N»: la misma clave solo es la misma operación para el mismo usuario y la misma original.
+// El prefijo la distingue de la huella de una creación, así que reutilizar una clave entre ambas operaciones responde 422.
+export function duplicateRequestHash(sourceId: number, user: number): string {
+  return createHash('sha256').update(JSON.stringify(['duplicar', sourceId, user])).digest('hex');
+}
+
 // Huella del contenido lógico de la solicitud: usuario + todos los campos que forman la cotización, en orden fijo.
 // Dos peticiones con la misma clave son «la misma operación» solo si esta huella coincide.
 export function quoteRequestHash(dto: CotizacionDto, user: number): string {

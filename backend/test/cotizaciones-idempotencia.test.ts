@@ -20,8 +20,10 @@ function fakePrisma() {
       const row = { idempotencia_clave: null, idempotencia_huella: null, id: nextId++, createdAt: new Date(), updatedAt: new Date(), ...structuredClone(data) };
       rows.push(row); return structuredClone(row);
     },
+    // El número legible se asigna tras insertar (con el id); la transacción simulada ejecuta la función con el mismo modelo.
+    update: async ({ where, data }: any) => { const row = rows.find(r => r.id === where.id); Object.assign(row!, structuredClone(data)); return structuredClone(row); },
   };
-  return { prisma: { cotizacion, contacto: { findUnique: async () => ({ id: 1 }) } } as unknown as PrismaService, rows };
+  return { prisma: { cotizacion, contacto: { findUnique: async () => ({ id: 1 }) }, $transaction: async (fn: (tx: unknown) => unknown) => fn({ cotizacion }) } as unknown as PrismaService, rows };
 }
 const dto = (overrides: Partial<CotizacionDto> = {}): CotizacionDto => ({ cliente: 'Cliente Ficticio', email: 'cliente@example.test', telefono: '', documento: '', direccion: '', emisor: 'Horus', datos_emisor: '',
   moneda: 'PEN', validez: '2099-12-31', condiciones: '', conceptos: [{ descripcion: 'Servicio', cantidad: 2, precio: 50 }], descuento: 0, tasa: 18, ...overrides });
