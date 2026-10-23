@@ -129,6 +129,7 @@ export const ROUTE_INVENTORY: readonly RouteEntry[] = [
   perm('GET', 'admin/messages', 'mensajes:leer'), perm('GET', 'admin/messages/:id', 'mensajes:leer'),
   perm('GET', 'admin/messages/exportar', 'mensajes:exportar', 'CSV controlado de consultas: mismos filtros de la bandeja, tope de filas, sin el texto del mensaje ni notas, celdas neutralizadas contra fórmulas y registro de la descarga sin datos personales. Declarada antes de :id.'),
   perm('POST', 'admin/messages', 'mensajes:crear'), perm('PUT', 'admin/messages/:id', 'mensajes:editar'),
+  perm('POST', 'admin/messages/duplicados', 'mensajes:crear', 'Comprobación de duplicados (lectura): coincidencia exacta de correo, asunto y mensaje en los últimos 7 días; responde solo { hayCoincidencias, cantidad }. Límite de 30 por cuenta cada 15 minutos (rate_limit_buckets).'),
   perm('DELETE', 'admin/messages/:id', 'mensajes:eliminar'),
   follow('GET', 'admin/seguimiento/:recurso/:id', 'leer'), follow('PUT', 'admin/seguimiento/:recurso/:id', 'editar'),
   follow('POST', 'admin/seguimiento/:recurso/:id/constancia', 'enviar'), follow('POST', 'admin/seguimiento/:recurso/:id/correo', 'enviar'),

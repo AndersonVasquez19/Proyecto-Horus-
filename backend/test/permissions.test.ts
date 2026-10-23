@@ -14,6 +14,7 @@ import { AuthController } from '../src/admin/auth/auth.controller';
 import { AdminChatbotController } from '../src/admin/chatbot/admin-chatbot.controller';
 import { ItemsController } from '../src/admin/items/items.controller';
 import { MessagesController } from '../src/admin/messages/messages.controller';
+import { MessagesDuplicadosController } from '../src/admin/messages/duplicados.controller';
 import { AdminReclamacionesController } from '../src/admin/reclamaciones/admin-reclamaciones.controller';
 import { StatsController } from '../src/admin/stats/stats.controller';
 import { AttentionController } from '../src/attention/attention.module';
@@ -305,7 +306,7 @@ test('seguimiento: el permiso depende del recurso y un recurso desconocido se de
 // ---------------------------------------------------------------------------------------------------------------
 const CONTROLLERS: Function[] = [
   ImportacionesController,
-  AccountsController, AuthController, AdminChatbotController, ItemsController, MessagesController, AdminReclamacionesController, StatsController,
+  AccountsController, AuthController, AdminChatbotController, ItemsController, MessagesController, MessagesDuplicadosController, AdminReclamacionesController, StatsController,
   AttentionController, CursoController, AdminCursoController, ServicioController, AdminServicioController, PreguntaFrecuenteController,
   AdminPreguntaFrecuenteController, ChatbotController, ContactoController, OriginalContentController, ConveniosController, AdminConveniosController,
   CotizacionesController, AdminGaleriaController, GaleriaController, HealthController, AdminNewsletterController, NewsletterController,
