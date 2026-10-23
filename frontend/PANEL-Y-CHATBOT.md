@@ -12,9 +12,9 @@ Cuentas permite cambiar contraseña y activar/desactivar administradores. La des
 
 ## Chatbot
 
-El menú consulta páginas de veinte registros y permite buscar por nombre y modalidad. Cada respuesta vuelve a consultar el detalle para comprobar la publicación. El historial del asistente no se usa como fuente de hechos.
+El widget abre con el saludo de Horus y un campo para escribir. No muestra menú, preguntas sugeridas ni botones o formularios de cotización y atención. «Nueva conversación» aparece al comenzar a consultar y permite volver al saludo. Las respuestas conservan sus fuentes y el reintento explícito si falla una consulta. El historial del asistente no se usa como fuente de hechos.
 
-Solicitar atención requiere consentimiento y registra una consulta con prefijo [Chatbot]. El chat no confirma reservas, pagos ni inscripciones. La IA es opcional; cuando falla, se muestran las fuentes del catálogo.
+El endpoint de contacto se conserva en la API, pero el widget ya no lo utiliza. El chat no confirma reservas, pagos ni inscripciones. La IA es opcional; cuando falla, se muestran las fuentes del catálogo.
 
 La API consulta únicamente contenido publicado y claves institucionales públicas conocidas. Antes de enviar la pregunta y el historial a la IA, oculta correos y secuencias que parecen teléfonos o documentos. Esto no garantiza anonimato: no debe escribirse información personal en el chat.
 

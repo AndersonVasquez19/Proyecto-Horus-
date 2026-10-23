@@ -1,5 +1,5 @@
-// Chatbot y conversión (Fase F) con API simulada: nada real (ni datos, ni sesiones, ni correo, ni IA). Edge por DevTools.
-// Widget público: «Solicitar cotización» (Contacto con origen chatbot, sin doble envío ni reintento). Panel: vista de solo lectura de preguntas sin respuesta.
+// Chatbot con API simulada: nada real (ni datos, ni sesiones, ni correo, ni IA). Edge por DevTools.
+// Widget público: saludo y conversación escrita, sin menú ni formularios. Panel: vista de solo lectura de preguntas sin respuesta.
 const { start, sleep, TOKEN } = require('./smoke-kit.cjs');
 
 const sim = { contact: 'ok', list: 'ok', chat: 'ok' };
@@ -44,53 +44,53 @@ const handler = async (req, res, { route, url, json, body }) => {
   const ctl = (key, value = '1') => fetch(k.origin + '/__s/' + key + '/' + value);
   const state = () => fetch(k.origin + '/__state').then(r => r.json());
   const clean = async () => { await ctl('clear'); await k.closePages(); };
-  const openChat = async p => { await p.go('/quienes-somos', 'document.querySelector(".hc-launcher")'); await p.click('.hc-launcher', ''); await p.wait('document.querySelector("dialog.hc-dialog[open] .hc-handoff")', 'chat abierto'); };
-  const fillContact = async (p, phone = '987654321') => { await p.type('.hc-contact input', 0, 'Ana Prueba'); await p.type('.hc-contact input', 1, 'ana@example.test'); await p.type('.hc-contact input', 2, phone); await p.type('.hc-contact textarea', 0, 'Necesito cotizar cámaras'); await p.click('.hc-contact input[type=checkbox]', ''); };
-  const submitContact = p => p.evaluate('document.querySelector(".hc-contact form").requestSubmit(); 1');
-
-  console.log('\n== WIDGET PÚBLICO: SOLICITAR COTIZACIÓN');
-  await clean();
-  { const p = await open(1280); await openChat(p);
-    ck(await p.evaluate('[...document.querySelectorAll(".hc-handoff")].map(b => b.textContent.trim()).join("|")') === 'Solicitar cotización|Solicitar atención del equipo', 'el chat ofrece «Solicitar cotización» además de «Solicitar atención del equipo»');
-    await p.click('.hc-handoff', 'Solicitar cotización'); await p.wait('document.querySelector(".hc-contact form")', 'formulario');
-    ck(/Solicita tu cotización/.test(await p.text('.hc-contact')) && /no es una compra ni una reserva/i.test(await p.text('.hc-contact')), 'el formulario se presenta como solicitud de cotización, aclarando que no es una compra ni una reserva');
-    ck(await p.evaluate('document.querySelectorAll(".hc-contact input")[3].value') === 'Solicitud de cotización', 'el asunto se precarga');
-    ck(await p.evaluate('document.querySelectorAll(".hc-contact input")[0].minLength') <= 0 && await p.evaluate('document.querySelectorAll(".hc-contact input")[2].minLength') <= 0, 'sin longitudes mínimas inventadas en los campos');
-    await fillContact(p, 'abc'); await submitContact(p); await sleep(300);
-    ck((await state()).contacts.length === 0 && await p.evaluate('!document.querySelector(".hc-contact input[type=tel]").validity.valid'), 'un teléfono con formato inválido no se envía (validación de formato)');
-    await p.type('.hc-contact input', 2, '1'); await ctl('contact', 'error'); await submitContact(p); await p.wait('document.querySelector(".hc-error")', 'error de envío');
-    const err = await p.text('.hc-error');
-    ck(!/ER_SECRET|Internal/.test(err) && (await p.evaluate('document.querySelectorAll(".hc-contact input")[0].value')) === 'Ana Prueba' && (await state()).contacts.length === 1, 'un 500 muestra un mensaje seguro, conserva los datos y no reintenta solo', err);
-    await ctl('contact', 'ok'); await p.evaluate('const f = document.querySelector(".hc-contact form"); f.requestSubmit(); f.requestSubmit(); 1'); await p.wait('document.querySelector(".hc-success")', 'éxito'); await sleep(300);
-    const s = await state();
-    ck(/Solicitud de cotización #\d+ registrada/.test(await p.text('.hc-success')) && s.contacts.length === 2, 'el éxito se anuncia solo tras la respuesta y el doble envío produce un único POST', s.contacts.length);
-    ck(s.contacts[1].tipo === 'cotizacion' && s.contacts[1].consentimiento === true && s.contacts[1].asunto === 'Solicitud de cotización', 'el POST declara tipo cotizacion y el consentimiento', s.contacts[1]); await p.close(); }
-  await clean();
-  { const p = await open(1280); await openChat(p); await p.click('.hc-handoff', 'Solicitar atención del equipo'); await p.wait('document.querySelector(".hc-contact form")', 'formulario');
-    ck(/Hablemos de lo que necesitas/.test(await p.text('.hc-contact')), 'la solicitud de atención normal conserva su texto');
-    await fillContact(p); await submitContact(p); await p.wait('document.querySelector(".hc-success")', 'éxito');
-    const s = await state(); ck(s.contacts.length === 1 && s.contacts[0].tipo === 'contacto', 'la atención normal se envía con tipo contacto'); await p.close(); }
-
-  console.log('\n== WIDGET PÚBLICO: CONVERSACIÓN, MENÚ Y ESTADOS');
+  const openChat = async p => { await p.go('/quienes-somos', 'document.querySelector(".hc-launcher")'); await p.click('.hc-launcher', ''); await p.wait('document.querySelector("dialog.hc-dialog[open] .hc-assistant")', 'saludo del chat'); };
+  console.log('\n== WIDGET PÚBLICO: SALUDO Y CONVERSACIÓN');
   const sent = async () => (await state()).chatRequests;
   await clean();
+  for (const width of [1280, 390]) {
+    const p = await open(width, 844); await openChat(p);
+    await sleep(1200);
+    ck(await p.evaluate('document.querySelectorAll(".hc-log article").length === 1 && !document.querySelector(".hc-guide, .hc-actions, .hc-followups, .hc-contact, .hc-toolbar")') && /¿En qué te puedo ayudar\?/.test(await p.text('.hc-assistant')), 'solo queda el saludo, sin menú ni accesos adicionales, a ' + width + ' px');
+    ck((await state()).requests.length === 0 && await p.evaluate('!document.querySelector("#hc-question").disabled'), 'se puede escribir de inmediato y abrir no envía solicitudes');
+    await p.click('.hc-close'); await p.wait('!document.querySelector(".hc-dialog[open]")', 'cierre');
+    await p.click('.hc-launcher'); await p.wait('document.querySelector(".hc-dialog[open]")', 'reapertura');
+    ck(await p.evaluate('document.querySelectorAll(".hc-assistant").length === 1'), 'reabrir conserva el saludo sin duplicarlo');
+    await p.close();
+  }
+  await clean();
   { const p = await open(1280); await openChat(p);
-    const tiles = await p.evaluate('[...document.querySelectorAll(".hc-guide-options > button")].map(b => b.querySelector("strong")?.textContent || b.textContent.trim())');
-    ck(['Cursos y capacitaciones', 'Servicios tecnológicos', 'Preguntas frecuentes', 'Asesoramiento', 'Convenios', 'Contacto'].every(name => tiles.includes(name)), 'el menú inicial ofrece las áreas reales del sitio', tiles);
-    ck(await p.evaluate('[...document.querySelectorAll(".hc-actions .hc-handoff")].length === 2 && !!document.querySelector(".hc-handoff-quote")'), 'cotización y atención son botones visibles y diferenciados');
-    await p.click('.hc-guide-options > button', 'Asesoramiento'); await p.wait('document.querySelectorAll(".hc-assistant").length === 2', 'respuesta');
-    ck((await sent()).join() === '¿Qué servicios de asesoramiento ofrecen?', 'un atajo del menú envía una pregunta concreta', await sent());
-    ck(/Respuesta de prueba para: ¿Qué servicios de asesoramiento/.test(await p.evaluate('[...document.querySelectorAll(".hc-assistant")].at(-1).innerText')), 'la respuesta se muestra en la conversación');
+    await p.type('#hc-question', 0, 'Quiero información');
+    await p.evaluate('const q = document.querySelector("#hc-question"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); 1');
+    await p.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, modifiers: 8, text: '\r', unmodifiedText: '\r' });
+    await p.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, modifiers: 8 });
+    ck(await p.evaluate('document.querySelector("#hc-question").value.includes("\\n")') && (await sent()).length === 0, 'Shift + Enter permite otra línea sin enviar');
+    await p.type('#hc-question', 0, 'Quiero información\nsobre cursos');
+    ck(await p.evaluate('document.querySelector("#hc-question-limit").textContent') === '31 / 1000', 'el contador muestra la longitud del mensaje');
+    await p.evaluate('document.querySelector("#hc-question").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true })); 1');
+    ck((await sent()).length === 0, 'Enter durante la composición de texto no envía la consulta');
+    await p.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await p.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await p.wait('document.querySelectorAll(".hc-assistant").length === 2', 'respuesta a consulta multilínea');
+    ck((await sent()).join() === 'Quiero información\nsobre cursos' && await p.evaluate('document.querySelector("#hc-question-limit").textContent') === '0 / 1000', 'Enter envía el texto completo y reinicia el contador');
+    await p.click('.hc-toolbar button', 'Nueva conversación');
+    ck(await p.evaluate('document.querySelectorAll(".hc-log article").length === 1 && !document.querySelector(".hc-toolbar, .hc-guide")') && /¿En qué te puedo ayudar\?/.test(await p.text('.hc-assistant')), 'reiniciar vuelve a mostrar únicamente el saludo'); await p.close(); }
+  await clean();
+  { const p = await open(1280); await openChat(p);
+    await p.type('#hc-question', 0, 'Servicios de asesoramiento');
+    await p.evaluate('document.querySelector(".hc-compose form").requestSubmit(); 1');
+    await p.wait('document.querySelectorAll(".hc-assistant").length === 2', 'respuesta');
     await p.evaluate('document.querySelector(".hc-sources summary").click(); 1');
     const links = await p.evaluate('[...document.querySelectorAll(".hc-sources a")].map(a => a.getAttribute("href"))');
     ck(links.join() === '/tecnologias/servicios/4', 'solo se enlaza la ruta propia del sitio; el enlace externo de una fuente se ignora', links);
-    const chips = await p.evaluate('[...document.querySelectorAll(".hc-followups button")].map(b => b.textContent)');
-    ck(chips.length === 2 && /Asesoramiento tecnológico/.test(chips[0]), 'se ofrecen las preguntas sugeridas por el servidor', chips);
-    await p.click('.hc-followups button', '¿Cómo puedo contactar'); await p.wait('document.querySelectorAll(".hc-assistant").length === 3', 'segunda respuesta');
-    ck((await sent()).length === 2 && (await sent())[1] === '¿Cómo puedo contactar al equipo?', 'tocar una sugerencia la envía como pregunta');
+    ck(await p.evaluate('!document.querySelector(".hc-followups, .hc-guide, .hc-actions")'), 'sin opciones adicionales al responder');
+    await p.type('#hc-question', 0, 'Contacto');
+    await p.evaluate('document.querySelector(".hc-compose form").requestSubmit(); 1');
+    await p.wait('document.querySelectorAll(".hc-assistant").length === 3', 'segunda respuesta');
+    ck((await sent()).join('|') === 'Servicios de asesoramiento|Contacto', 'las consultas se envían desde el campo de texto');
     ck(await p.evaluate('getComputedStyle(document.querySelector("dialog.hc-dialog")).animationName === "none"'), 'con movimiento reducido el diálogo no se anima'); await p.close(); }
   await clean();
-  { const p = await open(1280); await openChat(p); await p.click('.hc-guide-options > button', 'Prefiero escribir'); await p.wait('document.querySelector("#hc-question")', 'campo');
+  { const p = await open(1280); await openChat(p); await p.wait('document.querySelector("#hc-question")', 'campo');
     await ctl('chat', 'error'); await p.type('#hc-question', 0, 'curso de redes'); await p.evaluate('document.querySelector(".hc-compose form").requestSubmit(); 1'); await p.wait('document.querySelector(".hc-error")', 'error');
     const err = await p.text('.hc-error');
     ck(!/ER_SECRET|Internal/.test(err) && /Reintentar consulta/.test(err), 'un 500 muestra un aviso seguro y ofrece reintentar', err);
@@ -98,30 +98,37 @@ const handler = async (req, res, { route, url, json, body }) => {
     await ctl('chat', 'ok'); await p.click('.hc-retry', 'Reintentar'); await p.wait('document.querySelectorAll(".hc-assistant").length === 2', 'recuperación'); await sleep(200);
     ck((await sent()).length === 2 && !(await p.evaluate('!!document.querySelector(".hc-error")')), 'Reintentar envía una sola vez y limpia el error', await sent()); await p.close(); }
   await clean();
-  { const p = await open(1280); await openChat(p); await p.click('.hc-guide-options > button', 'Prefiero escribir'); await p.wait('document.querySelector("#hc-question")', 'campo');
+  { const p = await open(1280); await openChat(p); await p.wait('document.querySelector("#hc-question")', 'campo');
     await ctl('chat', 'hold'); await p.type('#hc-question', 0, 'asesoría'); await p.evaluate('const f = document.querySelector(".hc-compose form"); f.requestSubmit(); f.requestSubmit(); 1'); await p.wait('document.querySelector(".hc-thinking")', 'consultando'); await sleep(250);
     ck((await sent()).length === 1, 'un doble envío produce una sola petición', await sent());
-    ck(await p.evaluate('document.querySelector(".hc-toolbar button").disabled && document.querySelector("#hc-question").disabled && [...document.querySelectorAll(".hc-handoff")].every(b => b.disabled) && document.querySelector(".hc-log").getAttribute("aria-busy") === "true"'), 'mientras responde no se puede reiniciar, escribir ni abrir el formulario, y el registro anuncia que está ocupado');
+    ck(await p.evaluate('document.querySelector(".hc-toolbar button").disabled && document.querySelector("#hc-question").disabled && document.querySelector(".hc-log").getAttribute("aria-busy") === "true"'), 'mientras responde no se puede reiniciar ni escribir, y el registro anuncia que está ocupado');
     await ctl('release'); await p.wait('document.querySelectorAll(".hc-assistant").length === 2', 'respuesta'); await sleep(200);
     ck(await p.evaluate('!document.querySelector(".hc-toolbar button").disabled && document.querySelector(".hc-log").getAttribute("aria-busy") === "false"'), 'al responder se rehabilita todo'); await p.close(); }
   await clean();
   { const p = await open(1280); await p.send('Page.addScriptToEvaluateOnNewDocument', { source: 'for (const key of ["localStorage","sessionStorage"]) Object.defineProperty(window, key, { get() { throw new DOMException("Storage blocked for test", "SecurityError"); } });' });
-    await openChat(p); await p.click('.hc-guide-options > button', 'Convenios'); await p.wait('document.querySelectorAll(".hc-assistant").length === 2', 'respuesta');
-    ck((await sent()).join() === '¿Qué convenios tienen?', 'con el almacenamiento del navegador bloqueado el chat funciona igual'); await p.close(); }
+    await openChat(p); await p.type('#hc-question', 0, 'Convenios'); await p.evaluate('document.querySelector(".hc-compose form").requestSubmit(); 1'); await p.wait('document.querySelectorAll(".hc-assistant").length === 2', 'respuesta');
+    ck((await sent()).join() === 'Convenios', 'con el almacenamiento del navegador bloqueado el chat funciona igual'); await p.close(); }
   await clean();
   { const p = await open(390, 700); await openChat(p);
     const box = await p.evaluate('(() => { const r = document.querySelector("dialog.hc-dialog").getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, w: innerWidth, h: innerHeight, scroll: document.documentElement.scrollWidth }; })()');
     ck(box.left >= 0 && box.right <= box.w && box.top >= 0 && box.bottom <= box.h && box.scroll <= box.w, 'en móvil el chat cabe en pantalla sin desplazamiento horizontal', box);
-    ck(await p.evaluate('(() => { const r = document.querySelector(".hc-actions").getBoundingClientRect(); return r.bottom <= innerHeight && r.top >= 0; })()'), 'las acciones de cotización y atención quedan visibles');
-    const small = await p.evaluate('[...document.querySelectorAll(".hc-dialog button, .hc-dialog input, .hc-dialog summary")].filter(el => el.offsetParent && el.getBoundingClientRect().height < 32).map(el => (el.className || el.tagName) + ":" + Math.round(el.getBoundingClientRect().height))');
+    ck(await p.evaluate('(() => { const r = document.querySelector(".hc-compose form").getBoundingClientRect(); return r.bottom <= innerHeight && r.top >= 0; })()'), 'el campo y el botón de envío quedan visibles');
+    const small = await p.evaluate('[...document.querySelectorAll(".hc-dialog button, .hc-dialog textarea, .hc-dialog summary")].filter(el => el.offsetParent && el.getBoundingClientRect().height < 32).map(el => (el.className || el.tagName) + ":" + Math.round(el.getBoundingClientRect().height))');
     ck(small.length === 0, 'los controles tienen un tamaño táctil de al menos 32 px de alto', small);
     await p.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await p.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await p.wait('!document.querySelector("dialog.hc-dialog[open]")', 'cierre con Escape'); await sleep(200);
     ck(await p.evaluate('document.activeElement === document.querySelector(".hc-launcher")'), 'al cerrar con Escape el foco vuelve al botón del asistente'); await p.close(); }
   await clean();
-  { const p = await open(1280); await openChat(p); await p.click('.hc-handoff', 'Solicitar atención'); await p.wait('document.querySelector(".hc-contact form")', 'formulario');
-    ck(/¿Qué datos pedimos y para qué\?/.test(await p.text('.hc-data-note')) && /no se inscribe, reserva ni compra/.test(await p.text('.hc-data-note')) && await p.evaluate('document.querySelector(".hc-contact form").getAttribute("aria-describedby") === "hc-data-note"'), 'el formulario explica qué datos recoge, para qué y que no es una compra, reserva ni inscripción'); await p.close(); }
-
+  for (const [width, height] of [[320, 568], [844, 390]]) {
+    const p = await open(width, height); await openChat(p);
+    await p.type('#hc-question', 0, 'Quiero información sobre cursos');
+    await p.evaluate('document.querySelector(".hc-compose form").requestSubmit(); 1');
+    await p.wait('document.querySelectorAll(".hc-assistant").length === 2', 'respuesta en pantalla pequeña');
+    const layout = await p.evaluate('(() => { const d = document.querySelector(".hc-dialog"), l = document.querySelector(".hc-log"), a = document.querySelector(".hc-compose form").getBoundingClientRect(); return { log: l.clientHeight, overflow: d.scrollWidth > d.clientWidth, actions: a.bottom <= innerHeight && a.top >= 0 }; })()');
+    ck(layout.log >= 60 && !layout.overflow && layout.actions, 'la conversación conserva espacio y las acciones caben a ' + width + ' × ' + height, layout);
+    await p.close();
+  }
+  await clean();
   console.log('\n== PANEL: CONSULTAS DEL CHATBOT (SOLO LECTURA)');
   await clean();
   { const p = await session('/admin/dashboard?section=chatbot'); await p.wait('document.querySelector(".hp-table tbody tr")', 'tabla');
