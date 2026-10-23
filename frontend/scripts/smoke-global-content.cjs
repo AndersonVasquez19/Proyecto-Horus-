@@ -148,10 +148,10 @@ async function main() {
     const before = requests.filter(r => editorial.test(r.route)).length
     const visitor = await newPage(true)
     await navigate(visitor, '/')
-    await visitor.wait('document.querySelector(".home-conv-card")?.textContent.includes("Colegio Regional de Licenciados")')
-    await visitor.evaluate('document.querySelector(".home-conv-card").scrollIntoView()')
-    await visitor.wait('document.querySelector(".home-conv-card img")?.naturalWidth > 0')
-    assert.match(await visitor.evaluate('document.querySelector(".home-conv-card img").getAttribute("src")'), /^\/contenido\/[a-f0-9-]{36}\.(jpg|png|webp)$/)
+    await visitor.wait('document.querySelector("[data-agreement-toggle]")?.textContent.includes("Colegio Regional de Licenciados")')
+    await visitor.evaluate('document.querySelector("[data-agreement-toggle]").scrollIntoView()')
+    await visitor.wait('document.querySelector("[data-agreement-toggle] img")?.naturalWidth > 0')
+    assert.match(await visitor.evaluate('document.querySelector("[data-agreement-toggle] img").getAttribute("src")'), /^\/contenido\/[a-f0-9-]{36}\.(jpg|png|webp)$/)
     assert.equal(await visitor.evaluate('!!document.querySelector("[role=alert]")'), false)
     for (const [route, text] of [['/educacion/capacitaciones', 'Capacitaciones Empresariales'], ['/tecnologias/cableado-estructurado', 'Cableado Básico'], ['/galeria', 'Nuestro trabajo'], ['/preguntas-frecuentes', 'Preguntas']]) {
       await navigate(visitor, route); await visitor.wait('document.body.innerText.includes(' + JSON.stringify(text) + ')')

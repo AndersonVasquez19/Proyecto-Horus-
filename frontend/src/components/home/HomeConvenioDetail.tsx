@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react'
 import { useInstitutionalResource as usePublicResource } from '../../institutional/useInstitutionalResource'
 import type { ConvenioResponse } from '../../types/convenios'
 import PublicImage from '../PublicImage'
@@ -10,11 +9,7 @@ function identityText(value: string) {
     .replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
-export default function HomeConvenioDetail({ id, onClose, inline = false }: { id: number; onClose: () => void; inline?: boolean }) {
-  const closeButton = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (inline) closeButton.current?.focus({ preventScroll: true })
-  }, [inline])
+export default function HomeConvenioDetail({ id, onClose }: { id: number; onClose: () => void }) {
   const { data, loading, error, reload } = usePublicResource<ConvenioResponse>('convenios/' + id)
   const item = !loading && !error ? data?.item : null
   const short = item?.descripcion_corta.trim() || ''
@@ -24,7 +19,7 @@ export default function HomeConvenioDetail({ id, onClose, inline = false }: { id
   const description = item?.descripcion_completa?.trim() || (redundantShort ? '' : short)
   return <>
     <div className="home-dialog-header">
-      <button ref={closeButton} type="button" id="convClose" aria-label="Cerrar información del convenio" onClick={onClose}>
+      <button type="button" id="convClose" aria-label="Cerrar información del convenio" onClick={onClose}>
         <i className="fas fa-times" aria-hidden="true" />
       </button>
       {loading && <div className="home-conv-loading-media" aria-hidden="true" />}

@@ -23,7 +23,7 @@ const output = path.resolve(__dirname, '..', 'dist');
   for (const width of [1280, 390]) {
     const p = await k.open(width);
     await p.send('Page.addScriptToEvaluateOnNewDocument', { source: 'for (const key of ["localStorage","sessionStorage"]) Object.defineProperty(window,key,{get(){throw new DOMException("Storage blocked","SecurityError")}});' });
-    const routes = [['/', '.home-conv-card', 'Economistas'], ['/quienes-somos', 'h1', 'Quiénes'], ['/educacion/asesoramiento', '.edu-card', 'Asesoramiento'],
+    const routes = [['/', '[data-agreement-toggle]', 'Economistas'], ['/quienes-somos', 'h1', 'Quiénes'], ['/educacion/asesoramiento', '.edu-card', 'Asesoramiento'],
       ['/educacion/capacitaciones', '.edu-card', 'Capacitaciones empresariales'], ['/educacion/cursos', '.edu-empty', 'Cursos'], ['/tecnologias/cableado-estructurado', '.cable-panel-info', 'Cableado'],
       ['/tecnologias/camaras-seguridad', 'main h1', 'Cámaras'], ['/tecnologias/soporte-mantenimiento', 'main h1', 'Soporte'], ['/galeria', '.gl-card', 'Nuestro trabajo'],
       ['/preguntas-frecuentes', 'main h1', 'Preguntas'], ['/contactos', 'main h1', 'Contact']];
@@ -43,8 +43,24 @@ const output = path.resolve(__dirname, '..', 'dist');
     }
     await p.go('/educacion/capacitaciones/7', 'document.querySelector(".edu-detail")');
     k.ck(lower(await p.text('main')).includes('capacitaciones empresariales'), 'detalle local sin API');
-    await p.go('/', 'document.querySelector(".home-conv-card")');
-    await p.click('.home-conv-card', 'Economistas'); await p.wait('document.querySelector("#convNombre")', 'detalle de convenio');
+    await p.go('/', 'document.querySelector("[data-agreement-toggle]")');
+    await p.evaluate('document.querySelector(".home-convenios").scrollIntoView({block:"start",behavior:"instant"})');
+    await p.wait('[...document.querySelectorAll("[data-agreement-logo] img")].every(img => img.naturalWidth > 0)', 'logos institucionales');
+    const capture = async suffix => {
+      if (!process.env.SMOKE_SCREENSHOTS) return;
+      await p.wait('!document.querySelector(".home-welcome")', 'fin de la bienvenida');
+      await p.evaluate('document.querySelector(' + JSON.stringify(suffix === 'frente' ? '.home-convenios' : '[data-flipped=true]') + ').scrollIntoView({block:' + JSON.stringify(suffix === 'frente' ? 'start' : 'center') + ',behavior:"instant"})');
+      const result = await p.send('Page.captureScreenshot', { format: 'png' });
+      fs.mkdirSync(process.env.SMOKE_SCREENSHOTS, { recursive: true });
+      fs.writeFileSync(path.join(process.env.SMOKE_SCREENSHOTS, 'convenios-reales-' + width + '-' + suffix + '.png'), Buffer.from(result.data, 'base64'));
+    };
+    await capture('frente');
+    await p.click('[data-agreement-toggle]', 'Economistas');
+    await p.wait('document.querySelectorAll("[data-agreement-toggle]")[1].getAttribute("aria-expanded")==="true"', 'reverso de convenio');
+    k.ck(!(await p.evaluate('!!document.querySelector("#convModal")')), 'el giro muestra el reverso sin abrir un diálogo');
+    k.ck(await p.evaluate('(()=>{const region=document.querySelector("[data-flipped=true] [role=region]");return region.clientHeight>0&&region.scrollHeight<=region.clientHeight+1})()'), 'el resumen del reverso se lee sin desplazamiento interno');
+    await capture('reverso');
+    await p.click('[data-flipped=true] [data-agreement-detail]', 'Ver detalle completo'); await p.wait('document.querySelector("#convNombre")', 'detalle de convenio');
     k.ck((await p.text('#convNombre')).includes('Economistas'), 'detalle de convenio local sin API');
     await p.close();
   }

@@ -12,7 +12,7 @@ import '../styles/home-hero.css'
 
 export default function Home() {
   const [page, setPage] = useState(1)
-  const convenios = usePublicResource<ConvenioList>('convenios?page=' + page + '&limit=6')
+  const convenios = usePublicResource<ConvenioList>('convenios?page=' + page + '&limit=4')
   useEffect(() => { document.title = 'Horus Group SRL — Tecnología y Educación en Cajamarca' }, [])
 
   return <div className="home-page">

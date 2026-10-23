@@ -9,7 +9,6 @@
 .home-conv-grid > :nth-child(5) { --reveal-delay: 240ms; }
 .home-conv-grid > :nth-child(6) { --reveal-delay: 320ms; }
 .home-conv-grid > :nth-child(7) { --reveal-delay: 400ms; }
-.home-layout .home-conv-brand.reveal-ready:not(.visible) { transform: none; }
 .home-layout .home-conv-card { animation: none; }
 .home-metric strong { font-variant-numeric: tabular-nums; }
 
@@ -48,9 +47,9 @@
 }
 .home-layout .home-location-map.reveal-ready:not(.visible) { transform: scale(.985); }
 
-/* Keep the current native dialog and its keyboard/focus behavior. */
-.home-layout dialog#convModal.home-convenio-dialog[open] { animation: home-panel-in 450ms var(--motion-ease); }
-.home-layout dialog#convModal.home-convenio-dialog.is-closing { animation: home-panel-out 350ms ease forwards; }
+/* Perspective opening keeps the native modal focus and keyboard behavior. */
+.home-layout dialog#convModal.home-convenio-dialog[open] { animation: home-convenio-open 600ms var(--motion-ease); transform-origin: 50% 35%; backface-visibility: hidden; box-shadow: 0 28px 100px #0007; }
+.home-layout dialog#convModal.home-convenio-dialog.is-closing { animation: home-convenio-close 350ms ease forwards; }
 .home-layout dialog#convModal::backdrop { animation: home-fade-in 350ms ease; }
 .home-layout dialog#convModal.is-closing::backdrop { animation: home-fade-out 350ms ease forwards; }
 .home-dialog-header > :not(button), .home-dialog-body > :not([role]) { animation: home-layer-in 450ms var(--motion-ease) both; }
@@ -78,6 +77,13 @@
   .home-button:hover i, .home-svc-links a:is(:hover, :focus-visible) i, .home-conv-card:hover .home-conv-more i { transform: translateX(4px); }
   .home-hero-actions a[href^="#"]:hover i { transform: translateY(3px); }
   .home-carousel-controls button:hover { transform: translateY(-1px); border-color: var(--home-gold); }
+}
+@keyframes home-convenio-open {
+  from { opacity: 0; transform: perspective(1200px) rotateY(-28deg) rotateX(8deg) translateY(32px) scale(.88); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes home-convenio-close {
+  to { opacity: 0; transform: perspective(1200px) rotateY(12deg) rotateX(-4deg) translateY(18px) scale(.94); }
 }
 @keyframes home-layer-in { from { opacity: 0; transform: translateY(var(--layer-distance, 12px)); } to { opacity: 1; transform: none; } }
 @keyframes home-image-in { from { opacity: 0; transform: scale(1.04); } to { opacity: 1; transform: scale(1); } }
@@ -107,12 +113,10 @@
   .home-layout :is(.home-metric, .home-svc-card, .home-highlight, .home-conv-card, .home-button).visible:hover,
   .home-layout :is(.home-svc-card, .home-highlight, .home-conv-card, .home-button):hover,
   .home-layout :is(.home-svc-img img, .home-svc-badge, .home-svc-icon, .home-highlight-icon,
-    .home-highlight-num, .home-metric-icon, .home-button i, .home-svc-links i, .home-conv-more i) { transform: none !important; }
+    .home-highlight-num, .home-metric-icon, .home-conv-logo img, .home-button i, .home-svc-links i, .home-conv-more i) { transform: none !important; }
 }
 
-/* Only convenio contents transition; the grid keeps its existing reveal. */
-.home-conv-content { width: 100%; min-width: 0; animation: home-panel-in 450ms var(--motion-ease); }
-.home-conv-content.is-leaving { animation: home-panel-out 350ms ease forwards; pointer-events: none; }
+/* The photo crossfade does not move the surrounding content. */
 .home-conv-photo-layer { transition: opacity 450ms ease; }
 .home-conv-photo-layer.is-next { opacity: 0; }
 .home-conv-photo-stage.is-crossfading .home-conv-photo-layer { opacity: 0; }
