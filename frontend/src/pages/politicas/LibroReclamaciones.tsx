@@ -11,7 +11,7 @@ const ADDRESS = 'Jr. Jose Gálvez #322, Cajamarca'
 export default function LibroReclamaciones() {
   const setting = useCompanySetting()
   const empresa = setting('empresa_nombre', 'Horus Group SRL')
-  const phone = setting('telefono_principal', '+51 927 582 305')
+  const phone = setting('telefono_principal', '+51 972 021 374')
   const email = setting('email_contacto', 'horusgroupcajamarca@gmail.com')
   const [result, setResult] = useState<Registered | null>(null)
 
