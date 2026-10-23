@@ -101,8 +101,15 @@ export default function LibroForm({ empresa, onRegistered }: { empresa: string; 
   const text = (field: 'nombres' | 'apellidos' | 'email' | 'telefono' | 'numDoc' | 'direccion') => ({ ...control(field), value: form[field], readOnly: sending })
   const numericDoc = form.tipoDoc === 'dni' || form.tipoDoc === 'ruc'
 
-  return <form className="lb-form" onSubmit={handleSubmit} noValidate aria-busy={sending}>
-    <p className="lb-required-note">Los campos marcados con <span aria-hidden="true">*</span><span className="tech-sr">asterisco</span> son obligatorios.</p>
+  return <form className="lb-form" onSubmit={handleSubmit} noValidate aria-busy={sending} aria-labelledby="lb-form-title" aria-describedby="lb-required-note">
+    <div className="lb-form-head">
+      <span className="lb-form-icon" aria-hidden="true"><i className="fas fa-book-open" /></span>
+      <div>
+        <span className="lb-eyebrow">Estamos para escucharte</span>
+        <h2 id="lb-form-title">Hoja de reclamación</h2>
+        <p id="lb-required-note" className="lb-required-note">Los campos marcados con <span aria-hidden="true">*</span><span className="tech-sr">asterisco</span> son obligatorios.</p>
+      </div>
+    </div>
 
     {errorList.length > 1 && <div className="lb-summary" role="alert">
       <p>Revisa estos campos:</p>
@@ -111,7 +118,7 @@ export default function LibroForm({ empresa, onRegistered }: { empresa: string; 
       </li>)}</ul>
     </div>}
 
-    <fieldset className="lb-section">
+    <fieldset className="lb-section" id="lb-consumidor" tabIndex={-1}>
       <legend><span className="lb-num" aria-hidden="true">1</span>Datos del consumidor</legend>
       <p className="lb-section-note">Ingresa tu información personal para poder contactarte.</p>
       <div className="lb-grid">
@@ -142,8 +149,9 @@ export default function LibroForm({ empresa, onRegistered }: { empresa: string; 
       </div>
     </fieldset>
 
-    <fieldset className="lb-section">
+    <fieldset className="lb-section" id="lb-registro" tabIndex={-1}>
       <legend><span className="lb-num" aria-hidden="true">2</span>Reclamo o queja</legend>
+      <p className="lb-section-note">Selecciona el motivo de tu registro y el área relacionada.</p>
       <fieldset className="lb-radios" aria-describedby={errores.tipoRegistro ? 'lb-tipoRegistro-error' : undefined}>
         <legend>Tipo de registro<span className="lb-req" aria-hidden="true"> *</span></legend>
         <div className="lb-radio-list">
@@ -168,7 +176,7 @@ export default function LibroForm({ empresa, onRegistered }: { empresa: string; 
       </div>
     </fieldset>
 
-    <fieldset className="lb-section">
+    <fieldset className="lb-section" id="lb-detalle" tabIndex={-1}>
       <legend><span className="lb-num" aria-hidden="true">3</span>Detalle</legend>
       <p className="lb-section-note">Describe con precisión lo ocurrido.</p>
       <div className="lb-grid">
@@ -183,8 +191,9 @@ export default function LibroForm({ empresa, onRegistered }: { empresa: string; 
       </div>
     </fieldset>
 
-    <fieldset className="lb-section">
+    <fieldset className="lb-section" id="lb-envio" tabIndex={-1}>
       <legend><span className="lb-num" aria-hidden="true">4</span>Consentimiento y envío</legend>
+      <p className="lb-section-note">Revisa tus datos antes de enviar el formulario.</p>
       <div className="lb-consent">
         <div className="lb-check">
           <input type="checkbox" id="lb-aceptaTerminos" name="aceptaTerminos" checked={form.aceptaTerminos} onChange={handleChange} required
@@ -204,10 +213,11 @@ export default function LibroForm({ empresa, onRegistered }: { empresa: string; 
       </div>}
 
       <div className="lb-actions">
+        <p><i className="fas fa-file-circle-check" aria-hidden="true" /> Al finalizar podrás guardar o imprimir tu constancia.</p>
         <button type="submit" className="home-button lb-submit" aria-disabled={sending}>
           {sending
             ? <><span className="lb-spinner" aria-hidden="true" /> Enviando…</>
-            : <><i className="fas fa-paper-plane" aria-hidden="true" /> Enviar Reclamo</>}
+            : <><i className="fas fa-paper-plane" aria-hidden="true" /> Enviar registro</>}
         </button>
       </div>
     </fieldset>
