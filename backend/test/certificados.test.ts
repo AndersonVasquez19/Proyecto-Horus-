@@ -1,12 +1,11 @@
 import 'reflect-metadata';
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/client';
 import { createValidationPipe } from '../src/common/validation';
 import { PrismaService } from '../src/database/prisma.service';
-import { AnularCertificadoDto, CertificadosQueryDto, EmitirCertificadoDto, SustituirCertificadoDto } from '../src/certificados/certificados.dto';
-import { CODE_ALPHABET, CODE_PATTERN, checkEmission, generateCode, normalizeCode, publicView } from '../src/certificados/certificados.rules';
+import { CODE_PATTERN, normalizeCode, publicView } from '../src/certificados/certificados.rules';
 import { CertificadosService } from '../src/certificados/certificados.service';
 import { ConfirmarCumplimientoDto } from '../src/matriculas/matriculas.dto';
 import { MatriculasService } from '../src/matriculas/matriculas.service';
@@ -62,30 +61,9 @@ const cert = (extra: Row = {}) => ({ id: 1, matricula_id: 7, codigo_verificacion
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Reglas puras
 // ---------------------------------------------------------------------------------------------------------------------------------
-test('Certificados/código: 20 símbolos sin confusos, cumple el CHECK de MySQL y no se repite', () => {
-  const codes = new Set(Array.from({ length: 500 }, () => generateCode()));
-  assert.equal(codes.size, 500);
-  for (const code of codes) { assert.match(code, CODE_PATTERN); assert.equal(code.length, 20); assert.ok([...code].every(c => CODE_ALPHABET.includes(c))); }
-  assert.ok(!/[01OI]/.test(CODE_ALPHABET));
-  assert.equal(CODE_ALPHABET.length, 32, '32 símbolos: byte & 31 sin sesgo');
-  assert.equal(generateCode(() => Buffer.alloc(20, 0)), 'A'.repeat(20));
-});
 test('Certificados/código: la entrada pública se normaliza y los formatos imposibles se descartan sin consultar', () => {
-  assert.equal(normalizeCode('  abcdefghjklmnpqrstuv '), 'ABCDEFGHJKLMNPQRSTUV');
+  assert.equal(normalizeCode('  abcdefghjklmnpqrstuv '), 'ABCDEFGHJKLMNPQRSTUV'); assert.match(normalizeCode('abcdefghjklmnpqrstuv')!, CODE_PATTERN);
   for (const bad of [undefined, null, 5, {}, [], '', 'ABC', 'ABCDEFGHJKLMNPQRSTUV!', "ABCDEFGHJKLMNPQR' OR 1=1", 'A'.repeat(33), 'A'.repeat(500), 'ÁBCDEFGHJKLMNPQRSTUV']) assert.equal(normalizeCode(bad), null, String(bad));
-});
-test('Certificados/emisión: exige matrícula activa, cumplimiento «cumplido», edición no cancelada y DNI completo', () => {
-  const source = (patch: Row = {}) => {
-    const w = world(patch).state;
-    return { matricula: w.matricula, estudiante: w.estudiante, convocatoria: w.convocatoria } as Parameters<typeof checkEmission>[0];
-  };
-  assert.deepEqual(checkEmission(source()), { ok: true });
-  assert.deepEqual(checkEmission(source({ matricula: { estado: 'anulada' } })).ok, false);
-  for (const cumplimiento of ['pendiente', 'no_cumplido']) assert.match((checkEmission(source({ matricula: { cumplimiento } })) as { message: string }).message, /cumplido/);
-  assert.equal((checkEmission(source({ convocatoria: { estado: 'cancelada' } })) as { kind: string }).kind, 'conflict');
-  for (const estudiante of [{ doc_pais: null, doc_tipo: null, doc_numero: null }, { doc_numero: '123' }, { doc_numero: '1234567A' }, { doc_pais: 'CL' }, { doc_tipo: 'CE' }, { nombres: '  ' }]) {
-    assert.equal((checkEmission(source({ estudiante })) as { kind: string }).kind, 'unprocessable', JSON.stringify(estudiante));
-  }
 });
 test('Certificados/vista pública: nombre, curso y fechas; nunca el DNI, el motivo ni identificadores', () => {
   const row = { ...cert({ estado: 'anulado', anulacion_motivo: 'secreto', curso_duracion: '20 horas', convocatoria_fecha_inicio: new Date('2026-11-01T00:00:00Z') }), sustituido_por: { id: 2 } };
@@ -100,25 +78,6 @@ test('Certificados/vista pública: nombre, curso y fechas; nunca el DNI, el moti
 // ---------------------------------------------------------------------------------------------------------------------------------
 // DTO
 // ---------------------------------------------------------------------------------------------------------------------------------
-test('Certificados/DTO: emisión solo con enteros; sin campos manipulables', async () => {
-  const input = { matricula_id: 7, matricula_revision: 4 };
-  assert.deepEqual({ ...await validate(input, EmitirCertificadoDto) }, input);
-  for (const patch of [{ matricula_id: 0 }, { matricula_id: '7' }, { matricula_revision: null }, { matricula_revision: 0 }, { matricula_revision: 1.5 }, { codigo_verificacion: 'X' }, { estudiante_doc_numero: '1' }, { emitido_por: 1 }, { estado: 'vigente' }]) {
-    await assert.rejects(validate({ ...input, ...patch }, EmitirCertificadoDto), BadRequestException, JSON.stringify(patch));
-  }
-});
-test('Certificados/DTO: anulación y sustitución exigen motivo normalizado de 1 a 300 caracteres', async () => {
-  assert.equal((await validate({ motivo: '  Nombre mal escrito ' }, AnularCertificadoDto)).motivo, 'Nombre mal escrito');
-  await validate({ motivo: 'x' }, SustituirCertificadoDto);
-  for (const body of [{}, { motivo: ' ' }, { motivo: null }, { motivo: 'a'.repeat(301) }, { motivo: 5 }, { motivo: 'ok', estado: 'vigente' }, { motivo: 'ok', anulado_por: 1 }]) {
-    await assert.rejects(validate(body, AnularCertificadoDto), BadRequestException, JSON.stringify(body));
-  }
-});
-test('Certificados/DTO: filtros convertidos, paginados y limitados', async () => {
-  const result = await validate({ matricula_id: '2', convocatoria_id: '3', estudiante_id: '4', estado: 'anulado', limit: '10' }, CertificadosQueryDto, 'query');
-  assert.equal(result.matricula_id, 2); assert.equal(result.limit, 10); assert.equal(result.page, 1);
-  for (const input of [{ page: 0 }, { limit: 101 }, { estado: 'borrador' }, { matricula_id: 'x' }, { convocatoria_id: 0 }, { codigo: 'x' }]) await assert.rejects(validate(input, CertificadosQueryDto, 'query'), BadRequestException, JSON.stringify(input));
-});
 test('Matrículas/DTO: la confirmación solo admite los tres estados, revisión entera y motivo normalizado', async () => {
   assert.deepEqual({ ...await validate({ revision: 2, cumplimiento: 'cumplido' }, ConfirmarCumplimientoDto) }, { revision: 2, cumplimiento: 'cumplido' });
   assert.equal((await validate({ revision: 2, cumplimiento: 'pendiente', motivo: '  Error ' }, ConfirmarCumplimientoDto)).motivo, 'Error');
@@ -131,67 +90,6 @@ test('Matrículas/DTO: la confirmación solo admite los tres estados, revisión 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Servicio de certificados
 // ---------------------------------------------------------------------------------------------------------------------------------
-test('Certificados/emitir: copia los datos, genera código, registra historial y bloquea curso → edición → estudiante → matrícula', async () => {
-  const { state, prisma } = world();
-  const result = await new CertificadosService(prisma).emit({ matricula_id: 7, matricula_revision: 4 }, 2);
-  assert.equal(result.item.estado, 'vigente'); assert.match(result.item.codigo_verificacion, CODE_PATTERN);
-  assert.deepEqual([result.item.estudiante_nombres, result.item.estudiante_doc_numero, result.item.curso_titulo, result.item.curso_duracion, result.item.convocatoria_nombre], ['Ana', '01234567', 'Excel', '20 horas', 'Edición 1']);
-  assert.equal(result.item.convocatoria_fecha_inicio, '2026-11-01'); assert.equal(result.item.emitido_por, 2); assert.equal(result.item.sustituye_a_id, null);
-  assert.deepEqual(state.locks, ['cursos', 'convocatorias', 'estudiantes', 'matriculas']);
-  assert.equal(state.history.length, 1);
-  assert.deepEqual([state.history[0].entidad, state.history[0].operacion, state.history[0].actor_id, state.history[0].actor_rol, state.history[0].estado_nuevo], ['certificado', 'emision', 2, 'COORDINADORA_INSTITUCIONAL', 'vigente']);
-  assert.ok(!JSON.stringify(state.history).includes('01234567') && !JSON.stringify(state.history).includes('Quispe'), 'el historial no guarda datos personales');
-});
-test('Certificados/emitir: la secretaria y una cuenta sin rol no pueden, aunque la ruta se saltara la guard', async () => {
-  for (const actor of [3, 4]) {
-    const { state, prisma } = world({ roles: { 4: null } });
-    await assert.rejects(new CertificadosService(prisma).emit({ matricula_id: 7, matricula_revision: 4 }, actor), ForbiddenException);
-    assert.equal(state.certificados.length, 0);
-  }
-});
-test('Certificados/emitir: revisión desactualizada, cumplimiento pendiente, matrícula anulada y vigente existente dan 409; sin DNI da 422', async () => {
-  const emit = (patch: Row = {}, revision = 4) => { const w = world(patch); return new CertificadosService(w.prisma).emit({ matricula_id: 7, matricula_revision: revision }, 1).then(() => w.state); };
-  await assert.rejects(emit({}, 3), ConflictException);
-  await assert.rejects(emit({ matricula: { cumplimiento: 'pendiente' } }), ConflictException);
-  await assert.rejects(emit({ matricula: { cumplimiento: 'no_cumplido' } }), ConflictException);
-  await assert.rejects(emit({ matricula: { estado: 'anulada' } }), ConflictException);
-  await assert.rejects(emit({ certificados: [cert()] }), (e: Error) => e instanceof ConflictException && /vigente/.test(e.message));
-  await assert.rejects(emit({ estudiante: { doc_numero: null, doc_tipo: null, doc_pais: null } }), UnprocessableEntityException);
-  await assert.rejects(new CertificadosService(world().prisma).emit({ matricula_id: 99, matricula_revision: 4 }, 1), NotFoundException);
-  assert.equal((await emit({ certificados: [cert({ estado: 'anulado', anulado_por: 1, anulado_at: new Date(), anulacion_motivo: 'x' })] })).certificados.length, 2, 'un anulado previo no impide emitir');
-});
-test('Certificados/anular: motivo, quién y cuándo; solo si está vigente; solo con certificados:anular', async () => {
-  const { state, prisma } = world({ certificados: [cert()] });
-  const service = new CertificadosService(prisma);
-  await assert.rejects(service.annul(1, { motivo: 'Error' }, 2), ForbiddenException, 'la coordinadora puede emitir pero no anular');
-  const { item } = await service.annul(1, { motivo: 'Nombre mal escrito' }, 1);
-  assert.deepEqual([item.estado, item.anulado_por, item.anulacion_motivo], ['anulado', 1, 'Nombre mal escrito']); assert.ok(item.anulado_at instanceof Date);
-  assert.deepEqual([state.history[0].operacion, state.history[0].estado_anterior, state.history[0].estado_nuevo, state.history[0].motivo], ['anulacion', 'vigente', 'anulado', 'Nombre mal escrito']);
-  await assert.rejects(service.annul(1, { motivo: 'Otra vez' }, 1), ConflictException);
-  await assert.rejects(service.annul(99, { motivo: 'x' }, 1), NotFoundException);
-});
-test('Certificados/sustituir: anula el vigente y emite otro apuntando al anterior con los datos actuales, en una transacción', async () => {
-  const { state, prisma } = world({ certificados: [cert()], estudiante: { apellidos: 'Quispe Huamán' } });
-  const result = await new CertificadosService(prisma).substitute(1, { motivo: 'Apellido incompleto' }, 1);
-  assert.equal(result.anterior.estado, 'anulado'); assert.equal(result.item.estado, 'vigente'); assert.equal(result.item.sustituye_a_id, 1);
-  assert.equal(result.item.estudiante_apellidos, 'Quispe Huamán'); assert.notEqual(result.item.codigo_verificacion, result.anterior.codigo_verificacion);
-  assert.deepEqual(state.history.map(h => [h.entidad_id, h.operacion]), [[1, 'anulacion'], [2, 'sustitucion']]);
-  assert.equal(state.certificados.filter(c => c.estado === 'vigente').length, 1);
-  await assert.rejects(new CertificadosService(prisma).substitute(1, { motivo: 'Otra vez' }, 1), (e: Error) => e instanceof ConflictException && /sustituido/.test(e.message));
-});
-test('Certificados/sustituir: requiere anular y emitir (la coordinadora no) y, si la emisión falla, no deja nada anulado a medias', async () => {
-  const denied = world({ certificados: [cert()] });
-  await assert.rejects(new CertificadosService(denied.prisma).substitute(1, { motivo: 'x' }, 2), ForbiddenException);
-  assert.equal(denied.state.certificados[0].estado, 'vigente');
-  // Sin DNI la emisión falla (422) DESPUÉS de anular dentro de la transacción: la transacción real revierte; aquí se comprueba que el error sale.
-  const broken = world({ certificados: [cert()], estudiante: { doc_numero: null, doc_tipo: null, doc_pais: null } });
-  await assert.rejects(new CertificadosService(broken.prisma).substitute(1, { motivo: 'x' }, 1), UnprocessableEntityException);
-});
-test('Certificados/sustituir: parte de uno ya anulado y sin sustituto, sin volver a anularlo', async () => {
-  const { state, prisma } = world({ certificados: [cert({ estado: 'anulado', anulado_por: 1, anulado_at: new Date(), anulacion_motivo: 'Error' })] });
-  const result = await new CertificadosService(prisma).substitute(1, { motivo: 'Reemisión' }, 1);
-  assert.equal(result.item.sustituye_a_id, 1); assert.deepEqual(state.history.map(h => h.operacion), ['sustitucion']);
-});
 
 test('Certificados/verificar: código inexistente y mal formado dan el mismo 404; el vigente responde sin DNI', async () => {
   const { prisma } = world({ certificados: [{ ...cert(), sustituido_por: null }] });
@@ -205,11 +103,11 @@ test('Certificados/verificar: código inexistente y mal formado dan el mismo 404
   assert.deepEqual([found.ok, found.valido, found.estudiante], [true, true, 'Ana Quispe']);
   assert.ok(!JSON.stringify(found).includes('01234567'));
 });
-test('Certificados: errores de base de datos se traducen sin filtrar detalles', async () => {
-  const failing = (code: string) => new CertificadosService({ certificado: { findUnique: async () => { throw new PrismaClientKnownRequestError('SELECT secreto FROM tabla', { code, clientVersion: '6.19.3' }); } } } as unknown as PrismaService);
-  await assert.rejects(failing('P2021').detail(1), (e: Error) => e instanceof ServiceUnavailableException && !e.message.includes('SELECT'));
-  await assert.rejects(failing('P2002').detail(1), (e: Error) => e instanceof ConflictException && !e.message.includes('SELECT'));
-  await assert.rejects(new CertificadosService({ certificado: { findUnique: async () => null } } as unknown as PrismaService).detail(1), NotFoundException);
+test('Certificados/verificar: errores de base de datos se traducen sin filtrar detalles', async () => {
+  const code = 'ABCDEFGHJKLMNPQRSTUV';
+  const failing = (errorCode: string) => new CertificadosService({ certificado: { findUnique: async () => { throw new PrismaClientKnownRequestError('SELECT secreto FROM tabla', { code: errorCode, clientVersion: '6.19.3' }); } } } as unknown as PrismaService);
+  await assert.rejects(failing('P2021').verify(code), (e: Error) => e instanceof ServiceUnavailableException && !e.message.includes('SELECT'));
+  await assert.rejects(new CertificadosService({ certificado: { findUnique: async () => null } } as unknown as PrismaService).verify(code), NotFoundException);
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------------

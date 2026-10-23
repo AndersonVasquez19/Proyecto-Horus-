@@ -1,5 +1,11 @@
 # Gestión de docentes y ponentes
 
+> **Documento histórico: módulo retirado (simplificación académica, octubre de 2026).** Los cursos los dictan integrantes de la propia empresa, por lo que ya no hay
+> administración de docentes: se retiraron `/api/admin/docentes`, `/api/admin/asignaciones-docentes` y los permisos `docentes:*`. Se conservan las tablas
+> `docentes` y `docente_asignaciones`, la migración `20261020-docentes`, sus datos y su respaldo. Las sesiones ya no dependen de docentes
+> (`asignacion_id` se guarda siempre en NULL). Lo que sigue describe el diseño anterior y no el comportamiento actual.
+
+
 Fase backend 2 de NestJS/Prisma/MySQL. **Solo API**: no hay pantallas React todavía. Un docente es una entidad académica propia; **no es una cuenta de acceso**: no tiene contraseña, rol ni relación con `admin_users`, y registrarlo nunca crea ni habilita un usuario. Las cuentas se siguen gestionando únicamente en «Roles y usuarios».
 
 Estado de activación: **la migración `20261020-docentes` ya fue aplicada a `horus_db` (20 de octubre de 2026)**, tras un respaldo verificado y un ensayo en un clon aislado; el registro completo está en [Activación real en horus_db](activacion-docentes-mysql-real.md). **Cualquier otra base o entorno** (`horus_local`, Railway, instalaciones nuevas, copias restauradas) **debe verificar su propio historial de migraciones** (`npm run db:check`) y seguir el orden de «Migración y activación»: no se debe asumir que está migrada. El código con `DocentesModule` está probado en MySQL 8.4 desechable y, según el responsable, un backend NestJS conectado a `horus_db` respondió a `GET /api/admin/docentes` con su sesión real de Gerencia; **no se ha registrado ningún despliegue en Railway ni en otro entorno**.
@@ -184,6 +190,9 @@ El job «Integración (MySQL efímero)» de `.github/workflows/ci.yml` ejecuta `
 - No guardar datos de docentes en `localStorage`/`sessionStorage`; mensajes en español sin texto técnico del servidor.
 
 ## Dependencias con el módulo de Horarios y Sesiones
+
+> **Histórico:** el módulo de Sesiones también se retiró (octubre de 2026) y su migración ya no se aplica. Los horarios recurrentes de las ediciones
+> están en [Horarios de las ediciones](horarios-ediciones.md) y no dependen de docentes.
 
 > Actualización: el backend de Horarios y Sesiones ya está implementado y probado (migración `20261020-sesiones-academicas`, **pendiente de activar**; ver [Horarios y sesiones académicas](horarios-sesiones-academicas.md)). Referencia `docente_asignaciones.id` como se propone abajo, valida docente activo y asignación activa al programar y detecta solapamientos del docente. Este módulo de Docentes **no se modificó**: retirar o desactivar a un docente sigue sin avisar ni bloquear por sus sesiones futuras (pendiente de decisión). El texto que sigue conserva el razonamiento original.
 

@@ -1,5 +1,23 @@
 # Horarios y sesiones académicas
 
+> **DOCUMENTO HISTÓRICO — MÓDULO RETIRADO (23 de octubre de 2026).** La empresa decidió no administrar sesiones individuales. El módulo `backend/src/sesiones/`,
+> sus rutas (`/api/admin/sesiones*`, `GET /api/admin/convocatorias/:id/sesiones`), el recurso de permisos `sesiones:*` y la herramienta de HORUS Assistant
+> **ya no existen**. La migración `20261020-sesiones-academicas` está **retirada**: su SQL se conserva intacto, pero `db:migrate` ya no la aplica; en una base
+> que la tuviera aplicada, su tabla y sus datos se conservan y `db:check` verifica esa estructura histórica. Los días y horas recurrentes de cada edición se
+> administran ahora en [Horarios de las ediciones](horarios-ediciones.md) (tabla `convocatoria_horarios`). El resto de este documento describe el diseño retirado.
+
+> **Actualización (simplificación académica, octubre de 2026): las sesiones ya no dependen de docentes.** Este es el contrato vigente; donde el resto del
+> documento hable de docentes, asignaciones, `docente_id` o «docente habilitado», describe el diseño anterior y **ya no se aplica**.
+>
+> - **Entrada:** `docente_id` ya no existe en el alta, la edición ni los filtros de `GET /api/admin/sesiones` y `GET /api/admin/convocatorias/:id/sesiones`: enviarlo responde 400 (el DTO rechaza campos ajenos).
+> - **Persistencia:** toda sesión nueva guarda `asignacion_id = NULL`. Editar o reprogramar no modifica ese campo. La columna, su clave foránea y las filas anteriores se conservan (la migración `20261020-sesiones-academicas` no se tocó; no se borró ningún dato).
+> - **Respuesta:** ya no incluye `docente` ni `docente_id`; conserva `asignacion_id` como dato histórico (no se interpreta ni se consulta el módulo de Docentes).
+> - **Solapamientos:** solo **por edición** (`[inicio, fin)`, las canceladas no ocupan; 409 `CONFLICTO_HORARIO` con `tipo: ['edicion']`). Ya no hay regla ni bloqueo por docente; el orden de bloqueo es curso → edición.
+> - **Sin validaciones de docente:** desaparecen los 409 por docente inactivo, no asignado o con asignación retirada, y el barrido de «sesiones futuras sin docente habilitado».
+> - Quienes dictan el curso, si se quieren mostrar, se escriben en el título, las observaciones de la sesión o el temario del curso.
+> - **Pruebas:** `backend/test/sesiones.test.ts` (unitarias, adaptadas y ejecutadas) y la integración `sesiones.integration.cjs` (MySQL desechable), reescrita para el nuevo contrato (alta con `asignacion_id` NULL, `docente_id` rechazado, solapamientos y concurrencia por edición, datos históricos). **Esa integración solo se comprobó de forma estática (sintaxis): no se ejecutó, porque no hubo autorización para usar Docker.** Debe correrse en la CI o con autorización antes de darla por válida.
+
+
 Fase backend 3 de NestJS/Prisma/MySQL. **Solo API**: no hay pantallas React, notificaciones por correo ni WhatsApp todavía. Una sesión es una clase concreta de una edición (convocatoria): su día, su horario, su docente y su estado. Este módulo programa y reprograma; **no registra asistencia ni calificaciones** (ver «Dependencia del módulo de Asistencia»).
 
 Estado de activación: **la migración `20261020-sesiones-academicas` NO está aplicada en ninguna base habitual** (`horus_db`, `horus_local`, Railway ni otra). Está implementada y probada solo en MySQL 8.4 desechable. Su activación real necesita una autorización posterior e independiente, con el procedimiento de «Migración y activación». Hasta entonces, el código con `SesionesModule` **no debe desplegarse** (la migración va antes del código) y las rutas responderían 503 en una base sin la tabla.

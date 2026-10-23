@@ -1,5 +1,13 @@
 # Guía para implementar la página pública de verificación de certificados
 
+> **Documento histórico: funcionalidad retirada (simplificación académica, octubre de 2026).** Los certificados se preparan y entregan de forma presencial,
+> fuera de la plataforma. Ya no existen la emisión, anulación y sustitución, las rutas `/api/admin/certificados*`, el PDF con QR, el recurso de permisos
+> `certificados:*`, los reportes `certificados` y `pendientes-certificacion`, los indicadores del Resumen ni la herramienta de HORUS Assistant. Se conservan
+> las tablas, los datos, la migración y el respaldo/restauración, el **bloqueo de matrículas con un certificado vigente** y, de forma provisional,
+> `GET /api/certificados/verificar/:codigo` (solo lectura) porque no se pudo comprobar que no existan certificados emitidos con QR en todos los entornos.
+> Lo que sigue describe el diseño anterior y no el comportamiento actual.
+
+
 Para el responsable del frontend React. Describe el contrato real del endpoint público de verificación y los estados que debe mostrar la página `/verificar/:codigo`, que **todavía no existe**.
 
 Todo lo que sigue está tomado del código del backend (`backend/src/certificados/`, `backend/src/common/public-rate-limit.guard.ts`), no de ejemplos. El detalle del módulo está en `certificados.md`; esto es la parte accionable para React.

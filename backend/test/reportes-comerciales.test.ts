@@ -284,7 +284,7 @@ test('Permisos: la matriz de roles no cambió (sin permisos nuevos, la secretar�
   assert.equal(can(G, 'reportes_academicos:exportar'), true);
   assert.deepEqual(REPORT_CATALOG.estudiantes.consultaRequiere, ['estudiantes:leer']); assert.deepEqual(REPORT_CATALOG.estudiantes.exportacionRequiere, ['estudiantes:exportar']);
   assert.deepEqual(REPORT_CATALOG.matriculas.consultaRequiere, ['matriculas:leer', 'estudiantes:leer']);
-  assert.deepEqual(REPORT_CATALOG.certificados.exportacionRequiere, ['certificados:leer', 'estudiantes:exportar']);
+  assert.deepEqual(REPORT_CATALOG.matriculas.exportacionRequiere, ['estudiantes:exportar']);
   assert.deepEqual(REPORT_CATALOG.resumen.consultaRequiere, []); assert.deepEqual(REPORT_CATALOG.ocupacion.exportacionRequiere, []);
   // Cada reporte comercial exige el permiso de lectura de SU módulo además del acceso general a reportes.
   assert.deepEqual(REPORT_CATALOG['cotizaciones-vencidas'].consultaRequiere, ['cotizaciones:leer']);
@@ -394,11 +394,11 @@ test('Filtros: moneda y estados se validan; los filtros que un reporte no admite
   assert.equal(calls.$transaction, undefined);
 });
 
-test('Catálogo: los seis reportes comerciales se publican con su ámbito y filtros, tras los ocho académicos que no cambian', async () => {
+test('Catálogo: los seis reportes comerciales se publican con su ámbito y filtros, tras los seis académicos que no cambian', async () => {
   const catalog = await new ReportesService(fakePrisma().prisma).catalog(1);
-  assert.deepEqual(catalog.reportes.slice(8).map(r => r.tipo), [...COMMERCIAL_REPORT_TYPES]);
-  assert.deepEqual(catalog.reportes.slice(8).map(r => r.ambito), Array(6).fill('comercial'));
-  assert.ok(catalog.reportes.slice(8).every(r => r.datos_personales === false));
+  assert.deepEqual(catalog.reportes.slice(6).map(r => r.tipo), [...COMMERCIAL_REPORT_TYPES]);
+  assert.deepEqual(catalog.reportes.slice(6).map(r => r.ambito), Array(6).fill('comercial'));
+  assert.ok(catalog.reportes.slice(6).every(r => r.datos_personales === false));
   assert.deepEqual(catalog.reportes.find(r => r.tipo === 'cotizaciones-importes')!.filtros, ['desde', 'hasta', 'moneda', 'estado']);
   assert.deepEqual(catalog.reportes.find(r => r.tipo === 'cotizaciones-importes')!.estados, ['borrador', 'enviada', 'aceptada', 'rechazada', 'anulada']);
   assert.deepEqual(catalog.limites.filas_exportacion, { csv: 20000, xlsx: 20000, pdf: 3000 });
@@ -425,10 +425,10 @@ async function withoutPermissions<T>(denied: string[], fn: () => Promise<T>): Pr
 }
 const catalogTypes = async (rol: string | null, calls?: { prisma: PrismaService }) => (await new ReportesService((calls ?? fakePrisma({ rol })).prisma).catalog(1)).reportes.map(r => r.tipo);
 
-test('Catálogo filtrado: gerencia y coordinación ven los seis reportes comerciales y los ocho académicos', async () => {
+test('Catálogo filtrado: gerencia y coordinación ven los seis reportes comerciales y los seis académicos', async () => {
   for (const rol of [G, C]) {
     const tipos = await catalogTypes(rol);
-    assert.deepEqual(tipos.slice(0, 8), ACADEMIC_TYPES); assert.deepEqual(tipos.slice(8), [...COMMERCIAL_REPORT_TYPES]);
+    assert.deepEqual(tipos.slice(0, 6), ACADEMIC_TYPES); assert.deepEqual(tipos.slice(6), [...COMMERCIAL_REPORT_TYPES]);
   }
 });
 
@@ -440,8 +440,8 @@ test('Catálogo filtrado: secretaría sigue sin acceso (el guard exige reportes_
 test('Catálogo filtrado: sin cotizaciones:leer se omiten los reportes de cotizaciones y la actividad; los de consultas quedan', async () => {
   await withoutPermissions(['cotizaciones:leer'], async () => {
     const tipos = await catalogTypes(G);
-    assert.deepEqual(tipos.slice(0, 8), ACADEMIC_TYPES, 'los académicos no se filtran');
-    assert.deepEqual(tipos.slice(8), ['consultas-por-estado', 'consultas-abiertas-antiguas']);
+    assert.deepEqual(tipos.slice(0, 6), ACADEMIC_TYPES, 'los académicos no se filtran');
+    assert.deepEqual(tipos.slice(6), ['consultas-por-estado', 'consultas-abiertas-antiguas']);
   });
 });
 
@@ -449,8 +449,8 @@ test('Catálogo filtrado: sin mensajes:leer o seguimiento_mensajes:leer se omite
   for (const denied of ['mensajes:leer', 'seguimiento_mensajes:leer']) {
     await withoutPermissions([denied], async () => {
       const tipos = await catalogTypes(G);
-      assert.deepEqual(tipos.slice(0, 8), ACADEMIC_TYPES);
-      assert.deepEqual(tipos.slice(8), ['cotizaciones-por-estado', 'cotizaciones-vencidas', 'cotizaciones-importes'], denied);
+      assert.deepEqual(tipos.slice(0, 6), ACADEMIC_TYPES);
+      assert.deepEqual(tipos.slice(6), ['cotizaciones-por-estado', 'cotizaciones-vencidas', 'cotizaciones-importes'], denied);
     });
   }
   await withoutPermissions(['cotizaciones:leer', 'mensajes:leer'], async () => assert.deepEqual(await catalogTypes(G), ACADEMIC_TYPES));
@@ -458,15 +458,15 @@ test('Catálogo filtrado: sin mensajes:leer o seguimiento_mensajes:leer se omite
 
 test('Catálogo filtrado: los reportes académicos conservan sus banderas y no desaparecen aunque la cuenta no pueda consultarlos', async () => {
   // Con permisos académicos retirados el reporte sigue listado con puede_consultar=false (comportamiento anterior).
-  await withoutPermissions(['estudiantes:leer', 'matriculas:leer', 'certificados:leer'], async () => {
+  await withoutPermissions(['estudiantes:leer', 'matriculas:leer'], async () => {
     const catalog = await new ReportesService(fakePrisma({ rol: G }).prisma).catalog(1);
     const byType = Object.fromEntries(catalog.reportes.map(r => [r.tipo, r.puede_consultar]));
-    assert.deepEqual(catalog.reportes.slice(0, 8).map(r => r.tipo), ACADEMIC_TYPES);
-    for (const tipo of ['estudiantes', 'matriculas', 'certificados', 'pendientes-certificacion'] as const) assert.equal(byType[tipo], false, tipo);
+    assert.deepEqual(catalog.reportes.slice(0, 6).map(r => r.tipo), ACADEMIC_TYPES);
+    for (const tipo of ['estudiantes', 'matriculas'] as const) assert.equal(byType[tipo], false, tipo);
     for (const tipo of ['ediciones', 'ocupacion', 'matriculas-por-edicion', 'resumen'] as const) assert.equal(byType[tipo], true, tipo);
   });
   const tal = await new ReportesService(fakePrisma({ rol: G }).prisma).catalog(1);
-  assert.deepEqual(tal.reportes.slice(0, 8).map(r => [r.tipo, r.puede_consultar, r.puede_exportar]), ACADEMIC_TYPES.map(t => [t, true, true]));
+  assert.deepEqual(tal.reportes.slice(0, 6).map(r => [r.tipo, r.puede_consultar, r.puede_exportar]), ACADEMIC_TYPES.map(t => [t, true, true]));
 });
 
 test('Catálogo filtrado: no lee datos de negocio, no abre transacciones y no modifica el catálogo estático', async () => {

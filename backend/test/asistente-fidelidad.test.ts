@@ -9,6 +9,8 @@ import {
 const ok = (herramienta: string, titulo: string, hechos: [string, string, number][], extra: object = {}): ResultadoHerramienta =>
   ({ herramienta: herramienta as never, titulo, estado: 'ok', parametros: {}, hechos: hechos.map(([id, etiqueta, valor]) => ({ id, etiqueta, valor })), ...extra }) as ResultadoHerramienta;
 
+// El resultado «sesiones» es SINTÉTICO: la herramienta real se retiró con el módulo de Sesiones, pero el validador de periodos (día concreto
+// frente a semana) es genérico y se sigue probando con estas etiquetas fechadas.
 const RESULTADOS: ResultadoHerramienta[] = [
   ok('cotizaciones', 'Cotizaciones', [['estado_enviada', 'Cotizaciones en estado «enviada»', 8], ['estado_borrador', 'Cotizaciones en estado «borrador»', 8], ['vencidas', 'Enviadas con la validez vencida', 2]]),
   ok('preinscripciones', 'Preinscripciones', [['recibidas', 'Recibidas (sin revisar)', 5], ['validadas', 'Validadas sin convertir en matrícula', 5], ['total', 'Total registradas', 30]]),

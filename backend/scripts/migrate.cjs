@@ -1,7 +1,16 @@
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { connect } = require('./database.cjs');
-const versions = ['20260909-create-catalogo', '20260921-create-cotizaciones', '20261002-complete-institutional', '20261002-original-design', '20261002-create-convenios', '20261003-remove-otros-category', '20261009-chatbot-metrics', '20261010-newsletter-default-novedades', '20261011-cotizaciones-idempotencia', '20261014-admin-rol', '20261014-admin-auditoria', '20261015-academico-estructura', '20261016-academico-solo-dni', '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-sesiones-academicas', '20261020-preinscripciones'];
+const versions = ['20260909-create-catalogo', '20260921-create-cotizaciones', '20261002-complete-institutional', '20261002-original-design', '20261002-create-convenios', '20261003-remove-otros-category', '20261009-chatbot-metrics', '20261010-newsletter-default-novedades', '20261011-cotizaciones-idempotencia', '20261014-admin-rol', '20261014-admin-auditoria', '20261015-academico-estructura', '20261016-academico-solo-dni', '20261018-convocatorias-capacidad', '20261019-importaciones-academicas', '20261020-docentes', '20261020-preinscripciones', '20261023-convocatoria-horarios'];
+// Migraciones RETIRADAS: su archivo SQL se conserva intacto en migrations/ como registro histórico, pero ya no forman parte de la
+// secuencia, así que db:migrate nunca las aplica en una base nueva ni en una que aún no las tenga. Si una base ya la tenía aplicada, su
+// fila en horus_migrations, sus tablas y sus datos se conservan tal cual (nada se borra ni se revierte) y db:check sigue verificando esa
+// estructura histórica; si encuentra restos SIN la fila de registro (una aplicación parcial), lo informa como problema en lugar de aceptarlo.
+//  - 20261020-sesiones-academicas (sesiones individuales de clase): la empresa no administra sesiones; los días y horas recurrentes de cada
+//    edición viven en convocatoria_horarios (20261023-convocatoria-horarios), que no depende de ella. Ver docs/procedimientos/horarios-ediciones.md.
+const retired = Object.freeze({
+  '20261020-sesiones-academicas': 'Módulo de Sesiones retirado (octubre de 2026). Sustituido por los horarios recurrentes de cada edición (convocatoria_horarios).',
+});
 // Una migración que no puede aplicarse sin decidir antes qué hacer con datos existentes se detiene con este error. Su mensaje
 // se muestra tal cual: solo contiene recuentos, nunca valores de las filas.
 class MigracionDetenida extends Error {}
@@ -63,4 +72,4 @@ if (require.main === module) migrate().catch(error => {
   console.error(error instanceof MigracionDetenida ? error.message : 'No se pudo aplicar la migración. Revisa conexión, permisos y esquema de MySQL.');
   process.exitCode = 1;
 });
-module.exports = { applySql, migrate, versions, preconditions, MigracionDetenida };
+module.exports = { applySql, migrate, versions, retired, preconditions, MigracionDetenida };

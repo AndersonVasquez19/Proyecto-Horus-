@@ -1,5 +1,9 @@
 # Reportes académicos (CSV, XLSX y PDF)
 
+> **Actualización (simplificación académica, octubre de 2026):** los reportes `certificados` y `pendientes-certificacion` se retiraron (quedan seis reportes
+> académicos: `estudiantes`, `ediciones`, `ocupacion`, `matriculas`, `matriculas-por-edicion` y `resumen`; el catálogo los lista antes de los comerciales).
+> Pedirlos responde 400/404 como cualquier tipo desconocido. Donde el documento nombre certificados describe el diseño anterior.
+
 > Etapa 3: el mismo motor también sirve reportes comerciales y de atención al cliente (cotizaciones y consultas). Ver [reportes-comerciales.md](reportes-comerciales.md). Los reportes de este documento no cambian.
 
 Backend NestJS/Prisma/MySQL de solo lectura en `backend/src/reportes/`. El panel React todavía **no** lo consume: este documento es el contrato para diseñar después las tarjetas, los filtros y los botones de descarga. No hay tablas ni migraciones nuevas; los reportes leen `estudiantes`, `convocatorias` (ediciones), `matriculas` y `cursos`.

@@ -185,7 +185,7 @@ test('Reportes académicos: HTTP real, permisos, filtros, coherencia entre forma
       return JSON.stringify(sums.map(row => [row.Table, String(row.Checksum)]));
     };
     const before = await snapshot();
-    const TYPES = ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'certificados', 'pendientes-certificacion', 'resumen'];
+    const TYPES = ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'resumen'];
     // El catálogo también lista los reportes comerciales y de atención (mismo motor; datos y permisos cubiertos en reportes-comerciales.test.ts).
     // Este barrido de integración sigue sembrando solo datos académicos, así que el recorrido de formatos usa TYPES.
     const COMMERCIAL_TYPES = ['cotizaciones-por-estado', 'cotizaciones-vencidas', 'cotizaciones-importes', 'consultas-por-estado', 'consultas-abiertas-antiguas', 'actividad-comercial'];

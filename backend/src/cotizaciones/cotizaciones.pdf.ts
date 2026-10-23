@@ -1,5 +1,5 @@
 import PDFDocument = require('pdfkit');
-import { INSTITUTION, limaDateTime, longDate } from '../certificados/certificados.pdf';
+import { INSTITUTION, limaDateTime, longDate } from '../common/pdf-format';
 import { pdfText } from '../reportes/formatos/pdf';
 import { limaToday } from './quote-rules';
 

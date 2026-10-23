@@ -4,11 +4,9 @@ import * as assert from 'node:assert/strict';
 import { Prisma } from '@prisma/client';
 import { StatsController } from '../src/admin/stats/stats.controller';
 import { StatsService } from '../src/admin/stats/stats.service';
-import { certificadosStats, preinscripcionesStats } from '../src/admin/stats/stats.academic';
+import { preinscripcionesStats } from '../src/admin/stats/stats.academic';
 import { ACCESS_METADATA } from '../src/permissions/access.decorators';
 import { can } from '../src/permissions/policy';
-import { ReportesService } from '../src/reportes/reportes.service';
-import { resolvePeriod } from '../src/reportes/reportes.periodo';
 import type { CatalogoService } from '../src/catalogo/catalogo.service';
 import type { PrismaService } from '../src/database/prisma.service';
 
@@ -84,61 +82,17 @@ test('preinscripciones: el mínimo de 10 no abre ninguna edición ni aparece com
   assert.deepEqual(Object.keys(stats!).sort(), ['convertidas', 'descartadas', 'desistidas', 'pendientesRevision', 'recibidas', 'total', 'validadas', 'vigentes']);
 });
 
-test('certificados: vigentes, anulados y sustituidos; un anulado sustituido sigue contando como anulado', async () => {
-  const stats = await certificadosStats(world({ certificados: [
-    { estado: 'vigente', sustituido_por: null }, { estado: 'vigente', sustituido_por: null }, // el segundo vigente es el que sustituyó al anulado
-    { estado: 'anulado', sustituido_por: { id: 2 } }, // anulado y sustituido
-    { estado: 'anulado', sustituido_por: null },       // anulado sin reemplazo
-  ] }));
-  assert.equal(stats!.vigentes, 2);
-  assert.equal(stats!.anulados, 2);
-  assert.equal(stats!.sustituidos, 1);
-  assert.ok(stats!.sustituidos <= stats!.anulados);
-});
-
-test('certificados: pendientes de certificación excluye lo no elegible y separa listos de los que requieren corrección', async () => {
-  const stats = await certificadosStats(world({ matriculas: [
-    enrollment(),                                                                  // lista
-    enrollment({ certificados: [{ estado: 'anulado' }] }),                         // anulado y ninguno vigente: sigue pendiente
-    enrollment({ estudiante: NO_DNI }),                                            // pendiente, requiere corrección
-    enrollment({ estudiante: { doc_pais: 'PE', doc_tipo: 'DNI', doc_numero: null } }),
-    enrollment({ certificados: [{ estado: 'vigente' }] }),                         // ya certificada
-    enrollment({ certificados: [{ estado: 'anulado' }, { estado: 'vigente' }] }),  // anulada y sustituida: ya tiene vigente
-    enrollment({ cumplimiento: 'pendiente' }), enrollment({ cumplimiento: 'no_cumplido' }),
-    enrollment({ estado: 'anulada' }),                                             // matrícula anulada
-    enrollment({ convocatoria: edition('cancelada') }),                            // edición cancelada: no emite
-  ] }));
-  assert.deepEqual(stats && { p: stats.pendientesCertificacion, l: stats.listosParaEmitir, c: stats.requierenCorreccion }, { p: 4, l: 2, c: 2 });
-  assert.equal(stats!.listosParaEmitir + stats!.requierenCorreccion, stats!.pendientesCertificacion);
-});
-
-test('certificados: nunca informa más listos que pendientes aunque las lecturas no compartan instantánea', async () => {
-  const prisma = { certificado: { groupBy: async () => [], count: async () => 0 }, matricula: { count: async ({ where }: { where: Row }) => where.AND ? 5 : 3 } } as unknown as PrismaService;
-  const stats = await certificadosStats(prisma);
-  assert.deepEqual([stats!.pendientesCertificacion, stats!.listosParaEmitir, stats!.requierenCorreccion], [3, 3, 0]);
-});
-
-test('coherencia con el reporte «pendientes-certificacion»: misma regla, mismo número', async () => {
-  const matriculas = [enrollment(), enrollment({ estudiante: NO_DNI }), enrollment({ certificados: [{ estado: 'vigente' }] }), enrollment({ convocatoria: edition('cancelada') })];
-  const prisma = world({ matriculas });
-  const service = new ReportesService(prisma);
-  const where = (service as unknown as { pendingWhere(q: object, p: object): Row }).pendingWhere({}, resolvePeriod(undefined, undefined, new Date('2026-10-21T12:00:00Z')));
-  assert.equal(await (prisma as any).matricula.count({ where }), (await certificadosStats(prisma))!.pendientesCertificacion);
-});
-
 test('bloques vacíos devuelven ceros y estructura pendiente (tablas ausentes) devuelve null sin romper el resumen', async () => {
   const empty = world({});
   assert.deepEqual(await preinscripcionesStats(empty), { total: 0, vigentes: 0, recibidas: 0, pendientesRevision: 0, validadas: 0, convertidas: 0, descartadas: 0, desistidas: 0 });
-  assert.deepEqual(await certificadosStats(empty), { vigentes: 0, anulados: 0, sustituidos: 0, pendientesCertificacion: 0, listosParaEmitir: 0, requierenCorreccion: 0 });
   const outdated = new Prisma.PrismaClientKnownRequestError('tabla inexistente', { code: 'P2021', clientVersion: 'test' });
   const missing = { preinscripcion: { groupBy: async () => { throw outdated; }, count: async () => 0 }, certificado: { groupBy: async () => { throw outdated; }, count: async () => 0 }, matricula: { count: async () => 0 } } as unknown as PrismaService;
   assert.equal(await preinscripcionesStats(missing), null);
-  assert.equal(await certificadosStats(missing), null);
   const broken = { preinscripcion: { groupBy: async () => { throw new Error('caída'); }, count: async () => 0 } } as unknown as PrismaService;
   await assert.rejects(preinscripcionesStats(broken), /caída/); // un error real no se disfraza de «sin datos»
 });
 
-test('resumen operativo: incluye ambos bloques y conserva academico y mensajes; sin datos personales', async () => {
+test('resumen operativo: incluye preinscripciones, conserva academico y mensajes y ya no trae certificados; sin datos personales', async () => {
   const SECRETS = ['Zoila', 'Quispe', 'zoila@example.test', '987654321', '12345678'];
   const prisma = Object.assign(world({
     preinscripciones: [{ ...pre('recibida'), nombres: 'Zoila', apellidos: 'Quispe', email: 'zoila@example.test', telefono: '987654321' }],
@@ -150,23 +104,20 @@ test('resumen operativo: incluye ambos bloques y conserva academico y mensajes; 
   }) as unknown as PrismaService;
   // matricula necesita además groupBy (ya lo provee table): reutiliza el mismo.
   const result = await new StatsService({} as CatalogoService, prisma).getOperationalStats();
-  assert.deepEqual(Object.keys(result.stats).sort(), ['academico', 'certificados', 'mensajes', 'preinscripciones']);
+  assert.deepEqual(Object.keys(result.stats).sort(), ['academico', 'mensajes', 'preinscripciones'], 'el bloque de certificados se retiró del Resumen');
   assert.equal(result.stats.preinscripciones!.pendientesRevision, 1);
-  assert.equal(result.stats.certificados!.vigentes, 1);
-  assert.equal(result.stats.certificados!.pendientesCertificacion, 1);
   const json = JSON.stringify(result);
   for (const secret of SECRETS) assert.equal(json.includes(secret), false, 'el resumen no debe contener datos personales');
   const numbers = (block: object) => Object.values(block).every(value => Number.isSafeInteger(value) && value >= 0);
-  assert.ok(numbers(result.stats.preinscripciones!) && numbers(result.stats.certificados!), 'solo conteos enteros no negativos');
+  assert.ok(numbers(result.stats.preinscripciones!), 'solo conteos enteros no negativos');
 });
 
-test('permisos: la vista exige estadisticas:leer y quien la tiene ya puede leer preinscripciones y certificados', () => {
+test('permisos: la vista exige estadisticas:leer y quien la tiene ya puede leer preinscripciones', () => {
   assert.deepEqual(Reflect.getMetadata(ACCESS_METADATA, StatsController.prototype.getDashboardStats), { kind: 'permiso', permission: 'estadisticas:leer' });
   for (const role of ['GERENTE_GENERAL', 'COORDINADORA_INSTITUCIONAL']) {
-    for (const permission of ['estadisticas:leer', 'preinscripciones:leer', 'certificados:leer']) assert.equal(can(role, permission), true, role + ' ' + permission);
+    for (const permission of ['estadisticas:leer', 'preinscripciones:leer']) assert.equal(can(role, permission), true, role + ' ' + permission);
   }
   // Secretaría y cuentas sin rol no acceden al resumen (no se amplía ningún permiso).
   assert.equal(can('SECRETARIA', 'estadisticas:leer'), false);
-  assert.equal(can('SECRETARIA', 'certificados:leer'), false);
   assert.equal(can(null, 'estadisticas:leer'), false);
 });

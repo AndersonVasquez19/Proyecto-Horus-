@@ -1,6 +1,6 @@
-import { ZONA_HORARIA, formatDate, limaClock, limaToUtc, parseDate } from '../sesiones/sesiones.time';
+import { ZONA_HORARIA, formatDate, limaClock, limaToUtc, parseDate } from '../common/lima-time';
 
-// Fechas de HORUS Assistant. La zona de operación es la ya declarada por el proyecto (sesiones.time.ts: America/Lima, UTC-5 sin horario
+// Fechas de HORUS Assistant. La zona de operación es la ya declarada por el proyecto (common/lima-time.ts: America/Lima, UTC-5 sin horario
 // de verano); no se lee la zona del sistema operativo ni la de MySQL. «Hoy» es el día de calendario de Lima en el instante `now`.
 export { ZONA_HORARIA };
 
@@ -13,18 +13,6 @@ export interface DayWindow {
 }
 
 const nextDay = (fecha: string) => formatDate(new Date(parseDate(fecha).getTime() + 86_400_000));
-
-// Semana de calendario de Lima: de lunes a domingo, ambos inclusive, que contiene el día operativo.
-export interface WeekWindow { desde: string; hasta: string; desdeDb: Date; hastaDb: Date }
-
-export function operatingWeek(now: Date): WeekWindow {
-  const { fecha } = limaClock(now);
-  const today = parseDate(fecha);
-  const sinceMonday = (today.getUTCDay() + 6) % 7; // lunes = 0 … domingo = 6
-  const desdeDb = new Date(today.getTime() - sinceMonday * 86_400_000);
-  const hastaDb = new Date(desdeDb.getTime() + 6 * 86_400_000);
-  return { desde: formatDate(desdeDb), hasta: formatDate(hastaDb), desdeDb, hastaDb };
-}
 
 export function operatingDay(now: Date): DayWindow {
   const { fecha } = limaClock(now);

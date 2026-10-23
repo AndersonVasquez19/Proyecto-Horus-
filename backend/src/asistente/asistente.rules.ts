@@ -1,15 +1,15 @@
 import type { Permission } from '../permissions/permissions';
 import { can, canAll } from '../permissions/policy';
-import type { CertificadosStats, PreinscripcionesStats } from '../admin/stats/stats.academic';
+import type { PreinscripcionesStats } from '../admin/stats/stats.academic';
 import { HORAS_CONSULTA_ANTIGUA } from '../attention/attention-rules';
 
 // Reglas DETERMINISTAS de HORUS Assistant: puras, sin base de datos ni NestJS ni IA. Cada pendiente nace de un conteo real y de una regla
 // escrita aquí; el modelo de lenguaje (opcional) solo puede redactar lo que estas reglas ya decidieron.
 
 export const HORAS_MENSAJE_ANTIGUO = HORAS_CONSULTA_ANTIGUA; // una sola fuente: el filtro `antiguas=si` del listado de consultas usa el mismo valor
-export const MAX_PENDIENTES = 20; // tope de seguridad: con todas las reglas activas hay a lo sumo 16
+export const MAX_PENDIENTES = 20; // tope de seguridad: con todas las reglas activas hay a lo sumo 12
 
-export type SectionKey = 'atencion' | 'chatbot' | 'cotizaciones' | 'preinscripciones' | 'aperturas' | 'ediciones' | 'sesiones' | 'matriculas' | 'certificados';
+export type SectionKey = 'atencion' | 'chatbot' | 'cotizaciones' | 'preinscripciones' | 'aperturas' | 'ediciones' | 'matriculas';
 
 // Permisos que el servidor exige para CONSULTAR cada sección (todos). Sin ellos la sección no se consulta ni se menciona.
 export const SECTION_PERMISSIONS: Readonly<Record<SectionKey, readonly Permission[]>> = Object.freeze({
@@ -19,9 +19,7 @@ export const SECTION_PERMISSIONS: Readonly<Record<SectionKey, readonly Permissio
   preinscripciones: ['preinscripciones:leer'],
   aperturas: ['convocatorias:leer', 'preinscripciones:leer'],
   ediciones: ['convocatorias:leer'],
-  sesiones: ['sesiones:leer'],
   matriculas: ['matriculas:leer'],
-  certificados: ['certificados:leer'],
 });
 
 export const SECTION_KEYS = Object.keys(SECTION_PERMISSIONS) as SectionKey[];
@@ -34,9 +32,7 @@ export const SECTION_SOURCES: Readonly<Record<SectionKey, readonly string[]>> = 
   preinscripciones: ['preinscripciones', 'convocatorias'],
   aperturas: ['convocatorias', 'preinscripciones'],
   ediciones: ['convocatorias'],
-  sesiones: ['sesiones', 'convocatorias'],
   matriculas: ['matriculas', 'convocatorias'],
-  certificados: ['certificados', 'matriculas', 'estudiantes'],
 });
 
 export const authorizedSections = (role: unknown): SectionKey[] => SECTION_KEYS.filter(key => canAll(role, SECTION_PERMISSIONS[key]));
@@ -58,7 +54,6 @@ export interface ChatbotAgg {
 export interface CotizacionesAgg { porEstado: Record<string, number>; vencidas: number }
 export interface AperturasAgg { listasParaApertura: number }
 export interface EdicionesAgg { abiertas: number; planificadasConInicioVencido: number }
-export interface SesionesAgg { hoyProgramadas: number; hoyRealizadas: number; atrasadasSinCerrar: number }
 export interface MatriculasAgg { porConfirmarCumplimiento: number }
 
 export interface SectionData {
@@ -68,9 +63,7 @@ export interface SectionData {
   preinscripciones: PreinscripcionesStats;
   aperturas: AperturasAgg;
   ediciones: EdicionesAgg;
-  sesiones: SesionesAgg;
   matriculas: MatriculasAgg;
-  certificados: CertificadosStats;
 }
 
 export type Severidad = 'alta' | 'media' | 'info';
@@ -114,20 +107,8 @@ const RULES: { [K in SectionKey]: (data: SectionData[K]) => ReturnType<Rule> } =
     'La apertura no es automática: la confirma Gerencia o Coordinación.', 'convocatorias:editar' as Permission)] : [],
   ediciones: d => d.planificadasConInicioVencido > 0 ? [item('ediciones_inicio_vencido', 'media', `${plural(d.planificadasConInicioVencido, 'edición planificada cuya', 'ediciones planificadas cuya')} fecha de inicio ya llegó`, d.planificadasConInicioVencido,
     'Siguen en estado planificada con fecha de inicio igual o anterior a hoy.', 'convocatorias:editar' as Permission)] : [],
-  sesiones: d => [
-    ...(d.atrasadasSinCerrar > 0 ? [item('sesiones_atrasadas', 'alta', `${plural(d.atrasadasSinCerrar, 'sesión pasada', 'sesiones pasadas')} sin marcar como realizada o cancelada`, d.atrasadasSinCerrar,
-      'Sesiones programadas con fecha anterior a hoy (hora de Lima).', 'sesiones:editar' as Permission)] : []),
-    ...(d.hoyProgramadas > 0 ? [item('sesiones_hoy', 'info', `${plural(d.hoyProgramadas, 'sesión programada', 'sesiones programadas')} para hoy`, d.hoyProgramadas,
-      'Sesiones de ediciones no archivadas con fecha de hoy.', 'sesiones:leer' as Permission)] : []),
-  ],
   matriculas: d => d.porConfirmarCumplimiento > 0 ? [item('matriculas_por_confirmar', 'media', `${plural(d.porConfirmarCumplimiento, 'matrícula activa', 'matrículas activas')} de ediciones cerradas sin confirmar cumplimiento`, d.porConfirmarCumplimiento,
     'Requieren la confirmación administrativa de Gerencia o Coordinación.', 'matriculas:confirmar' as Permission)] : [],
-  certificados: d => [
-    ...(d.listosParaEmitir > 0 ? [item('certificados_listos', 'media', `${plural(d.listosParaEmitir, 'certificado', 'certificados')} listo${d.listosParaEmitir === 1 ? '' : 's'} para emitir`, d.listosParaEmitir,
-      'Matrículas cumplidas, con DNI completo y sin certificado vigente.', 'certificados:emitir' as Permission)] : []),
-    ...(d.requierenCorreccion > 0 ? [item('certificados_sin_dni', 'media', `${plural(d.requierenCorreccion, 'matrícula cumplida', 'matrículas cumplidas')} sin DNI completo del estudiante`, d.requierenCorreccion,
-      'No se puede emitir el certificado hasta corregir el dato del estudiante.', 'estudiantes:editar' as Permission)] : []),
-  ],
 };
 
 const ORDER: Record<Severidad, number> = { alta: 0, media: 1, info: 2 };

@@ -1,15 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { certificadosStats, preinscripcionesStats } from '../admin/stats/stats.academic';
+import { preinscripcionesStats } from '../admin/stats/stats.academic';
 import { messageJoin, messageState } from '../attention/message-state';
 import { retentionCutoff } from '../chatbot/chatbot-privacy';
 import { isAdminRole, type AdminRole } from '../permissions/roles';
 import { PrismaService } from '../database/prisma.service';
 import { isSchemaOutdated } from '../database/serialization';
-import { formatDate } from '../sesiones/sesiones.time';
-import type { DayWindow, WeekWindow } from './asistente.time';
+import type { DayWindow } from './asistente.time';
 import {
-  HORAS_MENSAJE_ANTIGUO, type AperturasAgg, type ChatbotAgg, type CotizacionesAgg, type EdicionesAgg, type MatriculasAgg, type MensajesAgg, type SectionData, type SectionKey, type SesionesAgg,
+  HORAS_MENSAJE_ANTIGUO, type AperturasAgg, type ChatbotAgg, type CotizacionesAgg, type EdicionesAgg, type MatriculasAgg, type MensajesAgg, type SectionData, type SectionKey,
 } from './asistente.rules';
 
 // Fuente de datos de HORUS Assistant. ÚNICO lugar donde el asistente toca la base: consultas fijas, parametrizadas y de solo lectura que
@@ -21,15 +20,9 @@ export interface AsistenteDataSource {
   read<K extends SectionKey>(section: K, window: DayWindow, now: Date): Promise<SectionData[K] | null>; // null = módulo no disponible (estructura desactualizada)
 }
 
-// Lectura adicional de las consultas conversacionales: sesiones de la semana (solo conteos por estado y por día; ni docentes ni cursos).
+// Fuente de las consultas conversacionales: la misma que la del resumen (la lectura semanal de sesiones se retiró con el módulo de Sesiones).
 export const ASISTENTE_CONSULTA_DATA = 'ASISTENTE_CONSULTA_DATA';
-export interface SesionesSemanaAgg {
-  programadas: number; realizadas: number; canceladas: number;
-  programadasPorDia: { fecha: string; cantidad: number }[]; // solo días con sesiones programadas, en orden
-}
-export interface ConsultaDataSource extends AsistenteDataSource {
-  sesionesSemana(week: WeekWindow): Promise<SesionesSemanaAgg | null>; // null = módulo no disponible
-}
+export type ConsultaDataSource = AsistenteDataSource;
 
 const n = (value: unknown) => Number(value ?? 0);
 
@@ -48,25 +41,6 @@ export class PrismaAsistenteData implements ConsultaDataSource {
     catch (error) { if (isSchemaOutdated(error)) return null; throw error; }
   }
 
-  // Misma regla que «sesiones» de hoy: DATE de Lima, ediciones no archivadas. Una sola consulta agrupada por día y estado.
-  async sesionesSemana(week: WeekWindow): Promise<SesionesSemanaAgg | null> {
-    try {
-      const rows = await this.prisma.sesion.groupBy({
-        by: ['fecha', 'estado'], where: { convocatoria: { archivado_at: null }, fecha: { gte: week.desdeDb, lte: week.hastaDb } }, _count: { _all: true },
-      });
-      const total = { programada: 0, realizada: 0, cancelada: 0 } as Record<string, number>;
-      const perDay = new Map<string, number>();
-      for (const row of rows) {
-        total[row.estado] = (total[row.estado] ?? 0) + row._count._all;
-        if (row.estado === 'programada') perDay.set(formatDate(row.fecha), (perDay.get(formatDate(row.fecha)) ?? 0) + row._count._all);
-      }
-      return {
-        programadas: total.programada ?? 0, realizadas: total.realizada ?? 0, canceladas: total.cancelada ?? 0,
-        programadasPorDia: [...perDay].sort(([a], [b]) => a.localeCompare(b)).map(([fecha, cantidad]) => ({ fecha, cantidad })),
-      };
-    } catch (error) { if (isSchemaOutdated(error)) return null; throw error; }
-  }
-
   private readonly readers: { [K in SectionKey]: (window: DayWindow, now: Date) => Promise<SectionData[K] | null> } = {
     atencion: (window, now) => this.mensajes(window, now),
     chatbot: (window, now) => this.chatbot(window, now),
@@ -74,9 +48,7 @@ export class PrismaAsistenteData implements ConsultaDataSource {
     preinscripciones: () => preinscripcionesStats(this.prisma),
     aperturas: () => this.aperturas(),
     ediciones: window => this.ediciones(window),
-    sesiones: window => this.sesiones(window),
     matriculas: () => this.matriculas(),
-    certificados: () => certificadosStats(this.prisma),
   };
 
   // Una sola consulta agregada. «Consultas registradas» = filas de contactos; «personas únicas» = correos distintos (sin distinguir
@@ -144,17 +116,6 @@ export class PrismaAsistenteData implements ConsultaDataSource {
       this.prisma.convocatoria.count({ where: { estado: 'planificada', archivado_at: null, fecha_inicio: { lte: window.fechaDb } } }),
     ]);
     return { abiertas, planificadasConInicioVencido: vencidas };
-  }
-
-  // fecha/hora de las sesiones son hora de pared de Lima (DATE/TIME): se comparan con el DATE de hoy en Lima, sin conversión de zona.
-  private async sesiones(window: DayWindow): Promise<SesionesAgg> {
-    const scope = { convocatoria: { archivado_at: null } };
-    const [hoyProgramadas, hoyRealizadas, atrasadasSinCerrar] = await Promise.all([
-      this.prisma.sesion.count({ where: { ...scope, fecha: window.fechaDb, estado: 'programada' } }),
-      this.prisma.sesion.count({ where: { ...scope, fecha: window.fechaDb, estado: 'realizada' } }),
-      this.prisma.sesion.count({ where: { ...scope, fecha: { lt: window.fechaDb }, estado: 'programada' } }),
-    ]);
-    return { hoyProgramadas, hoyRealizadas, atrasadasSinCerrar };
   }
 
   private async matriculas(): Promise<MatriculasAgg> {

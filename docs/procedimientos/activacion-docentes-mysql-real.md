@@ -1,5 +1,11 @@
 # Activación real de la migración de docentes en horus_db
 
+> **Documento histórico: módulo retirado (simplificación académica, octubre de 2026).** Los cursos los dictan integrantes de la propia empresa, por lo que ya no hay
+> administración de docentes: se retiraron `/api/admin/docentes`, `/api/admin/asignaciones-docentes` y los permisos `docentes:*`. Se conservan las tablas
+> `docentes` y `docente_asignaciones`, la migración `20261020-docentes`, sus datos y su respaldo. Las sesiones ya no dependen de docentes
+> (`asignacion_id` se guarda siempre en NULL). Lo que sigue describe el diseño anterior y no el comportamiento actual.
+
+
 Fecha: 20 de octubre de 2026, America/Lima. Alcance: **únicamente** la migración `20261020-docentes` (módulo de Docentes y ponentes, solo API) en `127.0.0.1:3306/horus_db`, con autorización expresa del responsable. No se aplicó ninguna otra migración ni se modificaron datos de negocio.
 
 **Estado: COMPLETADA.** `npm run db:migrate` terminó con código 0 y `npm run db:check` con «Esquema compatible».

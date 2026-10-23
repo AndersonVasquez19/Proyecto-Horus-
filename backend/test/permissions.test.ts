@@ -30,9 +30,8 @@ import { HealthController } from '../src/health.controller';
 import { ConvocatoriasController } from '../src/convocatorias/convocatorias.controller';
 import { EstudiantesController } from '../src/estudiantes/estudiantes.controller';
 import { MatriculasController } from '../src/matriculas/matriculas.controller';
-import { AsignacionesDocentesController, DocentesController } from '../src/docentes/docentes.controller';
-import { EdicionSesionesController, SesionesController } from '../src/sesiones/sesiones.controller';
-import { CertificadosController, CertificadosPublicController } from '../src/certificados/certificados.controller';
+import { HorariosController } from '../src/horarios/horarios.controller';
+import { CertificadosPublicController } from '../src/certificados/certificados.controller';
 import { ReportesController } from '../src/reportes/reportes.controller';
 import { AsistenteController } from '../src/asistente/asistente.controller';
 import { ChatbotPreinscripcionController, PreinscripcionesController, PreinscripcionesPublicController } from '../src/preinscripciones/preinscripciones.controller';
@@ -69,13 +68,13 @@ test('cada permiso tiene un identificador único con el formato recurso:operacio
 
 test('los permisos de recursos futuros están separados de los actuales', () => {
   for (const resource of FUTURE_RESOURCES) assert.ok(resource in RESOURCE_OPERATIONS);
-  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones'], 'sesiones y certificados dejaron de ser futuros: ya tienen rutas');
+  assert.deepEqual([...FUTURE_RESOURCES].sort(), ['asistencia', 'auditoria', 'calificaciones'], 'sesiones, docentes y certificados se retiraron del alcance (ya no existen como recursos)');
   // Reportes académicos ya tienen rutas (src/reportes): consultar con reportes_academicos:leer y exportar con reportes_academicos:exportar.
   assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('reportes_academicos'));
 });
 
 test('no existe ningún permiso de eliminación física del historial académico', () => {
-  const forbidden = ['estudiantes', 'matriculas', 'docentes', 'calificaciones', 'certificados', 'asistencia', 'sesiones', 'convocatorias', 'auditoria'];
+  const forbidden = ['estudiantes', 'matriculas', 'calificaciones', 'asistencia', 'convocatorias', 'auditoria'];
   for (const id of ALL_PERMISSIONS) {
     const [resource, operation] = id.split(':');
     if (forbidden.includes(resource)) assert.notEqual(operation, 'eliminar', id);
@@ -126,7 +125,7 @@ const GERENTE_ONLY = [
   'configuracion:editar', 'contenido_original:leer', 'contenido_original:restaurar',
   'cursos:eliminar', 'servicios:eliminar', 'reclamaciones:eliminar', 'reclamaciones:exportar', 'boletin:eliminar', 'boletin:exportar',
   'items:leer', 'items:crear', 'items:editar', 'items:eliminar', 'mensajes:exportar',
-  'estudiantes:exportar', 'importaciones:aplicar', 'certificados:anular', 'calificaciones:corregir_cerradas', 'reportes_academicos:exportar', 'auditoria:leer',
+  'estudiantes:exportar', 'importaciones:aplicar', 'calificaciones:corregir_cerradas', 'reportes_academicos:exportar', 'auditoria:leer',
 ];
 
 test('el gerente general tiene todos los permisos definidos', () => {
@@ -150,7 +149,7 @@ test('la coordinadora: gestión académica y operativa permitida', () => {
     'estudiantes:leer', 'estudiantes:crear', 'estudiantes:editar', 'estudiantes:archivar',
     'convocatorias:crear', 'convocatorias:editar', 'convocatorias:cerrar',
     'matriculas:crear', 'matriculas:editar', 'matriculas:anular', 'matriculas:confirmar',
-    'sesiones:crear', 'asistencia:registrar', 'calificaciones:registrar', 'certificados:emitir', 'importaciones:previsualizar', 'reportes_academicos:leer',
+    'asistencia:registrar', 'calificaciones:registrar', 'importaciones:previsualizar', 'reportes_academicos:leer',
   ];
   for (const id of allowed) assert.equal(can(C, id), true, id);
   for (const id of ['mensajes:eliminar', 'boletin:eliminar']) assert.equal(can(C, id), false, id);
@@ -196,70 +195,36 @@ test('matriculas:confirmar: gerente y coordinadora sí; secretaria y cuenta sin 
   assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('matriculas'), 'matriculas es un módulo implementado');
 });
 
-test('docentes: catálogo exacto, gerente y coordinadora (propuesta), secretaría y cuenta sin rol denegadas, sin eliminación física', () => {
-  assert.deepEqual([...RESOURCE_OPERATIONS.docentes], ['leer', 'crear', 'editar', 'asignar']);
-  const all = ['docentes:leer', 'docentes:crear', 'docentes:editar', 'docentes:asignar'];
-  for (const id of all) { assert.ok(isPermission(id), id); assert.equal(can(G, id), true, 'gerente ' + id); assert.equal(can(C, id), true, 'coordinadora ' + id); }
-  // La secretaría no recibe datos personales de docentes mientras no haya una decisión de negocio.
-  for (const id of all) assert.equal(can(S, id), false, 'secretaria ' + id);
-  for (const sinRol of [null, undefined, '', 'ADMIN', 'docente', 'DOCENTE']) for (const id of all) assert.equal(can(sinRol, id), false, String(sinRol) + ' ' + id);
-  for (const id of ['docentes:eliminar', 'docentes:archivar', 'docentes:exportar', 'docentes:*', 'docentes']) assert.equal(isPermission(id), false, id);
-  assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('docentes'), 'docentes es un módulo implementado');
-  assert.deepEqual(permissionsOf(C).filter(id => id.startsWith('docentes:')), [...all].sort());
-  assert.deepEqual(permissionsOf(S).filter(id => id.startsWith('docentes:')), []);
+test('sesiones, docentes y certificados: los recursos, permisos y rutas administrativas se retiraron; solo queda la verificación pública', () => {
+  for (const resource of ['sesiones', 'docentes', 'certificados']) {
+    assert.equal(resource in RESOURCE_OPERATIONS, false, resource + ' ya no es un recurso de la matriz');
+    assert.deepEqual(ALL_PERMISSIONS.filter(id => id.startsWith(resource + ':')), []);
+    for (const role of [G, C, S, null]) assert.deepEqual(permissionsOf(role as string).filter(id => id.startsWith(resource + ':')), [], String(role));
+  }
+  for (const id of ['sesiones:leer', 'sesiones:crear', 'sesiones:editar', 'docentes:leer', 'docentes:asignar', 'certificados:leer', 'certificados:emitir', 'certificados:anular']) { assert.equal(isPermission(id), false, id); assert.equal(can(G, id), false, 'ni el gerente: ' + id); }
+  assert.deepEqual(ROUTE_INVENTORY.filter(route => /sesiones|docentes|certificados/.test(route.path)).map(route => route.method + ' ' + route.path), ['GET certificados/verificar/:codigo']);
+  assert.deepEqual(routeHandlers().filter(route => /sesiones|docentes|certificados/.test(route.key)).map(route => route.key), ['GET certificados/verificar/:codigo']);
+  assert.equal(permissionsOf(C).length, 62, 'la matriz de la coordinadora: los 71 permisos anteriores menos los 4 de docentes, los 2 de certificados y los 3 de sesiones, retirados del alcance (simplificación académica)');
 });
 
-test('docentes: cada ruta exige el permiso previsto, según los decoradores reales y el inventario', () => {
-  const expected: Record<string, string> = {
-    'GET admin/docentes': 'docentes:leer', 'GET admin/docentes/:id': 'docentes:leer', 'GET admin/docentes/:id/asignaciones': 'docentes:leer',
-    'POST admin/docentes': 'docentes:crear', 'PATCH admin/docentes/:id': 'docentes:editar', 'PUT admin/docentes/:id/estado': 'docentes:editar',
-    'GET admin/asignaciones-docentes': 'docentes:leer', 'GET admin/asignaciones-docentes/:id': 'docentes:leer',
-    'POST admin/asignaciones-docentes': 'docentes:asignar', 'PUT admin/asignaciones-docentes/:id': 'docentes:asignar',
-    'PUT admin/asignaciones-docentes/:id/retiro': 'docentes:asignar', 'PUT admin/asignaciones-docentes/:id/reactivacion': 'docentes:asignar',
-    'POST admin/asignaciones-docentes/:id/sustitucion': 'docentes:asignar',
-  };
-  const inventory = ROUTE_INVENTORY.filter(route => /^admin\/(docentes|asignaciones-docentes)/.test(route.path));
+test('horarios de una edición: reutilizan los permisos de ediciones (leer y editar), sin recurso propio ni cambios en la matriz', () => {
+  const expected: Record<string, string> = { 'GET admin/convocatorias/:id/horarios': 'convocatorias:leer', 'PUT admin/convocatorias/:id/horarios': 'convocatorias:editar' };
+  const isScheduleRoute = (path: string) => /^admin\/convocatorias\/:id\/horarios$/.test(path);
+  const inventory = ROUTE_INVENTORY.filter(route => isScheduleRoute(route.path));
   assert.deepEqual(inventory.map(route => route.method + ' ' + route.path).sort(), Object.keys(expected).sort());
   for (const route of inventory) assert.deepEqual(route.access, { kind: 'permiso', permission: expected[route.method + ' ' + route.path] }, route.path);
-  const declared = routeHandlers().filter(route => /^\w+ admin\/(docentes|asignaciones-docentes)/.test(route.key));
-  assert.equal(declared.length, Object.keys(expected).length);
+  const declared = routeHandlers().filter(route => isScheduleRoute(route.key.split(' ')[1]));
+  assert.deepEqual(declared.map(route => route.key).sort(), Object.keys(expected).sort());
   for (const route of declared) assert.deepEqual(Reflect.getMetadata(ACCESS_METADATA, route.handler), { kind: 'permiso', permission: expected[route.key] }, route.key);
-  // Escribir en el equipo docente nunca se concede con solo leer, y la secretaría no pasa ninguna.
-  for (const route of inventory) if (route.method !== 'GET') assert.notEqual((route.access as { permission: string }).permission, 'docentes:leer', route.path);
-  for (const route of inventory) assert.equal(can(S, (route.access as { permission: string }).permission), false, 'secretaria ' + route.path);
-});
-
-test('sesiones: catálogo exacto sin cambios, gerente y coordinadora completos, secretaría y cuenta sin rol denegadas, sin eliminación física', () => {
-  assert.deepEqual([...RESOURCE_OPERATIONS.sesiones], ['leer', 'crear', 'editar'], 'no se añadió un permiso «programar»: reprogramar y cambiar de estado es editar');
-  const all = ['sesiones:leer', 'sesiones:crear', 'sesiones:editar'];
-  for (const id of all) { assert.ok(isPermission(id), id); assert.equal(can(G, id), true, 'gerente ' + id); assert.equal(can(C, id), true, 'coordinadora ' + id); }
-  for (const id of all) assert.equal(can(S, id), false, 'secretaria ' + id);
-  for (const sinRol of [null, undefined, '', 'ADMIN', 'docente']) for (const id of all) assert.equal(can(sinRol, id), false, String(sinRol) + ' ' + id);
-  for (const id of ['sesiones:eliminar', 'sesiones:programar', 'sesiones:archivar', 'sesiones:*', 'sesiones']) assert.equal(isPermission(id), false, id);
-  assert.ok(!(FUTURE_RESOURCES as readonly string[]).includes('sesiones'), 'sesiones es un módulo implementado');
-  assert.deepEqual(permissionsOf(C).filter(id => id.startsWith('sesiones:')), [...all].sort());
-  assert.deepEqual(permissionsOf(S).filter(id => id.startsWith('sesiones:')), []);
-  assert.equal(permissionsOf(C).length, 71, 'la matriz de la coordinadora solo creció en los 3 permisos preinscripciones:leer|editar|convertir (autorizados 2026-10-20)');
-});
-
-test('sesiones: cada ruta exige el permiso previsto, según los decoradores reales y el inventario', () => {
-  const expected: Record<string, string> = {
-    'GET admin/sesiones': 'sesiones:leer', 'GET admin/sesiones/:id': 'sesiones:leer', 'GET admin/convocatorias/:id/sesiones': 'sesiones:leer',
-    'POST admin/sesiones': 'sesiones:crear', 'PATCH admin/sesiones/:id': 'sesiones:editar', 'PUT admin/sesiones/:id/estado': 'sesiones:editar',
-  };
-  const isSessionRoute = (path: string) => /^admin\/sesiones(\/|$)/.test(path) || /^admin\/convocatorias\/:id\/sesiones$/.test(path);
-  const inventory = ROUTE_INVENTORY.filter(route => isSessionRoute(route.path));
-  assert.deepEqual(inventory.map(route => route.method + ' ' + route.path).sort(), Object.keys(expected).sort());
-  for (const route of inventory) assert.deepEqual(route.access, { kind: 'permiso', permission: expected[route.method + ' ' + route.path] }, route.path);
-  const declared = routeHandlers().filter(route => isSessionRoute(route.key.split(' ')[1]));
-  assert.equal(declared.length, Object.keys(expected).length);
-  for (const route of declared) assert.deepEqual(Reflect.getMetadata(ACCESS_METADATA, route.handler), { kind: 'permiso', permission: expected[route.key] }, route.key);
-  assert.ok(!declared.some(route => route.key.startsWith('DELETE ')), 'no existe ninguna ruta DELETE: una sesión se cancela y se conserva');
-  for (const route of inventory) if (route.method !== 'GET') assert.notEqual((route.access as { permission: string }).permission, 'sesiones:leer', route.path);
-  for (const route of inventory) assert.equal(can(S, (route.access as { permission: string }).permission), false, 'secretaria ' + route.path);
-  // La ruta anidada de ediciones no cambia el permiso de las rutas de ediciones: seguirán exigiendo convocatorias:*.
-  const editions = ROUTE_INVENTORY.filter(route => /^admin\/convocatorias/.test(route.path) && !isSessionRoute(route.path));
-  assert.ok(editions.length >= 8 && editions.every(route => (route.access as { permission: string }).permission.startsWith('convocatorias:')));
+  assert.ok(!declared.some(route => /^(POST|PATCH|DELETE) /.test(route.key)), 'sin altas ni bajas por tramo: el PUT reemplaza el conjunto');
+  assert.equal('horarios' in RESOURCE_OPERATIONS, false, 'no hay un recurso de permisos propio');
+  // Gerencia y Coordinación consultan y reemplazan; Secretaría solo consulta (atiende preguntas sobre horarios); sin rol, nada.
+  for (const role of [G, C]) { assert.equal(can(role, 'convocatorias:leer'), true, role); assert.equal(can(role, 'convocatorias:editar'), true, role); }
+  assert.equal(can(S, 'convocatorias:leer'), true); assert.equal(can(S, 'convocatorias:editar'), false);
+  for (const sinRol of [null, undefined, '', 'ADMIN']) for (const id of Object.values(expected)) assert.equal(can(sinRol, id), false, String(sinRol) + ' ' + id);
+  // Todas las rutas de ediciones siguen exigiendo convocatorias:*.
+  const editions = ROUTE_INVENTORY.filter(route => /^admin\/convocatorias/.test(route.path));
+  assert.ok(editions.length >= 10 && editions.every(route => (route.access as { permission: string }).permission.startsWith('convocatorias:')));
 });
 
 test('la coordinadora no administra cuentas ni configuración crítica', () => {
@@ -269,7 +234,7 @@ test('la coordinadora no administra cuentas ni configuración crítica', () => {
 });
 
 test('las decisiones pendientes no se conceden a coordinadora ni secretaria', () => {
-  for (const id of ['importaciones:aplicar', 'certificados:anular', 'calificaciones:corregir_cerradas', 'estudiantes:exportar', 'reportes_academicos:exportar', 'items:leer', 'items:editar']) {
+  for (const id of ['importaciones:aplicar', 'calificaciones:corregir_cerradas', 'estudiantes:exportar', 'reportes_academicos:exportar', 'items:leer', 'items:editar']) {
     assert.equal(can(C, id), false, id);
     assert.equal(can(S, id), false, id);
   }
@@ -284,7 +249,7 @@ test('E3.4.1: los tres roles registran consultas manuales (mensajes:crear), pero
   const messages = (role: string) => permissionsOf(role).filter(id => id.startsWith('mensajes:'));
   assert.deepEqual(messages(C), ['mensajes:crear', 'mensajes:editar', 'mensajes:leer']);
   assert.deepEqual(messages(S), ['mensajes:crear', 'mensajes:editar', 'mensajes:leer']);
-  assert.equal(permissionsOf(C).length, 71, 'coordinadora: 62 permisos anteriores + mensajes:crear + matriculas:confirmar (E4.1) + 4 de docentes + 3 de preinscripciones');
+  assert.equal(permissionsOf(C).length, 62, 'coordinadora: 57 permisos anteriores (sin los 2 de certificados ni los 3 de sesiones, retirados) + mensajes:crear + matriculas:confirmar (E4.1) + 3 de preinscripciones; docentes retirado');
   assert.equal(permissionsOf(S).length, 18, 'secretaria: 14 permisos anteriores + mensajes:crear + 3 de preinscripciones (leer, editar, convertir)');
   // La ruta que registra consultas exige exactamente ese permiso (decorador real e inventario).
   const create = ROUTE_INVENTORY.find(route => route.method === 'POST' && route.path === 'admin/messages');
@@ -310,8 +275,8 @@ const CONTROLLERS: Function[] = [
   AttentionController, CursoController, AdminCursoController, ServicioController, AdminServicioController, PreguntaFrecuenteController,
   AdminPreguntaFrecuenteController, ChatbotController, ContactoController, OriginalContentController, ConveniosController, AdminConveniosController,
   CotizacionesController, AdminGaleriaController, GaleriaController, HealthController, AdminNewsletterController, NewsletterController,
-  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController, DocentesController, AsignacionesDocentesController, SesionesController, EdicionSesionesController, ReportesController,
-  PreinscripcionesPublicController, ChatbotPreinscripcionController, PreinscripcionesController, CertificadosController, CertificadosPublicController, AsistenteController,
+  ReclamacionesController, AdminSettingsController, SettingsController, PublicUploadsController, AdminUploadsController, EstudiantesController, ConvocatoriasController, MatriculasController, HorariosController, ReportesController,
+  PreinscripcionesPublicController, ChatbotPreinscripcionController, PreinscripcionesController, CertificadosPublicController, AsistenteController,
 ];
 
 function normalize(...parts: string[]) { return parts.join('/').split('/').filter(Boolean).join('/'); }

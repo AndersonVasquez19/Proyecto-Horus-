@@ -1,9 +1,8 @@
 import {
   BadRequestException, ForbiddenException, HttpException, Injectable, NotFoundException, ServiceUnavailableException, UnprocessableEntityException,
 } from '@nestjs/common';
-import { CertificadoEstado, ConvocatoriaEstado, MatriculaCumplimiento, MatriculaEstado, Prisma } from '@prisma/client';
+import { ConvocatoriaEstado, MatriculaCumplimiento, MatriculaEstado, Prisma } from '@prisma/client';
 import { OPEN_EDITIONS_WHERE } from '../admin/stats/stats.service';
-import { PENDING_CERTIFICATION_WHERE, READY_STUDENT_WHERE, checkEmission } from '../certificados/certificados.rules';
 import { PrismaService } from '../database/prisma.service';
 import { isSchemaOutdated } from '../database/serialization';
 import type { Permission } from '../permissions/permissions';
@@ -153,8 +152,6 @@ export class ReportesService {
       case 'ocupacion': return (tx, q, p, mode) => this.occupancy(tx, q, p, mode);
       case 'matriculas': return (tx, q, p, mode) => this.enrollments(tx, q, p, mode);
       case 'matriculas-por-edicion': return (tx, q, p, mode) => this.enrollmentsByGroup(tx, q, p, mode);
-      case 'certificados': return (tx, q, p, mode) => this.certificates(tx, q, p, mode);
-      case 'pendientes-certificacion': return (tx, q, p, mode) => this.pendingCertification(tx, q, p, mode);
       case 'resumen': return (tx, _q, p, mode) => this.summary(tx, p, mode);
       // Comerciales y de atención: misma estructura {resumen, tabla}; los renderizadores de CSV, XLSX y PDF son los mismos.
       case 'cotizaciones-por-estado': return (tx, q, p) => quotesByState(tx, q, p);
@@ -448,104 +445,6 @@ export class ReportesService {
         filas: this.page(mode, editionRows).map(row => ({ curso: row.curso, edicion: row.nombre, inicio: row.inicio, estado: STATE_LABELS[row.estado] ?? row.estado,
           vigentes: row.vigentes, anuladas: row.anuladas, total: row.vigentes + row.anuladas })),
         totales: editionRows.length ? { curso: 'Total', edicion: null, inicio: null, estado: null, vigentes, anuladas, total: vigentes + anuladas } : null,
-      },
-    };
-  }
-
-  // ---------------------------------------------------------------------------------------------------------------------------
-  // Certificados emitidos (vigentes y anulados). Los datos del estudiante, el curso y la edición son la copia hecha al emitir.
-  private certificateWhere(q: Filters, p: Period): Prisma.CertificadoWhereInput {
-    const matricula: Prisma.MatriculaWhereInput = {
-      ...(q.convocatoria_id ? { convocatoria_id: q.convocatoria_id } : {}),
-      ...(q.curso_id ? { convocatoria: { curso_id: q.curso_id } } : {}),
-    };
-    return {
-      ...(p.fromUtc || p.toUtc ? { emitido_at: { ...(p.fromUtc ? { gte: p.fromUtc } : {}), ...(p.toUtc ? { lt: p.toUtc } : {}) } } : {}),
-      ...(q.estado ? { estado: q.estado as CertificadoEstado } : {}),
-      ...(Object.keys(matricula).length ? { matricula } : {}),
-    };
-  }
-
-  private async certificates(tx: Tx, q: Filters, p: Period, mode: BuildMode): Promise<Built> {
-    const where = this.certificateWhere(q, p);
-    const groups = await tx.certificado.groupBy({ by: ['estado'], where, _count: { _all: true } });
-    const count = (state: string) => groups.filter(group => group.estado === state).reduce((total, group) => total + group._count._all, 0);
-    const total = groups.reduce((sum, group) => sum + group._count._all, 0);
-    this.checkRows(total, mode);
-    const substituted = await tx.certificado.count({ where: { AND: [where, { sustituido_por: { isNot: null } }] } });
-    const items = await this.rows(mode, total, (skip, take) => tx.certificado.findMany({
-      where, orderBy: [{ emitido_at: 'desc' }, { id: 'desc' }], skip, take,
-      select: { id: true, emitido_at: true, codigo_verificacion: true, estado: true, anulado_at: true, estudiante_apellidos: true, estudiante_nombres: true,
-        estudiante_doc_numero: true, curso_titulo: true, convocatoria_nombre: true, sustituido_por: { select: { id: true } } },
-    }));
-    return {
-      resumen: [
-        item('total', 'Certificados en el reporte', total), item('vigentes', 'Vigentes', count('vigente')), item('anulados', 'Anulados', count('anulado')),
-        item('sustituidos', 'Anulados por sustitución (con un certificado nuevo)', substituted),
-      ],
-      tabla: {
-        titulo: 'Certificados', total_filas: total, totales: null,
-        columnas: [
-          col('id', 'ID', 'entero', 7), col('emitido', 'Fecha de emisión', 'fecha_hora', 17), col('codigo', 'Código de verificación', 'texto', 22),
-          col('apellidos', 'Apellidos', 'texto', 20), col('nombres', 'Nombres', 'texto', 20), col('dni', 'DNI', 'texto', 11), col('curso', 'Curso', 'texto', 26),
-          col('edicion', 'Edición', 'texto', 22), col('estado', 'Estado', 'texto', 10), col('anulado', 'Fecha de anulación', 'fecha_hora', 17),
-          col('sustituido', 'Sustituido', 'texto', 11),
-        ],
-        filas: items.map(row => ({
-          id: row.id, emitido: limaDateTime(row.emitido_at), codigo: row.codigo_verificacion, apellidos: row.estudiante_apellidos, nombres: row.estudiante_nombres,
-          dni: row.estudiante_doc_numero, curso: row.curso_titulo, edicion: row.convocatoria_nombre, estado: STATE_LABELS[row.estado] ?? row.estado,
-          anulado: row.anulado_at ? limaDateTime(row.anulado_at) : null, sustituido: row.sustituido_por ? 'Sí' : 'No',
-        })),
-      },
-    };
-  }
-
-  // Pendientes de certificación: matrículas vigentes con cumplimiento confirmado y SIN certificado vigente, en ediciones no canceladas.
-  // Es la cola de trabajo del último paso del flujo (confirmar cumplimiento → emitir certificado). La situación de cada fila usa
-  // checkEmission, la misma regla que valida la emisión, para que el reporte nunca prometa algo que la emisión rechazaría.
-  private pendingWhere(q: Filters, p: Period): Prisma.MatriculaWhereInput {
-    return {
-      ...PENDING_CERTIFICATION_WHERE,
-      convocatoria: { ...PENDING_CERTIFICATION_WHERE.convocatoria, ...(q.curso_id ? { curso_id: q.curso_id } : {}) },
-      ...(q.convocatoria_id ? { convocatoria_id: q.convocatoria_id } : {}),
-      ...(p.fromUtc || p.toUtc ? { confirmado_at: { ...(p.fromUtc ? { gte: p.fromUtc } : {}), ...(p.toUtc ? { lt: p.toUtc } : {}) } } : {}),
-    };
-  }
-
-  private async pendingCertification(tx: Tx, q: Filters, p: Period, mode: BuildMode): Promise<Built> {
-    const where = this.pendingWhere(q, p);
-    const total = await tx.matricula.count({ where });
-    this.checkRows(total, mode);
-    // Con el CHECK de MySQL (solo DNI de 8 dígitos), «documento presente» equivale a «DNI completo». Cada fila se evalúa con checkEmission.
-    const ready = await tx.matricula.count({ where: { AND: [where, READY_STUDENT_WHERE] } });
-    const previouslyAnnulled = await tx.matricula.count({ where: { AND: [where, { certificados: { some: { estado: 'anulado' } } }] } });
-    const items = await this.rows(mode, total, (skip, take) => tx.matricula.findMany({
-      where, orderBy: [{ confirmado_at: 'asc' }, { id: 'asc' }], skip, take,
-      select: { id: true, estado: true, cumplimiento: true, confirmado_at: true,
-        estudiante: { select: { nombres: true, apellidos: true, doc_pais: true, doc_tipo: true, doc_numero: true } },
-        convocatoria: { select: { estado: true, nombre: true, fecha_inicio: true, fecha_fin: true, curso: { select: { titulo: true, tipo: true, duracion: true } } } },
-        _count: { select: { certificados: { where: { estado: 'anulado' } } } } },
-    }));
-    return {
-      resumen: [
-        item('total', 'Pendientes de certificación', total), item('listos', 'Listos para emitir', ready), item('sin_dni', 'Sin DNI completo (no se pueden emitir)', total - ready),
-        item('con_anulado', 'Con un certificado anulado anterior', previouslyAnnulled),
-      ],
-      tabla: {
-        titulo: 'Pendientes', total_filas: total, totales: null,
-        columnas: [
-          col('id', 'ID de matrícula', 'entero', 10), col('confirmado', 'Cumplimiento confirmado', 'fecha_hora', 17), col('apellidos', 'Apellidos', 'texto', 20),
-          col('nombres', 'Nombres', 'texto', 20), col('dni', 'DNI', 'texto', 11), col('curso', 'Curso', 'texto', 26), col('edicion', 'Edición', 'texto', 22),
-          col('anulados', 'Certificados anulados', 'entero', 12), col('situacion', 'Situación', 'texto', 40),
-        ],
-        filas: items.map(row => {
-          const check = checkEmission({ matricula: row, estudiante: row.estudiante, convocatoria: row.convocatoria });
-          return {
-            id: row.id, confirmado: row.confirmado_at ? limaDateTime(row.confirmado_at) : null, apellidos: row.estudiante.apellidos, nombres: row.estudiante.nombres,
-            dni: row.estudiante.doc_numero, curso: row.convocatoria.curso.titulo, edicion: row.convocatoria.nombre, anulados: row._count.certificados,
-            situacion: check.ok === false ? check.message : 'Lista para emitir',
-          };
-        }),
       },
     };
   }

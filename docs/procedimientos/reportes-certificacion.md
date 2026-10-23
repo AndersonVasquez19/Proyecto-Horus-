@@ -1,5 +1,13 @@
 # Reportes de certificación
 
+> **Documento histórico: funcionalidad retirada (simplificación académica, octubre de 2026).** Los certificados se preparan y entregan de forma presencial,
+> fuera de la plataforma. Ya no existen la emisión, anulación y sustitución, las rutas `/api/admin/certificados*`, el PDF con QR, el recurso de permisos
+> `certificados:*`, los reportes `certificados` y `pendientes-certificacion`, los indicadores del Resumen ni la herramienta de HORUS Assistant. Se conservan
+> las tablas, los datos, la migración y el respaldo/restauración, el **bloqueo de matrículas con un certificado vigente** y, de forma provisional,
+> `GET /api/certificados/verificar/:codigo` (solo lectura) porque no se pudo comprobar que no existan certificados emitidos con QR en todos los entornos.
+> Lo que sigue describe el diseño anterior y no el comportamiento actual.
+
+
 Dos reportes nuevos dentro del módulo de [Reportes académicos](reportes-academicos.md): **`certificados`** (certificados emitidos) y **`pendientes-certificacion`** (quién falta por certificar). No añaden tablas, migraciones, rutas ni permisos: reutilizan `GET /api/admin/reportes/:tipo` y `GET /api/admin/reportes/:tipo/exportar` y la matriz de roles existente.
 
 ## 1. Qué problema resuelve

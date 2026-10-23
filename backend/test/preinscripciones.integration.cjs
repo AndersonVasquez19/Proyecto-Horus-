@@ -27,13 +27,16 @@ const versions = JSON.parse(readFileSync(join(backend, 'scripts/migrate.cjs'), '
 const MIGRATION = '20261020-preinscripciones';
 const SYSTEM = ['mysql', 'information_schema', 'performance_schema', 'sys'];
 const NEW_TABLES = ['preinscripciones', 'preinscripciones_historial'];
+// Migraciones registradas DESPUÉS de esta (db:migrate completo también las aplica): sus tablas no son parte de lo que verifica esta suite.
+const LATER_TABLES = ['convocatoria_horarios'];
 const statementsOf = name => readFileSync(join(backend, 'migrations', name + '.sql'), 'utf8').split(';').map(s => s.trim()).filter(Boolean); // criterio de migrate.cjs
 const PERSONAL = /@preinscripciones\.test|\b9[0-9]00\d{5}\b|Ficticia Persona|Existente\d|Identidad\d|Coincidente|Verificada/i; // marcador de TODOS los datos personales de esta prueba
 
 test('Preinscripciones: migración, restricciones, HTTP, canales, mínimo de 10, conversión a matrícula, concurrencia, privacidad y compatibilidad en MySQL desechable', { timeout: 1800000 }, async t => {
   if (process.env.PREINSCRIPCIONES_TEST_DB !== 'true') return t.skip('Requiere PREINSCRIPCIONES_TEST_DB=true y un servidor desechable identificado por UUID.');
   assert.ok(versions.includes(MIGRATION), 'la migración está registrada en migrate.cjs');
-  assert.ok(versions.indexOf(MIGRATION) > versions.indexOf('20261020-sesiones-academicas'), 'va después de sesiones');
+  assert.ok(versions.indexOf(MIGRATION) > versions.indexOf('20261020-docentes'), 'va después de docentes');
+  assert.ok(!versions.includes('20261020-sesiones-academicas'), 'no depende de la migración retirada de sesiones');
   assert.ok(['127.0.0.1', 'localhost', '::1'].includes(process.env.DB_HOST));
   const expectedUuid = String(process.env.PREINSCRIPCIONES_TEST_SERVER_UUID ?? '').trim().toLowerCase();
   assert.match(expectedUuid, /^[0-9a-f-]{36}$/);
@@ -110,7 +113,7 @@ test('Preinscripciones: migración, restricciones, HTTP, canales, mínimo de 10,
       assert.equal(applied.code, 0, applied.output);
       const schema = await runScript('check-database.cjs', name);
       assert.equal(schema.code, 0, schema.output); assert.match(schema.output, /Esquema compatible/);
-      const after = await snapshot(db, ['horus_migrations', ...NEW_TABLES]);
+      const after = await snapshot(db, ['horus_migrations', ...NEW_TABLES, ...LATER_TABLES]);
       assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort(), 'no se crean ni eliminan otras tablas');
       for (const table of Object.keys(before)) {
         if (['convocatorias', 'matriculas'].includes(table)) continue;
@@ -130,7 +133,7 @@ test('Preinscripciones: migración, restricciones, HTTP, canales, mínimo de 10,
       assert.equal(again.code, 0, again.output);
       const [registered] = await db.query('SELECT name FROM horus_migrations ORDER BY name');
       assert.deepEqual(registered.map(r => r.name), [...versions].sort(), 'cada migración registrada una sola vez');
-      assert.deepEqual(await snapshot(db, ['horus_migrations', ...NEW_TABLES]), after, 'repetir db:migrate no cambia nada');
+      assert.deepEqual(await snapshot(db, ['horus_migrations', ...NEW_TABLES, ...LATER_TABLES]), after, 'repetir db:migrate no cambia nada');
     });
 
     await t.test('estructura real: InnoDB, claves RESTRICT incluida la compuesta, únicos, columna generada STORED y CHECK aplicados', async () => {
@@ -231,7 +234,7 @@ test('Preinscripciones: migración, restricciones, HTTP, canales, mínimo de 10,
         if (run.code !== 0) { const detail = await require(join(backend, 'scripts/migrate.cjs')).applySql(partial.db, MIGRATION).then(() => 'sin error en proceso', e => 'errno ' + e.errno + ' ' + String(e.sqlMessage).slice(0, 120)); assert.fail('migrate.cjs falló en el escenario ' + applied.join('+') + ': ' + detail); }
         const check = await runScript('check-database.cjs', partial.name);
         assert.equal(check.code, 0, check.output);
-        const after = await snapshot(partial.db, ['horus_migrations', 'convocatorias', 'matriculas', ...NEW_TABLES]);
+        const after = await snapshot(partial.db, ['horus_migrations', 'convocatorias', 'matriculas', ...NEW_TABLES, ...LATER_TABLES]);
         assert.deepEqual(after, before, 'los datos previos no cambian en la recuperación');
         assert.equal((await partial.db.query('SELECT COUNT(*) AS n FROM horus_migrations WHERE name = ?', [MIGRATION]))[0][0].n, 1);
       }
@@ -818,7 +821,7 @@ test('Preinscripciones: migración, restricciones, HTTP, canales, mínimo de 10,
       const matricula = done.body.matricula;
       const forbidden = [['PUT', E + '/' + wide.id + '/apertura', { revision: 1 }], ['PUT', E + '/' + wide.id + '/preinscripcion', { revision: 1, estado: 'cerrada' }], ['PUT', E + '/' + wide.id + '/cierre', { revision: 1, estado: 'cerrada' }], ['PUT', E + '/' + wide.id + '/archivo', { revision: 1, archivado: true }],
         ['PUT', E + '/' + wide.id, { revision: 1, capacidad: 30 }], ['PUT', '/admin/matriculas/' + matricula.id + '/anulacion', { revision: 1, motivo: 'x' }], ['PUT', '/admin/estudiantes/' + matricula.estudiante_id, { revision: 1, nombres: 'X' }],
-        ['GET', '/admin/docentes'], ['GET', '/admin/sesiones'], ['GET', '/admin/reportes'], ['GET', '/admin/users']];
+        ['PUT', E + '/' + wide.id + '/horarios', { revision: 1, horarios: [] }], ['GET', '/admin/reportes'], ['GET', '/admin/users']];
       for (const [method, path, body] of forbidden) assert.equal((await request(path, tokens.s, method, body)).status, 403, 'secretaría ' + method + ' ' + path);
       const me = await request('/admin/me', tokens.s); assert.deepEqual(me.body.user.permisos.filter(p => p.startsWith('preinscripciones:')), ['preinscripciones:convertir', 'preinscripciones:editar', 'preinscripciones:leer']);
       assert.ok(!me.body.user.permisos.includes('preinscripciones:exportar'));
@@ -852,22 +855,23 @@ test('Preinscripciones: migración, restricciones, HTTP, canales, mínimo de 10,
       } finally { await db.query('DROP TRIGGER fallo_validacion'); }
     });
 
-    await t.test('compatibilidad: Ediciones, Estudiantes, Matrículas, Docentes, Sesiones, Reportes, Contacto, Chatbot y Cotizaciones siguen funcionando', async () => {
+    await t.test('compatibilidad: Ediciones, Horarios, Estudiantes, Matrículas, Reportes, Contacto, Chatbot y Cotizaciones siguen funcionando', async () => {
       const { ed } = await openEdition('Edición compatible', 30);
-      // Docentes y Sesiones sobre una edición con preinscripciones.
-      const docente = await request('/admin/docentes', tokens.g, 'POST', { nombres: 'Docente', apellidos: 'Compatible', doc_numero: '31313131', email: 'docente@preins.test' }); assert.equal(docente.status, 201, docente.text);
-      const asignacion = await request('/admin/asignaciones-docentes', tokens.g, 'POST', { docente_id: docente.body.item.id, convocatoria_id: ed.id }); assert.equal(asignacion.status, 201, asignacion.text);
-      const sesion = await request('/admin/sesiones', tokens.c, 'POST', { convocatoria_id: ed.id, titulo: 'Clase 1', fecha: '2026-11-05', hora_inicio: '14:00', hora_fin: '16:00', docente_id: docente.body.item.id }); assert.equal(sesion.status, 201, sesion.text);
-      assert.equal((await request('/admin/convocatorias/' + ed.id + '/sesiones', tokens.g)).body.pagination.total, 1);
-      // Ediciones: editar, cerrar con preinscripciones y sesiones; Estudiantes y Matrículas.
-      const edited = await request(E + '/' + ed.id, tokens.g, 'PUT', { revision: ed.revision, capacidad: 35 }); assert.equal(edited.status, 200, edited.text);
+      // Horarios recurrentes sobre una edición con preinscripciones (el módulo de Sesiones se retiró: sus rutas ya no existen).
+      const horario = await request(E + '/' + ed.id + '/horarios', tokens.c, 'PUT', { revision: ed.revision, horarios: [{ dia_semana: 1, hora_inicio: '19:00', hora_fin: '22:00' }] }); assert.equal(horario.status, 200, horario.text);
+      assert.equal(horario.body.convocatoria.revision, ed.revision + 1, 'reemplazar los horarios sube la revisión de la edición');
+      assert.equal((await request(E + '/' + ed.id + '/horarios', tokens.s)).body.items.length, 1, 'la secretaría consulta los horarios');
+      assert.equal((await request(E + '/' + ed.id, tokens.g, 'PUT', { revision: ed.revision, capacidad: 35 })).status, 409, 'una revisión anterior al cambio de horarios ya no sirve');
+      for (const path of ['/admin/sesiones', '/admin/convocatorias/' + ed.id + '/sesiones']) assert.equal((await request(path, tokens.g)).status, 404, path);
+      // Ediciones: editar, cerrar con preinscripciones y horarios; Estudiantes y Matrículas.
+      const edited = await request(E + '/' + ed.id, tokens.g, 'PUT', { revision: horario.body.convocatoria.revision, capacidad: 35 }); assert.equal(edited.status, 200, edited.text);
       assert.equal(edited.body.item.minimo_apertura, 10); assert.equal(edited.body.item.preinscripcion_estado, 'abierta');
       const s = await student(900); const enrolled = await request('/admin/matriculas', tokens.s, 'POST', { estudiante_id: s.id, convocatoria_id: ed.id, convocatoria_revision: edited.body.item.revision }); assert.equal(enrolled.status, 201, enrolled.text);
       assert.equal((await request('/admin/matriculas/' + enrolled.body.item.id + '/anulacion', tokens.g, 'PUT', { revision: 1, motivo: 'Prueba' })).status, 200);
       const closed = await request(E + '/' + ed.id + '/cierre', tokens.c, 'PUT', { revision: edited.body.item.revision, estado: 'cerrada' }); assert.equal(closed.status, 200, closed.text);
       assert.equal((await request(P + '?convocatoria_id=' + ed.id, tokens.g)).body.pagination.total, 10, 'cerrar la edición conserva sus preinscripciones');
       await clear(); assert.equal((await register(ed)).status, 404, 'cerrada: ya no recibe');
-      for (const path of ['/admin/estudiantes', '/admin/matriculas', '/admin/convocatorias', '/admin/docentes', '/admin/sesiones', '/admin/reportes', '/admin/cotizaciones', '/admin/messages', '/admin/stats?vista=operativa', '/admin/chatbot/sin-respuesta']) assert.equal((await request(path, tokens.g)).status, 200, path);
+      for (const path of ['/admin/estudiantes', '/admin/matriculas', '/admin/convocatorias', '/admin/convocatorias/' + ed.id + '/horarios', '/admin/reportes', '/admin/cotizaciones', '/admin/messages', '/admin/stats?vista=operativa', '/admin/chatbot/sin-respuesta']) assert.equal((await request(path, tokens.g)).status, 200, path);
       assert.equal((await request('/admin/me', tokens.b)).status, 200);
       // Públicos: contenido, Contacto, Chatbot (contacto y consulta) y el listado de preinscripciones.
       for (const endpoint of ['/cursos', '/servicios', '/galeria', '/convenios', '/settings', '/preinscripciones/convocatorias']) assert.equal((await request(endpoint)).status, 200, endpoint);

@@ -1,5 +1,18 @@
 # Integración continua (GitHub Actions)
 
+> **Nota (retirada de Sesiones, 23 de octubre de 2026):** `ci.yml` **no se modificó** (no estaba autorizado). Su paso «Integración de Horarios y sesiones…»
+> sigue invocando `node test/run-academic-isolated.cjs sesiones`; ese destino es ahora un **alias** de la suite `horarios` (`test/horarios.integration.cjs`), que prueba
+> la tabla `convocatoria_horarios`, sus rutas y la retirada de la migración de sesiones. El nombre del paso es histórico: renombrarlo a `horarios` requiere
+> autorización para tocar la CI. `test/sesiones.test.ts` y `test/sesiones.integration.cjs` se eliminaron; los añadidos son `test/horarios.test.ts`,
+> `test/lima-time.test.ts` y `test/horarios.integration.cjs`.
+>
+> **Nota (simplificación académica, octubre de 2026):** `ci.yml` no se modificó. El paso «Integración de Docentes y ponentes…» sigue invocando
+> `node test/run-academic-isolated.cjs docentes`, pero esa suite ahora verifica la migración y la conservación de las tablas de docentes, que sus rutas ya no existen y
+> que las rutas retiradas no existen; el nombre del paso es histórico. Las suites `sesiones` (ahora alias de `horarios`) y `reportes` se adaptaron al nuevo alcance.
+> Horarios ya tiene evidencia local 14/14 en MySQL 8.4 y 8.0.46; no confundirla con CI remota. Véase el [cierre técnico](cierre-backend-20261023.md).
+> La integración específica de Reportes no se repitió en esa ejecución. Se retiraron `test/docentes.test.ts` y
+> `test/certificados-pdf.test.ts` (la parte de verificación y límites de frecuencia pasó a `test/certificados-verificacion.test.ts`).
+
 Archivo: [.github/workflows/ci.yml](../../.github/workflows/ci.yml). Se ejecuta en `push` a `main`, en cada `pull_request` cuya rama base no sea `anderson` y a demanda (`workflow_dispatch`).
 
 > **CI automática suspendida en `anderson` (temporal).** Mientras se desarrolla Horus Group, la rama `anderson` no dispara la CI por `push` ni por `pull_request` con base `anderson`. Los trabajos, scripts y pruebas siguen intactos y la CI sigue disponible a demanda: pestaña *Actions* → *CI* → *Run workflow* (rama `anderson`; casilla `smokes` opcional). Un PR de `anderson` hacia `main` sí ejecuta la CI (la base es `main`).

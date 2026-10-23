@@ -1,5 +1,9 @@
 # Activación de Sesiones y Preinscripciones: ensayo en clon y procedimiento definitivo
 
+> **Actualización (23 de octubre de 2026):** la parte de **Sesiones ya no se activará**: la migración `20261020-sesiones-academicas` está retirada (no se aplica) y el
+> módulo se eliminó del código. Lo relativo a `20261020-preinscripciones` sigue vigente; ahora `db:migrate` aplicará después `20261023-convocatoria-horarios`
+> (ver [Horarios de las ediciones](horarios-ediciones.md), sección «Activación en una base real»). Donde este documento hable de activar sesiones, descríbelo como histórico.
+
 Fecha de redacción: 20 de octubre de 2026 (America/Lima). Alcance: las migraciones `20261020-sesiones-academicas` y `20261020-preinscripciones`.
 
 **Estado: PREPARACIÓN. Ninguna de las dos migraciones se ha aplicado a `horus_db`, `horus_local` ni a otra base habitual.** Este documento recoge el resultado del ensayo en un clon aislado de MySQL 8.0.46 y fija el procedimiento de activación, recuperación y detención. **No autoriza ejecutar `db:migrate` sobre `horus_db`**: esa autorización es posterior, separada y expresa (sección 9, punto P11).

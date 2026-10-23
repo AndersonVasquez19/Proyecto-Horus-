@@ -409,7 +409,7 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       };
       // Contrato independiente de la política: exactamente cinco rutas; secretaría solo lee y crea; la cuenta básica no accede.
       const students = routes.filter(route => /^admin\/estudiantes(?:\/|$)/.test(route.path));
-      const editions = routes.filter(route => /^admin\/convocatorias(?:\/|$)/.test(route.path) && !/\/sesiones$/.test(route.path)); // el calendario de la edición es del recurso sesiones
+      const editions = routes.filter(route => /^admin\/convocatorias(?:\/|$)/.test(route.path)); // incluye los horarios de la edición (convocatorias:leer/editar)
       const enrollments = routes.filter(route => /^admin\/matriculas(?:\/|$)/.test(route.path));
       assert.deepEqual(enrollments.map(route => route.label), [
         'GET admin/matriculas', 'GET admin/matriculas/ediciones', 'GET admin/matriculas/999999', 'GET admin/matriculas/999999/historial',
@@ -422,9 +422,11 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       assert.deepEqual(editions.map(route => route.label), [
         'GET admin/convocatorias', 'GET admin/convocatorias/cursos', 'GET admin/convocatorias/999999', 'POST admin/convocatorias',
         'PUT admin/convocatorias/999999', 'PUT admin/convocatorias/999999/apertura', 'PUT admin/convocatorias/999999/cierre', 'PUT admin/convocatorias/999999/archivo', 'PUT admin/convocatorias/999999/preinscripcion',
+        'GET admin/convocatorias/999999/horarios', 'PUT admin/convocatorias/999999/horarios',
       ]);
+      // Horarios: la secretaría los consulta (convocatorias:leer) pero no los reemplaza (convocatorias:editar).
       assert.deepEqual(ROLE_KEYS.map(key => editions.map(route => expectation(key, route))), [
-        Array(9).fill('pasa'), Array(9).fill('pasa'), [...Array(3).fill('pasa'), ...Array(6).fill('sinPermiso')], Array(9).fill('sinRol'),
+        Array(11).fill('pasa'), Array(11).fill('pasa'), [...Array(3).fill('pasa'), ...Array(6).fill('sinPermiso'), 'pasa', 'sinPermiso'], Array(11).fill('sinRol'),
       ]);
       // Preinscripciones: nueve rutas administrativas. Gerencia, Coordinación y Secretaría las usan todas (leer, editar y convertir); la cuenta básica ninguna.
       const preregistrations = routes.filter(route => /^admin\/preinscripciones(?:\/|$)/.test(route.path));
@@ -440,18 +442,13 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
         ['pasa', 'pasa', 'pasa', 'sinPermiso', 'sinPermiso'], // secretaría
         ['sinRol', 'sinRol', 'sinRol', 'sinRol', 'sinRol'], // cuenta básica
       ]);
-      // Docentes y ponentes: trece rutas (siete de asignaciones). Gerencia y Coordinación pasan todas; Secretaría y la cuenta básica ninguna.
-      const teachers = routes.filter(route => /^admin\/(docentes|asignaciones-docentes)(?:\/|$)/.test(route.path));
-      assert.equal(teachers.length, 13);
-      assert.deepEqual(ROLE_KEYS.map(key => teachers.map(route => expectation(key, route))), [Array(13).fill('pasa'), Array(13).fill('pasa'), Array(13).fill('sinPermiso'), Array(13).fill('sinRol')]);
-      // Horarios y sesiones: seis rutas (tres lecturas, alta, edición y estado). Gerencia y Coordinación pasan todas; Secretaría y la cuenta básica ninguna.
-      const sessions = routes.filter(route => /^admin\/sesiones(?:\/|$)/.test(route.path) || /^admin\/convocatorias\/[^/]+\/sesiones$/.test(route.path));
-      assert.deepEqual(sessions.map(route => route.label), [
-        'GET admin/sesiones', 'GET admin/sesiones/999999', 'GET admin/convocatorias/999999/sesiones', 'POST admin/sesiones', 'PATCH admin/sesiones/999999', 'PUT admin/sesiones/999999/estado']);
-      assert.deepEqual(ROLE_KEYS.map(key => sessions.map(route => expectation(key, route))), [Array(6).fill('pasa'), Array(6).fill('pasa'), Array(6).fill('sinPermiso'), Array(6).fill('sinRol')]);
+      // Docentes y certificados se retiraron del alcance académico: ya no existe ninguna ruta administrativa de ninguno de los dos.
+      assert.deepEqual(routes.filter(route => /^admin\/(docentes|asignaciones-docentes|certificados)(?:\/|$)/.test(route.path)), []);
+      // Sesiones se retiró: ya no existe ninguna ruta de sesiones (ni la general ni la de una edición).
+      assert.deepEqual(routes.filter(route => /^admin\/sesiones(?:\/|$)/.test(route.path) || /\/sesiones$/.test(route.path)), []);
       const plan = ROLE_KEYS.flatMap(key => routes.map(route => ({ key, route, expected: expectation(key, route) })));
       const before = await businessSnapshot();
-      for (const route of [...students, ...editions, ...enrollments, ...teachers, ...sessions]) {
+      for (const route of [...students, ...editions, ...enrollments]) {
         assert.equal((await call(route.path, { method: route.method, body: route.body })).status, 401, 'sin sesión: ' + route.label);
       }
       for (const { key, route, expected } of plan.filter(item => item.expected !== 'pasa')) {
@@ -483,19 +480,22 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       // Importaciones: Gerencia +5; Coordinación +4 (solo aplicar se deniega); Secretaría y básica +0.
       // Reportes académicos: Gerencia +3 (catálogo, consulta y exportación); Coordinación +2 (sin reportes_academicos:exportar);
       // Secretaría y básica +0 (sin reportes_academicos:leer). La matriz de roles no cambia.
-      // Docentes y asignaciones: trece rutas para Gerencia y Coordinación (propuesta pendiente de confirmar); Secretaría y básica +0.
+      // Docentes y asignaciones: sus trece rutas se retiraron (Gerencia y Coordinación −13).
       // Sesiones: seis rutas para Gerencia y Coordinación; Secretaría y básica +0. Los totales pasan de [110, 92, 24, 1] a [116, 98, 24, 1].
       // Preinscripciones: nueve rutas administrativas para Gerencia, Coordinación y Secretaría (leer, editar y convertir) y una de recepción en Ediciones
       // (convocatorias:editar) solo para Gerencia y Coordinación: [126, 108, 33, 1].
       // Rutas añadidas después (la matriz de roles no cambia):
       // - Cumplimiento de matrícula (matriculas:confirmar): G +1, C +1.
-      // - Certificados: cuatro lecturas y emisión G/C +5; anulación y sustitución (certificados:anular) solo G +2; S y básica +0.
+      // - Certificados (retirados): cuatro lecturas y emisión G/C +5; anulación y sustitución solo G +2 ya no existen: G −7, C −5; S y básica +0.
       // - Asistente (resumen y consultar, autenticadas sin permiso propio): +2 para cada rol, también la cuenta básica
       //   (la guard la deja pasar; el servicio la deniega, comprobado arriba y en admin-access-readiness).
       // - Cotizaciones: PDF (cotizaciones:leer) y duplicar (cotizaciones:crear): G/C +2.
       // - Mensajes: exportar CSV (mensajes:exportar) solo G +1; comprobar duplicados (mensajes:crear) G/C/S +1.
-      // Totales: [140, 119, 36, 3].
-      assert.deepEqual(ROLE_KEYS.map(count), [140, 119, 36, 3]);
+      // Totales tras retirar Docentes (−13 G/C) y Certificados (−7 G, −5 C): [120, 101, 36, 3].
+      // - Sesiones (retiradas): sus seis rutas G/C ya no existen (G −6, C −6).
+      // - Horarios de la edición: GET (convocatorias:leer) G/C/S +1 y PUT (convocatorias:editar) G/C +1.
+      // Totales actuales: [116, 97, 37, 3].
+      assert.deepEqual(ROLE_KEYS.map(count), [116, 97, 37, 3]);
       for (const key of ROLE_KEYS) {
         const own = plan.filter(item => item.key === key && item.route.path.startsWith('admin/seguimiento/cotizaciones/'));
         // Un requisito «denegada» se resuelve antes de mirar el rol: 403 genérico también para la cuenta sin rol.

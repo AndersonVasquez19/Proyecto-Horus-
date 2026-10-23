@@ -5,7 +5,7 @@
 // Operaciones específicas de un recurso: enviar (correo), restaurar, asignar_rol, cerrar, registrar,
 // corregir_cerradas, emitir, previsualizar, aplicar.
 //
-// No existen permisos de eliminación física para estudiantes, matrículas, docentes, calificaciones ni certificados:
+// No existen permisos de eliminación física para estudiantes, matrículas ni calificaciones:
 // el historial académico se archiva, se desactiva o se anula, nunca se borra.
 export const RESOURCE_OPERATIONS = {
   // --- Recursos que ya existen en el backend ---
@@ -32,11 +32,8 @@ export const RESOURCE_OPERATIONS = {
   convocatorias: ['leer', 'crear', 'editar', 'cerrar', 'archivar'],
   preinscripciones: ['leer', 'editar', 'convertir', 'exportar'], // editar = validar, corregir, descartar y registrar desistimientos; convertir = pasar una preinscripción validada a matrícula (operación controlada que reutiliza Matrículas); exportar queda RESERVADO para una etapa futura: ninguna ruta lo exige todavía. Sin crear (la crea el visitante) ni eliminar.
   matriculas: ['leer', 'crear', 'editar', 'anular', 'confirmar'], // confirmar = declarar administrativamente que se completó o no la capacitación (no es una calificación)
-  docentes: ['leer', 'crear', 'editar', 'asignar'], // editar incluye activar/desactivar; asignar = vincular, retirar, reactivar y sustituir docentes en una edición. Sin eliminar: un docente se desactiva.
-  sesiones: ['leer', 'crear', 'editar'], // editar incluye reprogramar y cambiar de estado (realizada, cancelada, reabrir). Sin eliminar: una sesión se cancela y se conserva.
   asistencia: ['leer', 'registrar'],
   calificaciones: ['leer', 'registrar', 'corregir_cerradas'],
-  certificados: ['leer', 'emitir', 'anular'],
   importaciones: ['previsualizar', 'aplicar'],
   reportes_academicos: ['leer', 'exportar'],
   auditoria: ['leer'],

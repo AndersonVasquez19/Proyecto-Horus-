@@ -11,8 +11,7 @@ import { ConvocatoriasModule } from './convocatorias/convocatorias.module';
 import { MatriculasModule } from './matriculas/matriculas.module';
 import { CertificadosModule } from './certificados/certificados.module';
 import { AsistenteModule } from './asistente/asistente.module';
-import { DocentesModule } from './docentes/docentes.module';
-import { SesionesModule } from './sesiones/sesiones.module';
+import { HorariosModule } from './horarios/horarios.module';
 import { PreinscripcionesModule } from './preinscripciones/preinscripciones.module';
 import { ImportacionesModule } from './importaciones/importaciones.module';
 import { ReportesModule } from './reportes/reportes.module';
@@ -61,8 +60,7 @@ import { HealthController } from './health.controller';
     ConvocatoriasModule,
     MatriculasModule,
     CertificadosModule,
-    DocentesModule,
-    SesionesModule,
+    HorariosModule,
     PreinscripcionesModule,
     ImportacionesModule,
     ReportesModule,

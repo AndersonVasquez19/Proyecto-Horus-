@@ -1,5 +1,13 @@
 # Guía de demostración funcional para la sustentación
 
+> **Actualización (23 de octubre de 2026):** Sesiones se retiró (sin rutas ni permisos `sesiones:*`); en su lugar se demuestran los **horarios recurrentes** de una edición
+> (`GET`/`PUT /api/admin/convocatorias/:id/horarios`, ver [Horarios de las ediciones](horarios-ediciones.md)). Los pasos que mencionan sesiones son históricos;
+> por ejemplo, la comprobación «`GET /api/admin/sesiones` da 403 a Secretaría» pasa a ser «`PUT …/horarios` da 403 a Secretaría y su `GET` 200».
+
+> **Actualización (simplificación académica, octubre de 2026):** los certificados digitales (emisión, PDF con QR, reportes y administración) y la administración de
+> docentes se retiraron del sistema; los certificados se entregan de forma presencial. Los pasos de esta guía que los mencionan describen el diseño anterior y no
+> deben demostrarse. Siguen vigentes estudiantes, ediciones, matrículas (con el bloqueo ante un certificado vigente histórico), sesiones, preinscripciones y reportes.
+
 Fecha: 22 de octubre de 2026. Rama `anderson`, HEAD `c0dc9c6`. Alcance: orden de los cuatro procesos, roles, qué mostrar, cómo verificar cada paso y qué hacer si algo externo falla.
 
 **Actualización del 22 de octubre de 2026:** la sección 5 recoge un ensayo ejecutado en clon contra el HEAD `c0dc9c6` (Atención, Cotizaciones, Academia parcial y Assistant sin IA real); prevalece sobre lo que dice este párrafo y sobre la columna «Estado» de la sección 2 donde difieran. Un segundo ensayo del mismo día (sección 5.6) cubrió de punta a punta la certificación (cumplimiento, emisión, PDF con QR, verificación pública, anulación, sustitución, historial, restricciones y concurrencia contra MySQL real del clon).

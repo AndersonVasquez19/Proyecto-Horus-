@@ -11,11 +11,22 @@ const suites = {
   access: ['ACCESS_GUARD_HTTP', 'access-guard-http.integration.cjs'],
   reportes: ['REPORTES', 'reportes.integration.cjs'],
   docentes: ['DOCENTES', 'docentes.integration.cjs'],
-  sesiones: ['SESIONES', 'sesiones.integration.cjs'],
+  horarios: ['HORARIOS', 'horarios.integration.cjs'],
+  // Alias por compatibilidad: la CI manual (.github/workflows/ci.yml) sigue invocando el destino `sesiones`. El módulo de Sesiones se retiró;
+  // la suite de Horarios verifica además esa retirada (migración no aplicada, rutas inexistentes, bases históricas compatibles).
+  sesiones: ['HORARIOS', 'horarios.integration.cjs'],
   preinscripciones: ['PREINSCRIPCIONES', 'preinscripciones.integration.cjs'],
+  // Suites que la CI ejecuta con su propio MySQL de servicio; aquí se pueden lanzar también en un contenedor propio y desechable.
+  academico: ['ACADEMICO_SCHEMA', 'academico-schema.integration.cjs'],
+  preparacion: ['ACCESS_READINESS', 'admin-access-readiness.integration.cjs'],
 };
 const suite = suites[process.argv[2]];
-if (!suite) throw new Error('Selecciona matriculas, ediciones, estudiantes, access, reportes, docentes, sesiones o preinscripciones.');
+if (!suite) throw new Error('Selecciona matriculas, ediciones, estudiantes, access, reportes, docentes, horarios (alias: sesiones), preinscripciones, academico o preparacion.');
+// Imagen de MySQL: 8.4 por defecto. HORUS_IT_MYSQL_IMAGE solo admite valores de esta lista cerrada (8.0.46 = la versión mayor de horus_db);
+// la imagen debe existir ya en local: el ejecutor no descarga nada.
+const IMAGES = ['mysql:8.4', 'mysql:8.0.46'];
+const image = process.env.HORUS_IT_MYSQL_IMAGE || 'mysql:8.4';
+if (!IMAGES.includes(image)) throw new Error('Imagen de MySQL no admitida para las pruebas aisladas.');
 const name = 'horus-fase3-' + randomBytes(8).toString('hex');
 const password = randomBytes(32).toString('hex');
 const docker = args => {
@@ -24,11 +35,11 @@ const docker = args => {
   return r.stdout.trim();
 };
 (async () => {
-  docker(['image', 'inspect', 'mysql:8.4']); // sin descargas ni instalaciones
+  docker(['image', 'inspect', image]); // sin descargas ni instalaciones
   let owned = false;
   try {
     const env = { ...process.env, MYSQL_ROOT_PASSWORD: password };
-    const run = spawnSync('docker', ['run', '-d', '--name', name, '--label', 'horus.test=fase3', '-e', 'MYSQL_ROOT_PASSWORD', '-p', '127.0.0.1::3306', 'mysql:8.4'], { env, encoding: 'utf8', windowsHide: true });
+    const run = spawnSync('docker', ['run', '-d', '--name', name, '--label', 'horus.test=fase3', '-e', 'MYSQL_ROOT_PASSWORD', '-p', '127.0.0.1::3306', image], { env, encoding: 'utf8', windowsHide: true });
     if (run.status !== 0) throw new Error('No se pudo crear el contenedor desechable.');
     owned = true;
     const port = JSON.parse(docker(['inspect', name]))[0].NetworkSettings.Ports['3306/tcp'][0].HostPort;
@@ -44,7 +55,7 @@ const docker = args => {
     if (!uuid) throw new Error('MySQL desechable no inició a tiempo.');
     const expectedUuid = docker(['exec', '-e', 'MYSQL_PWD', name, 'mysql', '-uroot', '-N', '-B', '-e', 'SELECT @@server_uuid']);
     if (uuid !== expectedUuid) throw new Error('UUID de conexión distinto al del contenedor propio.');
-    console.log('Destino aislado: ' + name + ' · MySQL 8.4 · UUID verificado');
+    console.log('Destino aislado: ' + name + ' · ' + image + ' · UUID verificado');
     let template;
     if (process.argv[2] === 'estudiantes') {
       template = 'horus_students_template_' + randomBytes(12).toString('hex');
@@ -61,7 +72,7 @@ const docker = args => {
       DB_HOST: '127.0.0.1', DB_PORT: port, DB_USER: 'root', DB_PASS: password,
       [suite[0] + '_TEST_DB']: 'true', [suite[0] + '_TEST_SERVER_UUID']: uuid,
       MATRICULAS_BROWSER: process.env.MATRICULAS_BROWSER, MATRICULAS_SCREENSHOTS_DIR: process.env.MATRICULAS_SCREENSHOTS_DIR,
-      REPORTES_MUESTRAS_DIR: process.env.REPORTES_MUESTRAS_DIR,
+      REPORTES_MUESTRAS_DIR: process.env.REPORTES_MUESTRAS_DIR, HORUS_IT_MYSQL_IMAGE: image,
       EDITIONS_BROWSER: process.env.EDITIONS_BROWSER, EDITIONS_SCREENSHOTS_DIR: process.env.EDITIONS_SCREENSHOTS_DIR,
       STUDENTS_BROWSER: process.env.STUDENTS_BROWSER, STUDENTS_SCREENSHOTS_DIR: process.env.STUDENTS_SCREENSHOTS_DIR };
     if (template) testEnv.STUDENTS_TEST_TEMPLATE = template;
@@ -74,7 +85,8 @@ const docker = args => {
     if (owned) {
       const info = JSON.parse(docker(['inspect', name]))[0];
       if (info.Name !== '/' + name || info.Config.Labels['horus.test'] !== 'fase3') throw new Error('Identidad de contenedor propio inesperada.');
-      docker(['rm', '-f', name]);
+      // -v retira también el volumen anónimo de /var/lib/mysql que crea la imagen; sin él quedaba huérfano en cada ejecución.
+      docker(['rm', '-f', '-v', name]);
       console.log('Contenedor propio retirado: ' + name);
     }
   }

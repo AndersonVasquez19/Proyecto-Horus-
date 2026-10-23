@@ -110,7 +110,7 @@ export class AsistenteService {
 
 // Ventana temporal a la que se refieren las cifras de cada sección: «hoy» (Lima) para lo diario, «actual» para el estado vigente.
 export function windowOf(section: SectionKey, window: ReturnType<typeof operatingDay>) {
-  return section === 'atencion' || section === 'chatbot' || section === 'sesiones'
+  return section === 'atencion' || section === 'chatbot'
     ? { tipo: 'hoy_y_estado_actual', fecha: window.fecha, desde_utc: window.desdeUtc.toISOString(), hasta_utc: window.hastaUtc.toISOString() }
     : { tipo: 'estado_actual', fecha: window.fecha };
 }

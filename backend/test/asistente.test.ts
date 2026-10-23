@@ -35,9 +35,7 @@ const FULL: SectionData = {
   preinscripciones: { total: 30, vigentes: 25, recibidas: 8, pendientesRevision: 7, validadas: 6, convertidas: 11, descartadas: 3, desistidas: 2 },
   aperturas: { listasParaApertura: 1 },
   ediciones: { abiertas: 3, planificadasConInicioVencido: 2 },
-  sesiones: { hoyProgramadas: 4, hoyRealizadas: 1, atrasadasSinCerrar: 5 },
   matriculas: { porConfirmarCumplimiento: 9 },
-  certificados: { vigentes: 20, anulados: 1, sustituidos: 1, pendientesCertificacion: 8, listosParaEmitir: 5, requierenCorreccion: 3 },
 };
 
 function fakeData(overrides: Partial<Record<SectionKey, unknown>> = {}, accounts: Record<number, AccountAccess | null> = {}) {
@@ -92,8 +90,8 @@ test('la autorización de cada sección coincide con la matriz de permisos real 
   for (const role of [G, C, S]) {
     const granted = new Set(authorizedSections(role));
     assert.equal(granted.has('cotizaciones'), can(role, 'cotizaciones:leer'));
-    assert.equal(granted.has('sesiones'), can(role, 'sesiones:leer'));
-    assert.equal(granted.has('certificados'), can(role, 'certificados:leer'));
+    assert.equal(granted.has('ediciones'), can(role, 'convocatorias:leer'));
+    assert.ok(!(granted as Set<string>).has('sesiones'), 'la sección de sesiones ya no existe');
     assert.equal(granted.has('chatbot'), can(role, 'chatbot_consultas:leer'));
   }
   assert.deepEqual(authorizedSections(null), []);
@@ -114,9 +112,9 @@ test('una cuenta sin rol recibe 403 y una inactiva o inexistente 401, sin consul
 test('el rol sale de la cuenta leída en la solicitud: no hay forma de elevarlo desde el cliente', async () => {
   const { service } = build(S);
   // El servicio no acepta rol, permisos ni secciones del cliente: solo el id de la sesión y la opción «explicar».
-  const result = await service.resumen(1, { rol: G, secciones: ['certificados'] } as never, NOW);
+  const result = await service.resumen(1, { rol: G, secciones: ['cotizaciones'] } as never, NOW);
   assert.equal(result.acceso.rol, S);
-  assert.ok(!result.acceso.secciones_autorizadas.includes('certificados'));
+  assert.ok(!result.acceso.secciones_autorizadas.includes('cotizaciones'));
 });
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -126,12 +124,12 @@ test('la respuesta de la secretaria no contiene cifras, pendientes, indicadores 
   const { service } = build(S);
   const result = await service.resumen(1, {}, NOW);
   const text = JSON.stringify(result);
-  for (const area of ['cotizaciones', 'sesiones', 'certificados']) {
+  for (const area of ['cotizaciones']) {
     assert.ok(!(area in result.secciones), area);
     assert.ok(!result.pendientes.some(p => p.area === area), area);
     assert.ok(!result.fuentes.some(f => f.seccion === area), area);
   }
-  for (const phrase of ['cotizaci', 'certificado', 'sesión', 'sesiones']) assert.ok(!text.toLowerCase().includes(phrase), 'aparece «' + phrase + '»');
+  for (const phrase of ['cotizaci', 'sesión', 'sesiones']) assert.ok(!text.toLowerCase().includes(phrase), 'aparece «' + phrase + '»');
   assert.ok(result.pendientes.every(p => can(S, p.permiso) || p.puedeActuar === false));
   assert.ok(result.pendientes.length > 0);
 });
@@ -170,11 +168,8 @@ test('los pendientes salen de las cifras reales, ordenados por severidad, y cada
   assert.equal(by.get('preinscripciones_por_convertir')?.cantidad, 6);
   assert.equal(by.get('ediciones_listas_para_abrir')?.cantidad, 1);
   assert.equal(by.get('ediciones_inicio_vencido')?.cantidad, 2);
-  assert.equal(by.get('sesiones_atrasadas')?.cantidad, 5);
-  assert.equal(by.get('sesiones_hoy')?.cantidad, 4);
   assert.equal(by.get('matriculas_por_confirmar')?.cantidad, 9);
-  assert.equal(by.get('certificados_listos')?.cantidad, 5);
-  assert.equal(by.get('certificados_sin_dni')?.cantidad, 3);
+  assert.ok(![...by.keys()].some(key => key.startsWith('certificados') || key.startsWith('sesiones')), 'ya no hay pendientes de certificados ni de sesiones');
   assert.equal(by.get('chatbot_sin_resolver')?.cantidad, 3);
   const order = items.map(p => ({ alta: 0, media: 1, info: 2 })[p.severidad]);
   assert.deepEqual(order, [...order].sort((a, b) => a - b));
@@ -200,12 +195,13 @@ test('un conteo en cero no produce pendiente, y sin nada que hacer el resumen es
 test('un módulo no disponible (null) o con error se informa como tal, nunca como ceros, y el resto del resumen sigue', async () => {
   const warn = mock.method(Logger.prototype, 'warn', () => undefined);
   try {
-    const { service } = build(G, { data: fakeData({ sesiones: null, certificados: new Error('SELECT * FROM certificados WHERE dni = 12345678 -- secreto') }) });
+    const { service } = build(G, { data: fakeData({ ediciones: null, matriculas: new Error('SELECT * FROM matriculas WHERE dni = 12345678 -- secreto') }) });
     const result = await service.resumen(1, {}, NOW);
-    assert.equal(result.secciones.sesiones?.estado, 'no_disponible');
-    assert.equal(result.secciones.certificados?.estado, 'error');
+    assert.equal(result.secciones.ediciones?.estado, 'no_disponible');
+    assert.equal(result.secciones.matriculas?.estado, 'error');
+    assert.ok(!('certificados' in result.secciones), 'la sección de certificados ya no existe');
     assert.equal(result.secciones.atencion?.estado, 'ok');
-    assert.ok(!result.pendientes.some(p => p.area === 'sesiones' || p.area === 'certificados'));
+    assert.ok(!result.pendientes.some(p => p.area === 'ediciones' || p.area === 'matriculas'));
     assert.equal(result.resumen.vacio, false);
     assert.ok(!JSON.stringify(result).includes('12345678') && !JSON.stringify(result).includes('secreto'), 'el mensaje interno no sale en la respuesta');
     assert.ok(warn.mock.calls.length >= 1);
@@ -215,10 +211,12 @@ test('un módulo no disponible (null) o con error se informa como tal, nunca com
 
 test('se acota la cantidad de pendientes devueltos y se avisa cuando hay más', () => {
   const all = buildPendientes(FULL, G);
-  assert.equal(all.items.length, 16);
+  assert.equal(all.items.length, 12);
   assert.equal(all.truncated, false);
-  const capped = buildPendientes(FULL, G, 4);
-  assert.equal(capped.items.length, 4);
+  // Tres pendientes «alta» con FULL (mensajes antiguos, cotizaciones vencidas y ediciones listas para abrir): al recortar a 3 quedan exactamente esos.
+  assert.equal(all.items.filter(p => p.severidad === 'alta').length, 3);
+  const capped = buildPendientes(FULL, G, 3);
+  assert.equal(capped.items.length, 3);
   assert.equal(capped.truncated, true);
   assert.ok(capped.items.every(p => p.severidad === 'alta'), 'al recortar se conservan los más urgentes');
   assert.ok(all.items.length <= MAX_PENDIENTES);
@@ -309,9 +307,7 @@ function fakePrisma() {
       groupBy: rec('preinscripcion.groupBy', [{ convocatoria_id: 1, _count: { _all: 10 } }, { convocatoria_id: 2, _count: { _all: 9 } }]),
       count: rec('preinscripcion.count', 7),
     },
-    sesion: { count: rec('sesion.count', ({ where }: any) => where.estado === 'realizada' ? 1 : where.fecha instanceof Date ? 4 : 5) },
     matricula: { count: rec('matricula.count', 9), groupBy: rec('matricula.groupBy', []) },
-    certificado: { groupBy: rec('certificado.groupBy', [{ estado: 'vigente', _count: { _all: 20 } }]), count: rec('certificado.count', 0) },
   };
   return { prisma: prisma as PrismaService, log };
 }
@@ -341,17 +337,12 @@ test('chatbot: cuenta interacciones del día de Lima, resueltas y sin resolver, 
   assert.equal(log.find(entry => entry.op === 'chatbotPreguntaSinRespuesta.count')!.args.where.updatedAt.gte.toISOString(), '2026-07-24T14:00:00.000Z');
 });
 
-test('cotizaciones, sesiones y ediciones comparan con el DATE de hoy en Lima', async () => {
+test('cotizaciones y ediciones comparan con el DATE de hoy en Lima', async () => {
   const { prisma, log } = fakePrisma();
   const data = new PrismaAsistenteData(prisma);
   assert.deepEqual(await data.read('cotizaciones', window, NOW), { porEstado: { borrador: 2, enviada: 4 }, vencidas: 2 });
   assert.equal(log.find(entry => entry.op === 'cotizacion.count')!.args.where.validez.lt.toISOString(), '2026-10-22T00:00:00.000Z');
   assert.equal(log.find(entry => entry.op === 'cotizacion.count')!.args.where.estado, 'enviada');
-  assert.deepEqual(await data.read('sesiones', window, NOW), { hoyProgramadas: 4, hoyRealizadas: 1, atrasadasSinCerrar: 5 });
-  const sessionWheres = log.filter(entry => entry.op === 'sesion.count').map(entry => entry.args.where);
-  assert.ok(sessionWheres.every(where => where.convocatoria.archivado_at === null));
-  assert.equal(sessionWheres[0].fecha.toISOString(), '2026-10-22T00:00:00.000Z');
-  assert.equal(sessionWheres[2].fecha.lt.toISOString(), '2026-10-22T00:00:00.000Z');
   assert.deepEqual(await data.read('ediciones', window, NOW), { abiertas: 3, planificadasConInicioVencido: 2 });
   assert.equal(log.filter(entry => entry.op === 'convocatoria.count').map(entry => entry.args.where).find(where => where.estado === 'planificada').fecha_inicio.lte.toISOString(), '2026-10-22T00:00:00.000Z');
 });
@@ -369,9 +360,9 @@ test('un módulo cuya tabla no existe (P2021) queda como no disponible; cualquie
   const { PrismaClientKnownRequestError } = await import('@prisma/client/runtime/client');
   void Prisma;
   const outdated = new PrismaClientKnownRequestError('tabla inexistente', { code: 'P2021', clientVersion: 'test' });
-  const failing: any = { sesion: { count: async () => { throw outdated; } }, matricula: { count: async () => { throw new Error('boom'); } } };
+  const failing: any = { convocatoria: { count: async () => { throw outdated; } }, matricula: { count: async () => { throw new Error('boom'); } } };
   const data = new PrismaAsistenteData(failing);
-  assert.equal(await data.read('sesiones', window, NOW), null);
+  assert.equal(await data.read('ediciones', window, NOW), null);
   await assert.rejects(() => data.read('matriculas', window, NOW), /boom/);
 });
 
@@ -379,7 +370,7 @@ test('un módulo cuya tabla no existe (P2021) queda como no disponible; cualquie
 // Ausencia de datos sensibles
 // ---------------------------------------------------------------------------------------------------------------------------
 test('la respuesta completa no contiene correos, teléfonos, DNI, credenciales ni campos internos', async () => {
-  const result = await build(G, { config: AI_ON, fetcher: async () => okResponse('{{pendientes.certificados_listos}} certificados listos para emitir.') }).service.resumen(1, { explicar: true }, NOW);
+  const result = await build(G, { config: AI_ON, fetcher: async () => okResponse('{{pendientes.matriculas_por_confirmar}} matrículas por confirmar.') }).service.resumen(1, { explicar: true }, NOW);
   assert.equal(result.explicacion.estado, 'generada');
   const text = JSON.stringify(result);
   assert.ok(!/[\w.+-]+@[\w-]+\.[a-z]{2,}/i.test(text), 'correo');
@@ -481,7 +472,7 @@ test('una explicación con cifras propias, sin marcadores, con enlaces, correos 
 
 test('la explicación nunca cambia las cifras ni los pendientes calculados por las reglas', async () => {
   const base = await build(G).service.resumen(1, {}, NOW);
-  const withAi = await build(G, { config: AI_ON, fetcher: async () => okResponse('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender y {{pendientes.sesiones_atrasadas}} sesiones pasadas sin marcar como realizada o cancelada.') }).service.resumen(1, { explicar: true }, NOW);
+  const withAi = await build(G, { config: AI_ON, fetcher: async () => okResponse('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender y {{pendientes.matriculas_por_confirmar}} matrículas activas de ediciones cerradas sin confirmar cumplimiento.') }).service.resumen(1, { explicar: true }, NOW);
   assert.equal(withAi.explicacion.estado, 'generada');
   assert.deepEqual(withAi.pendientes, base.pendientes);
   assert.deepEqual(withAi.indicadores_atencion, base.indicadores_atencion);

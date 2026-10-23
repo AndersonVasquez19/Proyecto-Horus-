@@ -1,5 +1,9 @@
 # Resumen operativo: Preinscripciones y Certificados
 
+> **Actualización (simplificación académica, octubre de 2026):** el bloque `certificados` se retiró de `GET /admin/stats?vista=operativa` (la respuesta conserva
+> `academico`, `mensajes` y `preinscripciones`). Desaparecen `certificadosStats`, `PENDING_CERTIFICATION_WHERE`/`READY_STUDENT_WHERE` y el permiso `certificados:leer`.
+> Lo que este documento dice sobre certificados describe el diseño anterior. El frontend no consumía ese bloque.
+
 Complementa la sección «Resumen operativo» de [separacion-panel-contenido.md](separacion-panel-contenido.md). No hay endpoint, tabla ni migración nuevos: se amplió `GET /api/admin/stats?vista=operativa`.
 
 ## 1. Para qué sirve

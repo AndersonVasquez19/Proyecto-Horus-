@@ -1,8 +1,6 @@
-import type { SesionesSemanaAgg } from './asistente.data';
 import {
   SECTION_KEYS, authorizedSections, buildPendientes, type Pendiente, type SectionData, type SectionKey, type Severidad,
 } from './asistente.rules';
-import type { WeekWindow } from './asistente.time';
 
 // CATÁLOGO CERRADO de herramientas de consulta de HORUS Assistant (v2). Es la única lista de cosas que el asistente conversacional puede
 // «mirar». La IA solo puede ELEGIR entre estas herramientas (por su id); no escribe consultas, no ve la base y no puede añadir herramientas.
@@ -11,7 +9,7 @@ import type { WeekWindow } from './asistente.time';
 //  - hereda los permisos de las secciones del v1 (SECTION_PERMISSIONS en asistente.rules.ts): no existe una matriz paralela;
 //  - se arma con datos que ya leyó el servicio con consultas fijas (asistente.data.ts).
 
-export type HerramientaId = 'pendientes' | 'mensajes' | 'chatbot' | 'cotizaciones' | 'preinscripciones' | 'ediciones' | 'sesiones' | 'matriculas' | 'certificados';
+export type HerramientaId = 'pendientes' | 'mensajes' | 'chatbot' | 'cotizaciones' | 'preinscripciones' | 'ediciones' | 'matriculas';
 export type Parametros = Record<string, string>;
 
 export interface Hecho { id: string; etiqueta: string; valor: number; severidad?: Severidad; puede_actuar?: boolean }
@@ -59,20 +57,9 @@ export const HERRAMIENTAS: readonly Herramienta[] = Object.freeze([
     ejemplo: '¿Cuántas ediciones están abiertas?',
   },
   {
-    id: 'sesiones', titulo: 'Sesiones de clase', secciones: ['sesiones'], palabras: /sesi[oó]n|sesiones|clase|calendario|horario/i,
-    parametros: { periodo: ['hoy', 'semana'] },
-    descripcion: 'Sesiones de clase. periodo=hoy: programadas y realizadas hoy y sesiones pasadas sin cerrar. periodo=semana: programadas, realizadas y canceladas de la semana de lunes a domingo, con las programadas por día.',
-    ejemplo: '¿Qué sesiones están programadas esta semana?',
-  },
-  {
     id: 'matriculas', titulo: 'Matrículas por confirmar', secciones: ['matriculas'], palabras: /matr[ií]cula|cumplimiento/i,
     descripcion: 'Matrículas activas de ediciones cerradas que aún no tienen confirmado el cumplimiento.',
     ejemplo: '¿Cuántas matrículas faltan por confirmar?',
-  },
-  {
-    id: 'certificados', titulo: 'Certificación', secciones: ['certificados'], palabras: /certific|estudiantes? pendiente/i,
-    descripcion: 'Certificados vigentes, anulados y sustituidos; estudiantes con matrícula cumplida pendientes de certificación, cuántos están listos para emitir y cuántos requieren corregir el DNI antes.',
-    ejemplo: '¿Cuántos estudiantes están pendientes de certificación?',
   },
 ] satisfies Herramienta[]);
 
@@ -108,15 +95,11 @@ export function seccionesDe(tool: Herramienta, role: unknown): SectionKey[] {
   return [...tool.secciones, ...(tool.opcionales ?? []).filter(section => authorized.has(section))];
 }
 
-export const necesitaSemana = (tool: Herramienta, params: Parametros) => tool.id === 'sesiones' && params.periodo === 'semana';
-
 // ---- Armado de los hechos (puro: solo cifras que ya leyó el servicio) ----
 
 export interface ContextoHechos {
   role: unknown;
   data: Partial<SectionData>;
-  semana?: SesionesSemanaAgg | null;     // undefined = no solicitada; null = módulo no disponible
-  ventanaSemana?: WeekWindow;
 }
 export type ResultadoHerramienta =
   | { herramienta: HerramientaId; titulo: string; estado: 'ok'; parametros: Parametros; hechos: Hecho[]; ventana?: { desde: string; hasta: string } }
@@ -124,7 +107,6 @@ export type ResultadoHerramienta =
 
 const hecho = (id: string, etiqueta: string, valor: number): Hecho => ({ id, etiqueta, valor });
 const NO_DISPONIBLE = 'No se pudo consultar esta área en este momento (módulo no disponible o con error).';
-const dia = (fecha: string) => fecha.slice(8, 10) + '/' + fecha.slice(5, 7);
 
 export function ejecutar(tool: Herramienta, params: Parametros, context: ContextoHechos): ResultadoHerramienta {
   const base = { herramienta: tool.id, titulo: tool.titulo, parametros: params };
@@ -177,32 +159,9 @@ export function ejecutar(tool: Herramienta, params: Parametros, context: Context
         ...(data.aperturas ? [hecho('listas_para_abrir', 'Ediciones que alcanzaron el mínimo de preinscritos validados', data.aperturas.listasParaApertura)] : []),
       ] };
     }
-    case 'sesiones': {
-      if (params.periodo === 'semana') {
-        const w = context.semana; if (!w || !context.ventanaSemana) return unavailable();
-        return { ...base, estado: 'ok', ventana: { desde: context.ventanaSemana.desde, hasta: context.ventanaSemana.hasta }, hechos: [
-          hecho('semana_programadas', 'Sesiones programadas esta semana (lunes a domingo)', w.programadas), hecho('semana_realizadas', 'Sesiones realizadas esta semana', w.realizadas),
-          hecho('semana_canceladas', 'Sesiones canceladas esta semana', w.canceladas),
-          ...w.programadasPorDia.map(row => hecho('programadas_' + row.fecha, 'Programadas el ' + dia(row.fecha), row.cantidad)),
-        ] };
-      }
-      const d = data.sesiones; if (!d) return unavailable();
-      return { ...base, estado: 'ok', hechos: [
-        hecho('hoy_programadas', 'Sesiones programadas para hoy', d.hoyProgramadas), hecho('hoy_realizadas', 'Sesiones ya realizadas hoy', d.hoyRealizadas),
-        hecho('atrasadas', 'Sesiones pasadas sin marcar como realizadas o canceladas', d.atrasadasSinCerrar),
-      ] };
-    }
     case 'matriculas': {
       const d = data.matriculas; if (!d) return unavailable();
       return { ...base, estado: 'ok', hechos: [hecho('por_confirmar', 'Matrículas activas de ediciones cerradas sin confirmar cumplimiento', d.porConfirmarCumplimiento)] };
-    }
-    case 'certificados': {
-      const d = data.certificados; if (!d) return unavailable();
-      return { ...base, estado: 'ok', hechos: [
-        hecho('pendientes_certificacion', 'Estudiantes con matrícula cumplida pendientes de certificación', d.pendientesCertificacion), hecho('listos_para_emitir', 'Listos para emitir ahora', d.listosParaEmitir),
-        hecho('requieren_correccion', 'Pendientes que requieren corregir el DNI antes de emitir', d.requierenCorreccion),
-        hecho('vigentes', 'Certificados vigentes', d.vigentes), hecho('anulados', 'Certificados anulados', d.anulados), hecho('sustituidos', 'Certificados anulados por sustitución', d.sustituidos),
-      ] };
     }
   }
 }

@@ -1,18 +1,18 @@
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { permissionsOf } from '../permissions/policy';
 import {
-  ejecutar, herramientasPara, necesitaSemana, seccionesDe, type ResultadoHerramienta,
+  ejecutar, herramientasPara, seccionesDe, type ResultadoHerramienta,
 } from './asistente.catalogo';
 import {
   MAX_PREGUNTA, MENSAJES, answerInput, answerInstructions, areasSinAcceso, containsPersonalData, parsePlan, plannerInput, plannerInstructions, type DatosParaRedactar,
 } from './asistente.consulta';
-import { ASISTENTE_CONSULTA_DATA, type ConsultaDataSource, type SesionesSemanaAgg } from './asistente.data';
+import { ASISTENTE_CONSULTA_DATA, type ConsultaDataSource } from './asistente.data';
 import { AsistenteExplainer } from './asistente.explainer';
 import { indicadoresDe, resumenDeDatos, validarRedaccion } from './asistente.fidelidad';
 import { ASISTENTE_LIMITES, type LimitesConsulta } from './asistente.limites';
 import { SECTION_SOURCES, authorizedSections, type SectionData, type SectionKey } from './asistente.rules';
 import { NO_REGISTRADO, NO_ROLE_MESSAGE, UNAUTHORIZED_MESSAGE, windowOf } from './asistente.service';
-import { operatingDay, operatingWeek } from './asistente.time';
+import { operatingDay } from './asistente.time';
 
 export const DATOS_PERSONALES_MESSAGE = 'Tu pregunta incluye datos personales (correo, teléfono o número de documento). Reformúlala sin ellos: HORUS Assistant responde con cifras.';
 export const IA_MESSAGES = Object.freeze({
@@ -66,7 +66,6 @@ export class AsistenteConsultaService {
     if (!this.ai.disponible) throw this.unavailable('no_configurada');
 
     const window = operatingDay(now);
-    const week = operatingWeek(now);
     const sections = authorizedSections(role);
     const envelope = {
       ok: true as const,
@@ -96,12 +95,8 @@ export class AsistenteConsultaService {
     // Paso 2: consultas fijas, solo las secciones de las herramientas elegidas (todas dentro de las autorizadas).
     const wanted = new Set<SectionKey>();
     for (const { tool } of plan.herramientas) for (const section of seccionesDe(tool, role)) wanted.add(section);
-    const needsWeek = plan.herramientas.some(({ tool, parametros }) => necesitaSemana(tool, parametros));
     const list = [...wanted];
-    const [settled, weekSettled] = await Promise.all([
-      Promise.allSettled(list.map(section => this.data.read(section, window, now))),
-      needsWeek ? Promise.allSettled([this.data.sesionesSemana(week)]) : Promise.resolve(null),
-    ]);
+    const settled = await Promise.allSettled(list.map(section => this.data.read(section, window, now)));
 
     const data: Partial<SectionData> = {};
     const estados: Partial<Record<SectionKey, SectionOutcome>> = {};
@@ -119,22 +114,12 @@ export class AsistenteConsultaService {
         estados[section] = { estado: 'ok', consultado_en: consultadoEn };
       }
     });
-    let semana: SesionesSemanaAgg | null | undefined;
-    if (weekSettled) {
-      const outcome = weekSettled[0];
-      if (outcome.status === 'rejected') { this.logger.warn(`Asistente: no se pudo leer la semana de sesiones (${outcome.reason instanceof Error ? outcome.reason.name : 'error'}).`); semana = null; }
-      else semana = outcome.value;
-    }
-
-    const resultados: ResultadoHerramienta[] = plan.herramientas.map(({ tool, parametros }) => ejecutar(tool, parametros, { role, data, semana, ventanaSemana: week }));
+    const resultados: ResultadoHerramienta[] = plan.herramientas.map(({ tool, parametros }) => ejecutar(tool, parametros, { role, data }));
     const avisos: string[] = [];
     if (plan.denegadas.length) avisos.push(MENSAJES.sin_permiso + ' Se respondió solo la parte permitida.');
     if (list.some(section => estados[section]?.estado !== 'ok')) avisos.push('Algunas áreas no se pudieron consultar; las cifras pueden estar incompletas.');
 
-    const fuentes = [
-      ...list.map(section => ({ seccion: section, tablas: SECTION_SOURCES[section], estado: estados[section]?.estado, consultado_en: consultadoEn, ventana: windowOf(section, window) })),
-      ...(weekSettled ? [{ seccion: 'sesiones_semana', tablas: SECTION_SOURCES.sesiones, estado: semana ? 'ok' : 'error', consultado_en: consultadoEn, ventana: { tipo: 'semana', desde: week.desde, hasta: week.hasta } }] : []),
-    ];
+    const fuentes = list.map(section => ({ seccion: section, tablas: SECTION_SOURCES[section], estado: estados[section]?.estado, consultado_en: consultadoEn, ventana: windowOf(section, window) }));
 
     if (resultados.every(result => result.estado !== 'ok')) {
       return { ...envelope, estado: 'sin_datos' as const, respuesta: { texto: MENSAJES.sin_datos, origen: 'sistema' as const }, datos: resultados, fuentes, avisos, sugerencias: [] as string[] };

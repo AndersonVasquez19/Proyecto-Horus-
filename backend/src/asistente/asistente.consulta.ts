@@ -108,7 +108,7 @@ export const MENSAJES = Object.freeze({
   datos_personales: 'HORUS Assistant responde con cifras y no entrega datos de personas concretas (nombres, DNI, correos ni teléfonos). Consulta el módulo correspondiente del panel si tienes permiso.',
   no_registrado: 'Esa información no se registra en el sistema, así que no puedo darte una cifra. No la estimo ni la invento.',
   otro: 'No puedo responder esa pregunta con la información operativa a la que tu rol tiene acceso.',
-  ambigua: 'No tengo claro qué quieres consultar. ¿Puedes indicar el área (por ejemplo mensajes, preinscripciones o sesiones) y el periodo (hoy o esta semana)?',
+  ambigua: 'No tengo claro qué quieres consultar. ¿Puedes indicar el área (por ejemplo mensajes, preinscripciones o ediciones)?',
   sin_permiso: 'Tu rol no tiene acceso a esa información. Solo respondo con las áreas que tu cuenta ya puede consultar en el panel.',
   sin_datos: 'No pude consultar esa información en este momento. Intenta de nuevo más tarde.',
 });

@@ -1,10 +1,9 @@
 import type { PreinscripcionEstado } from '@prisma/client';
-import { PENDING_CERTIFICATION_WHERE, READY_STUDENT_WHERE } from '../../certificados/certificados.rules';
 import type { PrismaService } from '../../database/prisma.service';
 import { isSchemaOutdated } from '../../database/serialization';
 import { ESTADOS_VIGENTES } from '../../preinscripciones/preinscripciones.rules';
 
-// Indicadores de Preinscripciones y Certificados del Resumen operativo. Solo CONTEOS: ninguna consulta selecciona nombres, correos,
+// Indicadores de Preinscripciones del Resumen operativo. Solo CONTEOS: ninguna consulta selecciona nombres, correos,
 // teléfonos ni DNI, así que la respuesta no puede filtrarlos. Cada bloque usa agregados (groupBy / count) en paralelo: no hay N+1.
 // Cada recuento significa lo mismo que en su módulo (reglas importadas, no copiadas).
 
@@ -19,21 +18,12 @@ export interface PreinscripcionesStats {
   desistidas: number;          // el solicitante desistió
 }
 
-export interface CertificadosStats {
-  vigentes: number;
-  anulados: number;            // incluye los anulados por sustitución
-  sustituidos: number;         // subconjunto de anulados: ya tienen un certificado nuevo
-  pendientesCertificacion: number;
-  listosParaEmitir: number;
-  requierenCorreccion: number; // pendientes sin DNI completo: no se pueden emitir hasta corregir el dato
-}
-
 const ZERO_PRE: Record<PreinscripcionEstado, number> = { recibida: 0, validada: 0, matriculada: 0, desistida: 0, descartada: 0 };
 
 // Alcance de Preinscripciones: ediciones sin archivar (una edición archivada ya no gestiona solicitudes). Todo el bloque usa el mismo.
 export const PREINSCRIPCIONES_SCOPE = { convocatoria: { archivado_at: null } } as const;
 
-type Db = Pick<PrismaService, 'preinscripcion' | 'certificado' | 'matricula'>;
+type Db = Pick<PrismaService, 'preinscripcion'>;
 
 // Si la base aún no tiene las tablas (migraciones pendientes) el bloque queda en null —«no disponible», nunca ceros inventados— y el
 // resto del resumen sigue funcionando. Cualquier otro error se propaga.
@@ -55,24 +45,6 @@ export function preinscripcionesStats(prisma: Db): Promise<PreinscripcionesStats
       vigentes: ESTADOS_VIGENTES.reduce((sum, state) => sum + by[state], 0),
       recibidas: by.recibida, pendientesRevision: actionable, validadas: by.validada,
       convertidas: by.matriculada, descartadas: by.descartada, desistidas: by.desistida,
-    };
-  });
-}
-
-export function certificadosStats(prisma: Db): Promise<CertificadosStats | null> {
-  return optional(async () => {
-    const [groups, substituted, pending, ready] = await Promise.all([
-      prisma.certificado.groupBy({ by: ['estado'], _count: { _all: true } }),
-      prisma.certificado.count({ where: { estado: 'anulado', sustituido_por: { isNot: null } } }),
-      prisma.matricula.count({ where: PENDING_CERTIFICATION_WHERE }),
-      prisma.matricula.count({ where: { AND: [PENDING_CERTIFICATION_WHERE, READY_STUDENT_WHERE] } }),
-    ]);
-    const count = (state: string) => groups.filter(group => group.estado === state).reduce((sum, group) => sum + group._count._all, 0);
-    // Las lecturas no comparten instantánea: si una matrícula cambia entre ambas, listos nunca supera a pendientes.
-    const listos = Math.min(ready, pending);
-    return {
-      vigentes: count('vigente'), anulados: count('anulado'), sustituidos: substituted,
-      pendientesCertificacion: pending, listosParaEmitir: listos, requierenCorreccion: pending - listos,
     };
   });
 }

@@ -2,7 +2,7 @@
 // son renderizadores puros de este mismo objeto: por construcción muestran las mismas filas, el mismo resumen y los mismos totales.
 // La consulta JSON del panel devuelve este mismo documento con la tabla paginada (el resumen y los totales cubren todo el filtro).
 
-export const ACADEMIC_REPORT_TYPES = ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'certificados', 'pendientes-certificacion', 'resumen'] as const;
+export const ACADEMIC_REPORT_TYPES = ['estudiantes', 'ediciones', 'ocupacion', 'matriculas', 'matriculas-por-edicion', 'resumen'] as const;
 // Reportes comerciales y de atención al cliente (Cotizaciones y Consultas). Mismo motor, mismos formatos; permisos propios (ver reportes.catalogo.ts).
 export const COMMERCIAL_REPORT_TYPES = ['cotizaciones-por-estado', 'cotizaciones-vencidas', 'cotizaciones-importes', 'consultas-por-estado', 'consultas-abiertas-antiguas', 'actividad-comercial'] as const;
 export const REPORT_TYPES = [...ACADEMIC_REPORT_TYPES, ...COMMERCIAL_REPORT_TYPES] as const;

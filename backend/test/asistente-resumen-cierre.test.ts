@@ -35,9 +35,7 @@ const FULL: SectionData = {
   preinscripciones: { total: 30, vigentes: 25, recibidas: 8, pendientesRevision: 7, validadas: 6, convertidas: 11, descartadas: 3, desistidas: 2 },
   aperturas: { listasParaApertura: 1 },
   ediciones: { abiertas: 3, planificadasConInicioVencido: 2 },
-  sesiones: { hoyProgramadas: 4, hoyRealizadas: 1, atrasadasSinCerrar: 5 },
   matriculas: { porConfirmarCumplimiento: 9 },
-  certificados: { vigentes: 20, anulados: 1, sustituidos: 1, pendientesCertificacion: 8, listosParaEmitir: 5, requierenCorreccion: 3 },
 };
 
 const configOf = (values: Record<string, string>) => ({ get: (key: string) => values[key] }) as unknown as ConfigService;
@@ -129,7 +127,7 @@ test('40 solicitudes simultáneas de una cuenta desde dos instancias: exactament
   assert.equal(rejected.length, 10);
   assert.ok(rejected.every(r => status(r.reason) === 429));
   assert.deepEqual([...shared.buckets.values()], [30], 'las rechazadas no incrementan el cubo');
-  assert.equal(nodes[0].data.reads.length + nodes[1].data.reads.length, 30 * 9, 'solo las atendidas consultan datos (9 secciones del gerente)');
+  assert.equal(nodes[0].data.reads.length + nodes[1].data.reads.length, 30 * 7, 'solo las atendidas consultan datos (7 secciones del gerente; la de sesiones se retiró)');
 });
 
 test('12 solicitudes simultáneas con IA desde dos instancias: 6 admitidas, 6 con 429, y a OpenAI nunca llegan más de 6', async () => {
@@ -194,22 +192,22 @@ test('conflictos de escritura (interbloqueo): se reintenta; si persisten, 503 si
 // ---------------------------------------------------------------------------------------------------------------------------
 const explain = async (text: string, role: string | null = G) => (await instance({ role, fetcher: async () => okResponse(text) }).service.resumen(role === S ? 3 : 1, { explicar: true }, NOW)).explicacion as { estado: string; texto?: string; validacion?: string };
 
-test('la redacción fiel pasa y las cifras las pone el servidor (3 mensajes nuevos, 5 sesiones pasadas)', async () => {
-  const result = await explain('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender y {{pendientes.sesiones_atrasadas}} sesiones pasadas sin marcar como realizada o cancelada.');
+test('la redacción fiel pasa y las cifras las pone el servidor (3 mensajes nuevos, 9 matrículas por confirmar)', async () => {
+  const result = await explain('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender y {{pendientes.matriculas_por_confirmar}} matrículas activas de ediciones cerradas sin confirmar cumplimiento.');
   assert.equal(result.estado, 'generada');
   assert.equal(result.validacion, 'cifras_verificadas');
-  assert.equal(result.texto, '3 mensajes nuevos sin atender y 5 sesiones pasadas sin marcar como realizada o cancelada.');
+  assert.equal(result.texto, '3 mensajes nuevos sin atender y 9 matrículas activas de ediciones cerradas sin confirmar cumplimiento.');
 });
 
 test('cifras intercambiadas entre dos pendientes se descartan (antes bastaba con que cada número existiera en las cifras)', async () => {
   const warn = mock.method(Logger.prototype, 'warn', () => undefined);
   try {
-    // El marcador de las sesiones junto al concepto de los mensajes, y al revés: «5 mensajes nuevos y 3 sesiones pasadas» sería el error.
-    assert.equal((await explain('{{pendientes.sesiones_atrasadas}} mensajes nuevos sin atender y {{pendientes.mensajes_nuevos}} sesiones pasadas sin marcar como realizada o cancelada.')).estado, 'no_disponible');
-    assert.equal((await explain('{{pendientes.sesiones_atrasadas}} mensajes nuevos sin atender.')).estado, 'no_disponible');
+    // El marcador de las matrículas junto al concepto de los mensajes, y al revés: «9 mensajes nuevos y 3 matrículas» sería el error.
+    assert.equal((await explain('{{pendientes.matriculas_por_confirmar}} mensajes nuevos sin atender y {{pendientes.mensajes_nuevos}} matrículas activas de ediciones cerradas sin confirmar cumplimiento.')).estado, 'no_disponible');
+    assert.equal((await explain('{{pendientes.matriculas_por_confirmar}} mensajes nuevos sin atender.')).estado, 'no_disponible');
     // Dígitos escritos por el modelo, aunque cada uno exista entre las cifras (el caso que el validador anterior aceptaba).
-    assert.equal((await explain('5 mensajes nuevos sin atender y 3 sesiones pasadas sin marcar como realizada o cancelada.')).estado, 'no_disponible');
-    assert.equal((await explain('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender y 5 sesiones pasadas.')).estado, 'no_disponible');
+    assert.equal((await explain('9 mensajes nuevos sin atender y 3 matrículas activas de ediciones cerradas sin confirmar cumplimiento.')).estado, 'no_disponible');
+    assert.equal((await explain('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender y 9 matrículas activas.')).estado, 'no_disponible');
   } finally { warn.mock.restore(); }
 });
 
@@ -226,11 +224,13 @@ test('cantidades iguales con conceptos distintos (2 y 2): el marcador, no el nú
 test('calcular, comparar o citar un marcador que no existe (o de un área que el rol no ve) descarta la redacción', async () => {
   const warn = mock.method(Logger.prototype, 'warn', () => undefined);
   try {
-    assert.equal((await explain('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender, más que las sesiones.')).estado, 'no_disponible');
+    assert.equal((await explain('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender, más que las matrículas.')).estado, 'no_disponible');
     assert.equal((await explain('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender, el doble de ayer.')).estado, 'no_disponible');
     assert.equal((await explain('{{pendientes.inventado}} mensajes nuevos sin atender.')).estado, 'no_disponible');
-    // La secretaria no ve sesiones: el pendiente no existe para ella, ni siquiera con su marcador.
-    assert.equal((await explain('{{pendientes.sesiones_atrasadas}} sesiones pasadas sin marcar como realizada o cancelada.', S)).estado, 'no_disponible');
+    // La secretaria no ve cotizaciones: el pendiente no existe para ella, ni siquiera con su marcador.
+    assert.equal((await explain('{{pendientes.cotizaciones_vencidas}} cotizaciones enviadas con validez vencida.', S)).estado, 'no_disponible');
+    // Las sesiones se retiraron: su antiguo marcador tampoco existe para nadie.
+    assert.equal((await explain('{{pendientes.sesiones_atrasadas}} sesiones pasadas sin marcar como realizada o cancelada.')).estado, 'no_disponible');
     assert.equal((await explain('{{pendientes.mensajes_nuevos}} mensajes nuevos sin atender.', S)).texto, '3 mensajes nuevos sin atender.');
   } finally { warn.mock.restore(); }
 });

@@ -440,7 +440,7 @@ model Convocatoria {
   matriculas Matricula[]
   importaciones ImportacionAcademica[]
   docentes DocenteAsignacion[]
-  sesiones Sesion[]
+  horarios ConvocatoriaHorario[]
   preinscripciones Preinscripcion[]
   @@index([curso_id, fecha_inicio], map: "convocatorias_curso_idx")
   @@index([estado, fecha_inicio], map: "convocatorias_estado_idx")
@@ -567,7 +567,7 @@ enum AcademicoEntidad {
   certificado
   docente // 20261020-docentes
   asignacion_docente // 20261020-docentes
-  sesion // 20261020-sesiones-academicas
+  sesion // 20261020-sesiones-academicas (migración RETIRADA): solo filas históricas de bases que la aplicaron; el código ya no lo escribe
 }
 
 enum AcademicoOperacion {
@@ -580,7 +580,7 @@ enum AcademicoOperacion {
   confirmacion
   emision
   sustitucion
-  reprogramacion // 20261020-sesiones-academicas
+  reprogramacion // 20261020-sesiones-academicas (migración RETIRADA): solo filas históricas; el código ya no lo escribe
 }
 
 enum AcademicoOrigen {
@@ -674,7 +674,6 @@ model DocenteAsignacion {
   sustituye_a_id Int?
   sustituye_a DocenteAsignacion? @relation("DocenteSustitucion", fields: [sustituye_a_id, convocatoria_id], references: [id, convocatoria_id], onDelete: Restrict, onUpdate: Restrict, map: "docente_asignaciones_sustituye_fk")
   sustituciones DocenteAsignacion[] @relation("DocenteSustitucion")
-  sesiones Sesion[]
   retirado_at DateTime? @db.DateTime(3)
   retiro_motivo String? @db.VarChar(300)
   revision Int @default(1)
@@ -688,60 +687,25 @@ model DocenteAsignacion {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------
-// Horarios y sesiones académicas (migración 20261020-sesiones-academicas). Una sesión es una clase concreta de una edición.
-// Nada se borra: una sesión se cancela con motivo (estado + cancelada_at + cancelacion_motivo) y se conserva. Las reglas CHECK y las
-// claves foráneas viven en MySQL; Prisma no las valida ni las crea.
+// Horarios recurrentes de una edición (migración 20261023-convocatoria-horarios). Cada fila es un tramo semanal en el que se dicta la
+// edición: día de la semana + hora de inicio y de fin (por ejemplo, lunes 19:00–22:00). NO son clases individuales: no tienen fecha, estado
+// ni seguimiento (el módulo de Sesiones se retiró; su tabla histórica `sesiones`, si existe, ya no tiene modelo Prisma ni código).
 //
-// Hora local: `fecha`, `hora_inicio` y `hora_fin` son la hora de pared de America/Lima (UTC-5, sin horario de verano), tal como se
-// anuncia la clase. No son instantes UTC: no dependen de la zona horaria del sistema ni de MySQL, y una sesión no cruza la
-// medianoche (inicio < fin dentro del mismo día; fin ≤ 23:59). El instante UTC se calcula al responder (sesiones.time.ts).
-// Los intervalos son [inicio, fin): una sesión puede empezar justo cuando termina otra.
-//
-// Docente: `asignacion_id` apunta a docente_asignaciones (no a docentes) con la clave compuesta (asignacion_id, convocatoria_id):
-// MySQL garantiza que el docente pertenece al equipo de ESA edición. NULL = sin docente definido. Que la asignación esté activa y
-// el docente activo al programar, y que no haya solapamientos (del docente y de la edición), lo comprueba el servicio dentro de una
-// transacción con bloqueo curso → edición → docente: MySQL no tiene restricciones de exclusión por intervalos. `@@unique([id,
-// convocatoria_id])` queda preparado para que Asistencia vincule por clave compuesta sesión y matrícula de la misma edición.
-// ---------------------------------------------------------------------------------------------------------------------------
-
-enum SesionModalidad {
-  presencial
-  virtual
-  hibrida
-}
-
-// programada → realizada | cancelada; realizada → programada (reabrir, con motivo); cancelada es final.
-enum SesionEstado {
-  programada
-  realizada
-  cancelada
-}
-
-model Sesion {
+// dia_semana: ISO-8601, 1 = lunes … 7 = domingo (TINYINT con CHECK 1–7). hora_inicio y hora_fin son hora de pared de America/Lima (TIME,
+// sin zona horaria; ver common/lima-time.ts), en minutos exactos, sin cruzar la medianoche: inicio < fin ≤ 23:59. Intervalos [inicio, fin):
+// un tramo puede empezar justo cuando termina otro. MySQL impide dos tramos que empiecen a la misma hora el mismo día (UNIQUE); los
+// solapamientos parciales los rechaza el servicio, que reemplaza el conjunto completo en una transacción con bloqueo curso → edición.
+// Relación RESTRICT, como el resto del esquema académico: una edición con horarios no se puede borrar (las ediciones no se borran, se archivan).
+model ConvocatoriaHorario {
   id Int @id @default(autoincrement())
   convocatoria_id Int
-  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "sesiones_convocatoria_fk")
-  asignacion_id Int?
-  asignacion DocenteAsignacion? @relation(fields: [asignacion_id, convocatoria_id], references: [id, convocatoria_id], onDelete: Restrict, onUpdate: Restrict, map: "sesiones_asignacion_fk")
-  titulo String @db.VarChar(160)
-  fecha DateTime @db.Date
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "convocatoria_horarios_convocatoria_fk")
+  dia_semana Int @db.TinyInt
   hora_inicio DateTime @db.Time(0)
   hora_fin DateTime @db.Time(0)
-  modalidad SesionModalidad
-  lugar String? @db.VarChar(200)
-  enlace_url String? @db.VarChar(2048)
-  estado SesionEstado @default(programada)
-  cancelada_at DateTime? @db.DateTime(3)
-  cancelacion_motivo String? @db.VarChar(300)
-  observaciones String? @db.VarChar(500)
-  revision Int @default(1)
   createdAt DateTime @default(now()) @db.DateTime(3)
-  updatedAt DateTime @updatedAt @db.DateTime(3)
-  @@unique([id, convocatoria_id], map: "sesiones_id_edicion_uq")
-  @@index([convocatoria_id, fecha, hora_inicio], map: "sesiones_edicion_idx")
-  @@index([asignacion_id, convocatoria_id, fecha], map: "sesiones_asignacion_idx")
-  @@index([fecha, hora_inicio], map: "sesiones_fecha_idx")
-  @@map("sesiones")
+  @@unique([convocatoria_id, dia_semana, hora_inicio], map: "convocatoria_horarios_inicio_uq")
+  @@map("convocatoria_horarios")
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------

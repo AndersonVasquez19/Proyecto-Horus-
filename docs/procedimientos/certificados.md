@@ -1,5 +1,13 @@
 # Certificados académicos
 
+> **Documento histórico: funcionalidad retirada (simplificación académica, octubre de 2026).** Los certificados se preparan y entregan de forma presencial,
+> fuera de la plataforma. Ya no existen la emisión, anulación y sustitución, las rutas `/api/admin/certificados*`, el PDF con QR, el recurso de permisos
+> `certificados:*`, los reportes `certificados` y `pendientes-certificacion`, los indicadores del Resumen ni la herramienta de HORUS Assistant. Se conservan
+> las tablas, los datos, la migración y el respaldo/restauración, el **bloqueo de matrículas con un certificado vigente** y, de forma provisional,
+> `GET /api/certificados/verificar/:codigo` (solo lectura) porque no se pudo comprobar que no existan certificados emitidos con QR en todos los entornos.
+> Lo que sigue describe el diseño anterior y no el comportamiento actual.
+
+
 Documento de referencia y guion de sustentación del módulo. Todas las rutas llevan el prefijo `/api`.
 No requiere migración propia: usa las tablas `matriculas`, `certificados` y `academico_historial` de la estructura académica (`20261015-academico-estructura`, `20261016-academico-solo-dni`).
 

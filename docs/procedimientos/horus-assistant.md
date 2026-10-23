@@ -1,5 +1,20 @@
 # HORUS Assistant (v1 resumen y v2 consultas, solo lectura)
 
+> **Actualización (23 de octubre de 2026): Sesiones retirado.** Se eliminaron la sección `sesiones` del resumen (pendientes «sesiones pasadas sin cerrar» y
+> «sesiones para hoy»), la herramienta de consulta `sesiones` y su periodo «esta semana» (lectura `sesionesSemana` y fuente `sesiones_semana`). Hoy hay **siete**
+> herramientas (pendientes, mensajes, chatbot, cotizaciones, preinscripciones, ediciones y matrículas), como máximo **12** pendientes, y las cifras se refieren a
+> «hoy» o al estado actual. No se retiró ninguna otra herramienta ni se cambiaron permisos. Donde este documento mencione sesiones o «esta semana», es histórico.
+>
+> **Propuesta, NO implementada (requiere autorización):** una herramienta `horarios` de solo lectura podría responder «¿qué ediciones se dictan hoy?» o «¿cuántas
+> ediciones tienen clase el sábado?» con un conteo agrupado de `convocatoria_horarios` por `dia_semana` (ediciones abiertas o cerradas, no archivadas), con el
+> permiso de sección `convocatorias:leer` (lo tienen los tres roles) y sin nombres ni datos personales. Encaja en el catálogo cerrado actual (una consulta fija más
+> en `asistente.data.ts`, una regla y un `case` en `asistente.catalogo.ts`) y no necesita migración; no se implementó por no estar autorizado.
+
+> **Actualización (simplificación académica, octubre de 2026):** la herramienta/sección `certificados` del asistente se retiró junto con el módulo de certificados
+> (ya no hay cifras de certificados vigentes, anulados ni pendientes de certificación, ni pendientes «certificados listos» o «sin DNI»). Quedan ocho secciones y
+> herramientas (atención, chatbot, cotizaciones, preinscripciones, aperturas/ediciones, sesiones, matrículas y pendientes). Donde el documento nombre certificados,
+> describe el diseño anterior. El permiso `certificados:leer` ya no existe; el límite público de `/certificados/verificar` se conserva mientras exista esa ruta.
+
 Asistente administrativo **interno** del panel de Horus Group SRL. Resume el día de la persona que lo consulta, muestra sus pendientes según su rol y registra de dónde salió cada dato. Código: `backend/src/asistente/`. Pruebas: `backend/test/asistente.test.ts` (v1) y `backend/test/asistente-consulta.test.ts` (v2).
 
 > **v2 (consultas en lenguaje natural):** `POST /api/admin/asistente/consultar`, descrito en la [sección 12](#12-consultas-en-lenguaje-natural-v2), con el contrato para el panel en 12.5 y la defensa ante el jurado en la [sección 15](#15-cómo-defender-la-arquitectura-ante-el-jurado-v2). Todo lo demás de este documento describe el resumen v1, que se conserva sin cambios.
@@ -31,7 +46,7 @@ Revisión de los módulos (inspección estática del código y del esquema Prism
 | Cotizaciones por estado y vencidas | Sí | `cotizaciones` |
 | Preinscripciones por estado, ediciones con mínimo alcanzado | Sí | `preinscripciones`, `convocatorias` |
 | Ediciones abiertas / planificadas con inicio vencido | Sí | `convocatorias` |
-| Sesiones de hoy y atrasadas sin cerrar | Sí | `sesiones` (hora de pared de Lima) |
+| ~~Sesiones de hoy y atrasadas sin cerrar~~ (retirado) | — | — |
 | Matrículas por confirmar cumplimiento | Sí | `matriculas` |
 | Certificados listos / vigentes / requieren corrección | Sí | `certificados`, `matriculas`, `estudiantes` (reglas compartidas con el Resumen) |
 | Tiempo de primera respuesta / de resolución | **No** hay métrica definida | — |
@@ -71,7 +86,7 @@ Panel (React)  ──GET /api/admin/asistente/resumen──►  AsistenteControl
 | `asistente.rules.ts` | Reglas puras: qué permiso exige cada sección, qué es un pendiente y el texto básico. |
 | `asistente.limites.ts` | Límite de uso por cuenta **compartido entre instancias** (consultas y resumen). |
 | `asistente.fidelidad.ts` | Marcadores `{{herramienta.hecho}}`: la IA no escribe cifras y el servidor comprueba que cada una acompañe a su concepto (consultas y explicación del resumen). |
-| `asistente.time.ts` | Día operativo (zona `America/Lima`, constante ya existente en `sesiones.time.ts`). |
+| `asistente.time.ts` | Día operativo (zona `America/Lima`, de `common/lima-time.ts`). |
 | `asistente.explainer.ts` | Llamada opcional a OpenAI con cifras ya calculadas. |
 
 ## 4. Relación con el chatbot público
@@ -129,7 +144,7 @@ La ruta se declara `@AuthenticatedRoute()` (cualquier sesión válida); el **ser
 | Preinscripciones | `preinscripciones:leer` | ✔ | ✔ | ✔ |
 | Ediciones listas para abrir | `convocatorias:leer` + `preinscripciones:leer` | ✔ | ✔ | ✔ |
 | Ediciones | `convocatorias:leer` | ✔ | ✔ | ✔ |
-| Sesiones | `sesiones:leer` | ✔ | ✔ | — |
+| ~~Sesiones~~ (retirado) | — | — | — | — |
 | Matrículas por confirmar | `matriculas:leer` | ✔ | ✔ | ✔ |
 | Certificados | `certificados:leer` | ✔ | ✔ | — |
 
@@ -267,7 +282,7 @@ Cada herramienta hereda los permisos de lectura de la sección del resumen v1 (`
 | `cotizaciones` | «¿Hay cotizaciones sin atender?» | ✔ | ✔ | — |
 | `preinscripciones` | «¿Qué preinscripciones necesitan revisión?» | ✔ | ✔ | ✔ |
 | `ediciones` | «¿Cuántas ediciones están abiertas?» | ✔ | ✔ | ✔ |
-| `sesiones` (`periodo`: `hoy` o `semana`) | «¿Qué sesiones están programadas esta semana?» | ✔ | ✔ | — |
+| ~~`sesiones`~~ (retirada; ver la actualización al inicio) | — | — | — | — |
 | `matriculas` | «¿Cuántas matrículas faltan por confirmar?» | ✔ | ✔ | ✔ |
 | `certificados` | «¿Cuántos estudiantes están pendientes de certificación?» | ✔ | ✔ | — |
 

@@ -1,7 +1,9 @@
-// Fecha y hora de las sesiones académicas. La clase se anuncia en hora de pared de America/Lima (UTC-5 todo el año, sin horario de
-// verano), así que `fecha`, `hora_inicio` y `hora_fin` se guardan como esa hora local (DATE y TIME de MySQL), no como instantes UTC.
+// Fecha y hora de pared de America/Lima (UTC-5 todo el año, sin horario de verano), compartidas por los módulos que trabajan con el
+// calendario de la empresa: los horarios recurrentes de las ediciones (backend/src/horarios/) y las ventanas «hoy» de HORUS Assistant.
+// Procede de backend/src/sesiones/sesiones.time.ts, retirado junto con el módulo de Sesiones (octubre de 2026).
+//
 // Nada de aquí lee la zona horaria del sistema operativo ni la de MySQL: la conversión usa Intl con la zona declarada. Funciones puras,
-// probadas sin base de datos (test/sesiones.test.ts), también con otra TZ del proceso.
+// probadas sin base de datos (test/lima-time.test.ts), también con otra TZ del proceso.
 
 export const ZONA_HORARIA = 'America/Lima';
 
@@ -9,23 +11,8 @@ const wallClock = new Intl.DateTimeFormat('en-CA', {
   timeZone: ZONA_HORARIA, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
 });
 
-const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+// Hora de reloj HH:MM de 24 horas, con dos dígitos (00:00 … 23:59). Con este formato, comparar las cadenas equivale a comparar las horas.
 export const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
-// Mismos límites que sesiones_fecha_chk en MySQL.
-const MIN_YEAR = 2000;
-const MAX_YEAR = 2100;
-
-// Fecha de calendario real (no acepta 2026-02-30) dentro de los límites de la tabla.
-export function isCalendarDate(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  const match = DATE_PATTERN.exec(value);
-  if (!match) return false;
-  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  if (year < MIN_YEAR || year > MAX_YEAR) return false;
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-}
-
 export const isClockTime = (value: unknown): value is string => typeof value === 'string' && TIME_PATTERN.test(value);
 
 // DATE de MySQL ⇄ cadena AAAA-MM-DD. Prisma entrega y recibe medianoche UTC del día de calendario: sin conversión de zona.
@@ -64,9 +51,3 @@ export function limaToUtc(fecha: string, hora: string): Date {
   const first = local - offsetMinutes(new Date(local)) * 60000;
   return new Date(local - offsetMinutes(new Date(first)) * 60000);
 }
-
-// ¿Ya llegó la hora de inicio de la sesión? (no se marca como realizada una clase que aún no empezó)
-export const hasStarted = (fecha: string, horaInicio: string, now: Date) => limaToUtc(fecha, horaInicio).getTime() <= now.getTime();
-
-// Etiqueta de una programación para el historial (cabe en estado_anterior / estado_nuevo, VARCHAR(30)): «2026-11-05 14:00-16:00».
-export const slotLabel = (fecha: string, inicio: string, fin: string) => `${fecha} ${inicio}-${fin}`;
