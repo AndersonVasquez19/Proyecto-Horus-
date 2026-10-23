@@ -12,9 +12,9 @@ test('fuente institucional local: listas, filtros, detalle, paginación e imáge
   globalThis.fetch = () => { throw new Error('La fuente estática no debe usar red') }
   try {
     const gallery = read('galeria?page=1&limit=100')
-    assert.equal(gallery.pagination.total, 61)
-    assert.equal(gallery.items.length, 61)
-    assert.ok(gallery.categorias.includes('capacitaciones'), 'categorías para los filtros de galería')
+    assert.equal(gallery.pagination.total, 11)
+    assert.equal(gallery.items.length, 11)
+    assert.deepEqual(gallery.categorias, ['capacitaciones', 'certificaciones', 'primeros-auxilios'])
     for (const photo of gallery.items) assert.ok(fs.existsSync(new URL('../public' + photo.imagen_url, import.meta.url)), photo.imagen_url)
     const first = read('servicios?categoria=cableado&page=1&limit=2')
     assert.equal(first.items.length, 2)

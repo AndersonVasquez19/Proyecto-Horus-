@@ -12,11 +12,12 @@ export function GalleryGrid({ items, busy, onOpen }: { items: GaleriaPublica[]; 
       <button type="button" className="gl-card" aria-haspopup="dialog" aria-label={'Ampliar ' + item.titulo + ', ' + categoryLabel(item.categoria)} onClick={() => onOpen(index)}>
         <span className="gl-card-media">
           <GalleryImage src={item.imagen_url} />
+          <span className="gl-card-cat">{categoryLabel(item.categoria)}</span>
           <i className="fas fa-expand gl-card-zoom" aria-hidden="true" />
         </span>
         <span className="gl-card-body">
-          <span className="gl-card-cat">{categoryLabel(item.categoria)}</span>
           <span className="gl-card-title">{item.titulo}</span>
+          {item.descripcion && <span className="gl-card-description">{item.descripcion}</span>}
         </span>
       </button>
     </li>)}

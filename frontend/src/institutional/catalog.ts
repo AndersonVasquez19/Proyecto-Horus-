@@ -421,492 +421,92 @@ export const institutionalCatalog: InstitutionalCatalog = {
   ],
   "galeria": [
     {
-      "id": 1,
-      "titulo": "Capacitaciones — imagen 1",
-      "descripcion": null,
+      "id": 62,
+      "titulo": "Participantes de nuestras capacitaciones",
+      "descripcion": "Fotografía grupal junto al banner de Horus Group.",
       "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-1.jpg",
+      "imagen_url": "/galeria/formacion-horus/capacitacion-grupal.png",
       "orden": 1
     },
     {
-      "id": 2,
-      "titulo": "Capacitaciones — imagen 2",
-      "descripcion": null,
+      "id": 63,
+      "titulo": "Formación práctica en salud",
+      "descripcion": "Participantes con indumentaria de protección durante una jornada de capacitación.",
       "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-2.jpg",
+      "imagen_url": "/galeria/formacion-horus/participantes-capacitacion.png",
       "orden": 2
     },
     {
-      "id": 3,
-      "titulo": "Capacitaciones — imagen 3",
-      "descripcion": null,
-      "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-3.jpg",
+      "id": 64,
+      "titulo": "Práctica de primeros auxilios",
+      "descripcion": "Trabajo en equipo durante una práctica con camilla de emergencia.",
+      "categoria": "primeros-auxilios",
+      "imagen_url": "/galeria/formacion-horus/practica-primeros-auxilios.png",
       "orden": 3
     },
     {
-      "id": 4,
-      "titulo": "Capacitaciones — imagen 4",
-      "descripcion": null,
-      "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-4.jpg",
+      "id": 65,
+      "titulo": "Jornada de primeros auxilios",
+      "descripcion": "Fotografía grupal de los participantes al finalizar la práctica.",
+      "categoria": "primeros-auxilios",
+      "imagen_url": "/galeria/formacion-horus/grupo-primeros-auxilios.png",
       "orden": 4
     },
     {
-      "id": 5,
-      "titulo": "Capacitaciones — imagen 5",
-      "descripcion": null,
+      "id": 66,
+      "titulo": "Taller práctico en salud",
+      "descripcion": "Aprendizaje con materiales e instrumental durante una sesión práctica.",
       "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-5.jpg",
+      "imagen_url": "/galeria/formacion-horus/taller-practico-salud.png",
       "orden": 5
     },
     {
-      "id": 6,
-      "titulo": "Capacitaciones — imagen 6",
-      "descripcion": null,
+      "id": 67,
+      "titulo": "Aprendizaje y práctica en equipo",
+      "descripcion": "Participantes reunidos en una mesa de trabajo durante el taller.",
       "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-6.jpg",
+      "imagen_url": "/galeria/formacion-horus/participantes-taller-salud.png",
       "orden": 6
     },
     {
-      "id": 7,
-      "titulo": "Capacitaciones — imagen 7",
-      "descripcion": null,
-      "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-7.jpg",
+      "id": 68,
+      "titulo": "Entrega de certificados",
+      "descripcion": "Participantes de Horus Group reunidos con sus certificados.",
+      "categoria": "certificaciones",
+      "imagen_url": "/galeria/formacion-horus/entrega-certificados.png",
       "orden": 7
     },
     {
-      "id": 8,
-      "titulo": "Capacitaciones — imagen 8",
-      "descripcion": null,
-      "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-8.jpg",
+      "id": 69,
+      "titulo": "Certificación en La Libertad",
+      "descripcion": "Fotografía grupal en el Consejo Regional II La Libertad del Colegio de Enfermeros del Perú.",
+      "categoria": "certificaciones",
+      "imagen_url": "/galeria/formacion-horus/certificacion-la-libertad.jpg",
       "orden": 8
     },
     {
-      "id": 9,
-      "titulo": "Capacitaciones — imagen 9",
-      "descripcion": null,
-      "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-9.jpg",
+      "id": 70,
+      "titulo": "Ceremonia de certificación Horus Group",
+      "descripcion": "Un momento de la ceremonia junto a los asistentes.",
+      "categoria": "certificaciones",
+      "imagen_url": "/galeria/formacion-horus/ceremonia-certificacion.jpg",
       "orden": 9
     },
     {
-      "id": 10,
-      "titulo": "Capacitaciones — imagen 10",
-      "descripcion": null,
+      "id": 71,
+      "titulo": "Práctica grupal en salud",
+      "descripcion": "Participantes desarrollando una actividad práctica en equipo.",
       "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-10.jpg",
+      "imagen_url": "/galeria/formacion-horus/practica-grupal-salud.jpg",
       "orden": 10
     },
     {
-      "id": 11,
-      "titulo": "Capacitaciones — imagen 11",
-      "descripcion": null,
+      "id": 72,
+      "titulo": "Formación en acción",
+      "descripcion": "Acompañamiento y aprendizaje compartido durante una jornada de formación en salud.",
       "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-11.jpg",
+      "imagen_url": "/galeria/formacion-horus/taller-formacion-salud.jpg",
       "orden": 11
-    },
-    {
-      "id": 12,
-      "titulo": "Capacitaciones — imagen 12",
-      "descripcion": null,
-      "categoria": "capacitaciones",
-      "imagen_url": "/galeria/capacitaciones/imagen-12.jpg",
-      "orden": 12
-    },
-    {
-      "id": 13,
-      "titulo": "Servicio Técnico — imagen 1",
-      "descripcion": null,
-      "categoria": "servicio-tecnico",
-      "imagen_url": "/galeria/nuestro-servicio-tecnico/imagen-1.jpg",
-      "orden": 13
-    },
-    {
-      "id": 14,
-      "titulo": "Servicio Técnico — imagen 2",
-      "descripcion": null,
-      "categoria": "servicio-tecnico",
-      "imagen_url": "/galeria/nuestro-servicio-tecnico/imagen-2.jpg",
-      "orden": 14
-    },
-    {
-      "id": 15,
-      "titulo": "Servicio Técnico — imagen 3",
-      "descripcion": null,
-      "categoria": "servicio-tecnico",
-      "imagen_url": "/galeria/nuestro-servicio-tecnico/imagen-3.jpg",
-      "orden": 15
-    },
-    {
-      "id": 16,
-      "titulo": "Servicio Técnico — imagen 4",
-      "descripcion": null,
-      "categoria": "servicio-tecnico",
-      "imagen_url": "/galeria/nuestro-servicio-tecnico/imagen-4.jpg",
-      "orden": 16
-    },
-    {
-      "id": 17,
-      "titulo": "Servicio Técnico — imagen 5",
-      "descripcion": null,
-      "categoria": "servicio-tecnico",
-      "imagen_url": "/galeria/nuestro-servicio-tecnico/imagen-5.jpg",
-      "orden": 17
-    },
-    {
-      "id": 18,
-      "titulo": "Servicio Técnico — imagen 6",
-      "descripcion": null,
-      "categoria": "servicio-tecnico",
-      "imagen_url": "/galeria/nuestro-servicio-tecnico/imagen-6.jpg",
-      "orden": 18
-    },
-    {
-      "id": 19,
-      "titulo": "Servicio Técnico — imagen 7",
-      "descripcion": null,
-      "categoria": "servicio-tecnico",
-      "imagen_url": "/galeria/nuestro-servicio-tecnico/imagen-7.jpg",
-      "orden": 19
-    },
-    {
-      "id": 20,
-      "titulo": "Servicio Técnico — imagen 8",
-      "descripcion": null,
-      "categoria": "servicio-tecnico",
-      "imagen_url": "/galeria/nuestro-servicio-tecnico/imagen-8.jpg",
-      "orden": 20
-    },
-    {
-      "id": 21,
-      "titulo": "Servicio Técnico — imagen 9",
-      "descripcion": null,
-      "categoria": "servicio-tecnico",
-      "imagen_url": "/galeria/nuestro-servicio-tecnico/imagen-9.jpg",
-      "orden": 21
-    },
-    {
-      "id": 22,
-      "titulo": "Servicio Técnico — imagen 10",
-      "descripcion": null,
-      "categoria": "servicio-tecnico",
-      "imagen_url": "/galeria/nuestro-servicio-tecnico/imagen-10.jpg",
-      "orden": 22
-    },
-    {
-      "id": 23,
-      "titulo": "Colegio Enfermeros — imagen 1",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-1.jpg",
-      "orden": 23
-    },
-    {
-      "id": 24,
-      "titulo": "Colegio Enfermeros — imagen 2",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-2.jpg",
-      "orden": 24
-    },
-    {
-      "id": 25,
-      "titulo": "Colegio Enfermeros — imagen 3",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-3.jpg",
-      "orden": 25
-    },
-    {
-      "id": 26,
-      "titulo": "Colegio Enfermeros — imagen 4",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-4.jpg",
-      "orden": 26
-    },
-    {
-      "id": 27,
-      "titulo": "Colegio Enfermeros — imagen 5",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-5.jpg",
-      "orden": 27
-    },
-    {
-      "id": 28,
-      "titulo": "Colegio Enfermeros — imagen 6",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-6.jpg",
-      "orden": 28
-    },
-    {
-      "id": 29,
-      "titulo": "Colegio Enfermeros — imagen 7",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-7.jpg",
-      "orden": 29
-    },
-    {
-      "id": 30,
-      "titulo": "Colegio Enfermeros — imagen 8",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-8.jpg",
-      "orden": 30
-    },
-    {
-      "id": 31,
-      "titulo": "Colegio Enfermeros — imagen 9",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-9.jpg",
-      "orden": 31
-    },
-    {
-      "id": 32,
-      "titulo": "Colegio Enfermeros — imagen 10",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-10.jpg",
-      "orden": 32
-    },
-    {
-      "id": 33,
-      "titulo": "Colegio Enfermeros — imagen 11",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-11.jpg",
-      "orden": 33
-    },
-    {
-      "id": 34,
-      "titulo": "Colegio Enfermeros — imagen 12",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-12.jpg",
-      "orden": 34
-    },
-    {
-      "id": 35,
-      "titulo": "Colegio Enfermeros — imagen 13",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-13.jpg",
-      "orden": 35
-    },
-    {
-      "id": 36,
-      "titulo": "Colegio Enfermeros — imagen 14",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-14.jpg",
-      "orden": 36
-    },
-    {
-      "id": 37,
-      "titulo": "Colegio Enfermeros — imagen 15",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-15.jpg",
-      "orden": 37
-    },
-    {
-      "id": 38,
-      "titulo": "Colegio Enfermeros — imagen 16",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-16.jpg",
-      "orden": 38
-    },
-    {
-      "id": 39,
-      "titulo": "Colegio Enfermeros — imagen 17",
-      "descripcion": null,
-      "categoria": "colegio-enfermeros",
-      "imagen_url": "/galeria/colegio-de-enfermeros/imagen-17.jpg",
-      "orden": 39
-    },
-    {
-      "id": 40,
-      "titulo": "Colegio Abogados — imagen 1",
-      "descripcion": null,
-      "categoria": "colegio-abogados",
-      "imagen_url": "/galeria/colegio-de-abogados/imagen-1.jpg",
-      "orden": 40
-    },
-    {
-      "id": 41,
-      "titulo": "Colegio Abogados — imagen 2",
-      "descripcion": null,
-      "categoria": "colegio-abogados",
-      "imagen_url": "/galeria/colegio-de-abogados/imagen-2.jpg",
-      "orden": 41
-    },
-    {
-      "id": 42,
-      "titulo": "Colegio Abogados — imagen 3",
-      "descripcion": null,
-      "categoria": "colegio-abogados",
-      "imagen_url": "/galeria/colegio-de-abogados/imagen-3.jpg",
-      "orden": 42
-    },
-    {
-      "id": 43,
-      "titulo": "Colegio Abogados — imagen 4",
-      "descripcion": null,
-      "categoria": "colegio-abogados",
-      "imagen_url": "/galeria/colegio-de-abogados/imagen-4.jpg",
-      "orden": 43
-    },
-    {
-      "id": 44,
-      "titulo": "Colegio Abogados — imagen 7",
-      "descripcion": null,
-      "categoria": "colegio-abogados",
-      "imagen_url": "/galeria/colegio-de-abogados/imagen-7.jpg",
-      "orden": 44
-    },
-    {
-      "id": 45,
-      "titulo": "Colegio Abogados — imagen 9",
-      "descripcion": null,
-      "categoria": "colegio-abogados",
-      "imagen_url": "/galeria/colegio-de-abogados/imagen-9.jpg",
-      "orden": 45
-    },
-    {
-      "id": 46,
-      "titulo": "Colegio Abogados — imagen 10",
-      "descripcion": null,
-      "categoria": "colegio-abogados",
-      "imagen_url": "/galeria/colegio-de-abogados/imagen-10.jpg",
-      "orden": 46
-    },
-    {
-      "id": 47,
-      "titulo": "ISAM — imagen 1",
-      "descripcion": null,
-      "categoria": "isam",
-      "imagen_url": "/galeria/ISAM/imagen-1.jpg",
-      "orden": 47
-    },
-    {
-      "id": 48,
-      "titulo": "ISAM — imagen 2",
-      "descripcion": null,
-      "categoria": "isam",
-      "imagen_url": "/galeria/ISAM/imagen-2.jpg",
-      "orden": 48
-    },
-    {
-      "id": 49,
-      "titulo": "ISAM — imagen 3",
-      "descripcion": null,
-      "categoria": "isam",
-      "imagen_url": "/galeria/ISAM/imagen-3.jpg",
-      "orden": 49
-    },
-    {
-      "id": 50,
-      "titulo": "ISAM — imagen 4",
-      "descripcion": null,
-      "categoria": "isam",
-      "imagen_url": "/galeria/ISAM/imagen-4.jpg",
-      "orden": 50
-    },
-    {
-      "id": 51,
-      "titulo": "ISAM — imagen 5",
-      "descripcion": null,
-      "categoria": "isam",
-      "imagen_url": "/galeria/ISAM/imagen-5.jpg",
-      "orden": 51
-    },
-    {
-      "id": 52,
-      "titulo": "ISAM — imagen 6",
-      "descripcion": null,
-      "categoria": "isam",
-      "imagen_url": "/galeria/ISAM/imagen-6.jpg",
-      "orden": 52
-    },
-    {
-      "id": 53,
-      "titulo": "ISAM — imagen 7",
-      "descripcion": null,
-      "categoria": "isam",
-      "imagen_url": "/galeria/ISAM/imagen-7.jpg",
-      "orden": 53
-    },
-    {
-      "id": 54,
-      "titulo": "ISAM — imagen 8",
-      "descripcion": null,
-      "categoria": "isam",
-      "imagen_url": "/galeria/ISAM/imagen-8.jpg",
-      "orden": 54
-    },
-    {
-      "id": 55,
-      "titulo": "Primeros Auxilios — imagen 1",
-      "descripcion": null,
-      "categoria": "primeros-auxilios",
-      "imagen_url": "/galeria/practicas-de-primeros-auxilios/imagen-1.jpg",
-      "orden": 55
-    },
-    {
-      "id": 56,
-      "titulo": "Primeros Auxilios — imagen 2",
-      "descripcion": null,
-      "categoria": "primeros-auxilios",
-      "imagen_url": "/galeria/practicas-de-primeros-auxilios/imagen-2.jpg",
-      "orden": 56
-    },
-    {
-      "id": 57,
-      "titulo": "Primeros Auxilios — imagen 3",
-      "descripcion": null,
-      "categoria": "primeros-auxilios",
-      "imagen_url": "/galeria/practicas-de-primeros-auxilios/imagen-3.jpg",
-      "orden": 57
-    },
-    {
-      "id": 58,
-      "titulo": "Primeros Auxilios — imagen 4",
-      "descripcion": null,
-      "categoria": "primeros-auxilios",
-      "imagen_url": "/galeria/practicas-de-primeros-auxilios/imagen-4.jpg",
-      "orden": 58
-    },
-    {
-      "id": 59,
-      "titulo": "Primeros Auxilios — imagen 5",
-      "descripcion": null,
-      "categoria": "primeros-auxilios",
-      "imagen_url": "/galeria/practicas-de-primeros-auxilios/imagen-5.jpg",
-      "orden": 59
-    },
-    {
-      "id": 60,
-      "titulo": "Primeros Auxilios — imagen 6",
-      "descripcion": null,
-      "categoria": "primeros-auxilios",
-      "imagen_url": "/galeria/practicas-de-primeros-auxilios/imagen-6.jpg",
-      "orden": 60
-    },
-    {
-      "id": 61,
-      "titulo": "Primeros Auxilios — imagen 7",
-      "descripcion": null,
-      "categoria": "primeros-auxilios",
-      "imagen_url": "/galeria/practicas-de-primeros-auxilios/imagen-7.jpg",
-      "orden": 61
     }
   ],
   "preguntasFrecuentes": [],
