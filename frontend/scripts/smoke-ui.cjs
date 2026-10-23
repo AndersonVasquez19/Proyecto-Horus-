@@ -149,11 +149,9 @@ async function main(){
  await evaluate('localStorage.setItem("horus-admin-token","isolated-ui-test-token")');
 
  const capture=async(name,selector)=>{if(!process.env.SMOKE_SCREENSHOTS)return;await evaluate('document.querySelector('+JSON.stringify(selector)+')?.scrollIntoView({block:"start"})');await sleep(300);const result=await send('Page.captureScreenshot',{format:'png'});fs.mkdirSync(process.env.SMOKE_SCREENSHOTS,{recursive:true});fs.writeFileSync(path.join(process.env.SMOKE_SCREENSHOTS,name+'.png'),Buffer.from(result.data,'base64'));};
- await navigate('/tecnologias/cableado-estructurado');await wait('document.querySelectorAll("[role=tab]").length===6');
- await evaluate('document.querySelector("[role=tab]").focus()');await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39,nativeVirtualKeyCode:39});
- await wait('document.querySelector("[role=tab][aria-selected=true]").textContent.includes("Cat 5e")');
- assert.equal(await evaluate('document.activeElement.getAttribute("aria-selected")'),"true");
- await wait('document.querySelector(".cable-panel-media img")?.naturalWidth>0');await capture('cableado-desktop','#categorias');
+ await navigate('/tecnologias/cableado-estructurado');await wait('document.querySelectorAll("#categorias article").length===6');
+ assert.equal(await evaluate('!!document.querySelector("#soluciones,.cable-panel,[role=tablist]")'),false,'Cableado conserva las seis categorías sin la sección de soluciones retirada.');
+ await wait('document.querySelector("#categorias article img")?.naturalWidth>0');await capture('cableado-desktop','#categorias');
  await navigate('/tecnologias/camaras-seguridad');await wait('document.querySelectorAll(".cam-card").length===7');assert.equal(await evaluate('document.querySelectorAll(".cam-card-media").length'),7);await capture('camaras-desktop','#soluciones');
  await navigate('/tecnologias/soporte-mantenimiento');await wait('document.querySelectorAll(".sop-card").length===3');
  await wait('Array.from(document.querySelectorAll(".sop-card-media img")).slice(0,2).every(i=>i.complete&&i.naturalWidth>0)');
@@ -169,7 +167,7 @@ async function main(){
  }
  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
  await evaluate('localStorage.setItem("horus-admin-token","isolated-ui-test-token")');
- await navigate('/tecnologias/cableado-estructurado');await wait('document.querySelectorAll("[role=tab]").length===6');
+ await navigate('/tecnologias/cableado-estructurado');await wait('document.querySelectorAll("#categorias article").length===6');
  // A second real tab saves the panel form. The open public tab receives the browser storage event.
  const adminTarget=await fetch('http://127.0.0.1:'+port+'/json/new?about:blank',{method:'PUT'}).then(r=>r.json());
  const adminSocket=new WebSocket(adminTarget.webSocketDebuggerUrl);await new Promise((r,j)=>{adminSocket.onopen=r;adminSocket.onerror=j});
