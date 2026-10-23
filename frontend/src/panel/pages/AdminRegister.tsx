@@ -4,13 +4,28 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAdminAuth } from '../context';
 import { signupAccount } from '../services';
 import { authError } from '../services/authErrors';
-import { signupPayload, validateSignup } from '../services/signupForm';
+import { PASSWORD_MAX_BYTES, PASSWORD_MIN, signupPayload, validateSignup } from '../services/signupForm';
 import type { SignupField, SignupForm } from '../services/signupForm';
 import AdminAuthLayout from '../components/AdminAuthLayout';
 import AdminPasswordField from '../components/AdminPasswordField';
 import PanelIcon from '../components/PanelIcon';
 
 const SIGNUP_TIMEOUT_MS = 20_000;
+
+// Indicaciones visuales de la contraseña: reflejan exactamente las reglas de signupForm (8 caracteres como mínimo, 72 bytes UTF-8 como máximo
+// y confirmación igual). Son una ayuda; la validación que cuenta es la de validateSignup y la del backend. No se añaden reglas de complejidad.
+function PasswordRules({ items }: { items: { met: boolean; text: string }[] }) {
+  return (
+    <ul className="admin-auth__rules">
+      {items.map(item => (
+        <li key={item.text} data-met={item.met}>
+          <span className="admin-auth__rule-mark" aria-hidden="true">{item.met && <PanelIcon name="check" size={12} />}</span>
+          <span>{item.text}<span className="admin-auth__sr-only">{item.met ? ' (cumplido)' : ' (pendiente)'}</span></span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 // Registro público: cualquier visitante crea una cuenta, que nace SIN rol. Con ella inicia sesión de inmediato y usa su espacio básico
 // (PanelBasicHome); las funciones administrativas llegan solo si la gerencia le asigna un rol (procedimiento auditado del backend). Ocultar opciones aquí
@@ -72,10 +87,12 @@ export default function AdminRegister() {
   };
 
   const describedBy = (field: SignupField) => (invalid === field ? 'register-error' : undefined);
+  const lengthOk = form.password.length >= PASSWORD_MIN && new TextEncoder().encode(form.password).length <= PASSWORD_MAX_BYTES;
+  const matchOk = form.confirmPassword.length > 0 && form.password === form.confirmPassword;
 
   return (
     <AdminAuthLayout registration backToPanel={false} current="register" eyebrow="Comienza aquí" title="Crea tu cuenta"
-      description="Completa tus datos para registrarte en Horus Group.">
+      description="Completa tus datos para registrarte.">
       <p className="admin-auth__notice" data-register-authorization>
         Podrás iniciar sesión en cuanto crees tu cuenta y usar tu espacio personal. Las funciones de administración requieren permisos
         adicionales que asigna la gerencia.
@@ -96,10 +113,12 @@ export default function AdminRegister() {
               aria-invalid={invalid === 'email' ? true : undefined} aria-describedby={describedBy('email')} /></div>
           </div>
           <AdminPasswordField id="password" label="Contraseña" value={form.password} onChange={handleChange}
-            autoComplete="new-password" minLength={8} maxLength={72} hint="Usa entre 8 y 72 caracteres."
+            autoComplete="new-password" minLength={8} maxLength={72}
+            hint={<PasswordRules items={[{ met: lengthOk, text: 'Entre 8 y 72 caracteres (las tildes y la ñ cuentan doble)' }]} />}
             invalid={invalid === 'password'} describedBy={describedBy('password')} />
           <AdminPasswordField id="confirmPassword" label="Confirmar contraseña" value={form.confirmPassword}
             onChange={handleChange} autoComplete="new-password" minLength={8} maxLength={72}
+            hint={<PasswordRules items={[{ met: matchOk, text: 'Coincide con la contraseña' }]} />}
             invalid={invalid === 'confirmPassword'} describedBy={describedBy('confirmPassword')} />
           <div className="admin-auth__sr-only" aria-hidden="true">
             <label htmlFor="website">Sitio web (no completar)</label>

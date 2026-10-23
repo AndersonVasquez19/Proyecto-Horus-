@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react';
+import { useState, type ChangeEvent, type ReactNode } from 'react';
 import PanelIcon from './PanelIcon';
 
 interface AdminPasswordFieldProps {
@@ -7,7 +7,7 @@ interface AdminPasswordFieldProps {
   value: string;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   autoComplete: 'current-password' | 'new-password';
-  hint?: string;
+  hint?: ReactNode;
   minLength?: number;
   maxLength?: number;
   invalid?: boolean;
@@ -31,7 +31,7 @@ export default function AdminPasswordField({ id, label, value, onChange, autoCom
           <PanelIcon name={visible ? 'eye-off' : 'eye'} size={19} />
         </button>
       </div>
-      {hint && <small id={`${id}-hint`} className="admin-auth__hint">{hint}</small>}
+      {hint && <div id={`${id}-hint`} className="admin-auth__hint">{hint}</div>}
     </div>
   );
 }
