@@ -42,12 +42,13 @@ export default function AdviceSections() {
             <span className="tech-icon edu-card-icon" aria-hidden="true"><i className={'fas ' + contentIcon(item.icono)} /></span>
           </div>
           <div className="edu-card-body">
+            <span className="advice-card-label">Área de especialidad <span aria-hidden="true">{String((page - 1) * 12 + index + 1).padStart(2, '0')}</span></span>
             <h3>{name}</h3>
             <p className="tech-desc edu-card-desc">{item.descripcion}</p>
             <ServiceFeatures value={item.alcance} label={'Alcance de ' + name} />
             <div className="tech-actions">
-              <Link className="home-button tech-btn" to={consultPath(item)} aria-label={'Solicitar asesoramiento: ' + name}>
-                Solicitar asesoramiento <i className="fas fa-arrow-right" aria-hidden="true" />
+              <Link className="home-button tech-btn" to={consultPath(item)} aria-label={'Consultar esta área: ' + name}>
+                Consultar esta área <i className="fas fa-arrow-right" aria-hidden="true" />
               </Link>
             </div>
           </div>
