@@ -88,8 +88,8 @@ export default function AdminLogin() {
   };
 
   return (
-    <AdminAuthLayout eyebrow="Tu espacio" title="Inicia sesión" current="login"
-      description="Ingresa con tu correo y tu contraseña.">
+    <AdminAuthLayout eyebrow="Tu espacio de trabajo" title="Bienvenido de nuevo" current="login"
+      description="Ingresa a tu cuenta para continuar con la gestión de Horus Group.">
       {expired && <p className="admin-auth__notice" role="status">Tu sesión terminó. Inicia sesión de nuevo para continuar; los cambios que no estaban guardados no se conservaron.</p>}
       {registered && !expired && <p className="admin-auth__notice" role="status" data-register-done>Tu cuenta se creó correctamente. Ya puedes iniciar sesión; el acceso al panel requiere la autorización de la gerencia.</p>}
       <form className="admin-auth__form" onSubmit={handleSubmit} aria-busy={loading}>
@@ -113,6 +113,7 @@ export default function AdminLogin() {
       </form>
       <p className="admin-auth__forgot"><Link to="/admin/forgot-password">Olvidé mi contraseña</Link></p>
       <p className="admin-auth__switch">¿No tienes una cuenta? <Link to="/admin/register">Crear cuenta</Link></p>
+      <div className="admin-auth__note admin-auth__note--access"><PanelIcon name="shield" size={16} /><span>Tu espacio para gestionar Horus Group.</span></div>
     </AdminAuthLayout>
   );
 }
