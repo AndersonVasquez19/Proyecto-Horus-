@@ -1,4 +1,4 @@
-// Preinscripciones académicas (20261020-preinscripciones) contra un MySQL 8.4 REAL y DESECHABLE: migración desde una base previa con
+// Preinscripciones académicas (20261020-preinscripciones) contra MySQL 8.4 u 8.0.46 REAL y DESECHABLE: migración desde una base previa con
 // datos, recuperación ante fallos parciales, restricciones de la base, HTTP real con AccessGuard, ambos canales, consentimiento,
 // duplicados, límite de frecuencia compartido entre DOS instancias de la API, mínimo de 10 validadas, apertura confirmada, recepción
 // posterior a la apertura, capacidad, conversión a matrícula (estudiante nuevo y existente, matrícula anulada, concurrencia y reversión
@@ -51,7 +51,8 @@ test('Preinscripciones: migración, restricciones, HTTP, canales, mínimo de 10,
   try {
     const [{ uuid, uptime, version }] = await q("SELECT @@server_uuid AS uuid, VERSION() AS version, (SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME='Uptime') AS uptime");
     assert.equal(String(uuid).toLowerCase(), expectedUuid, 'el servidor conectado no es el servidor desechable identificado');
-    assert.match(version, /^8\.4\./); assert.ok(Number(uptime) < 3600, 'servidor recién creado');
+    assert.match(version, process.env.HORUS_IT_MYSQL_IMAGE === 'mysql:8.0.46' ? /^8\.0\.46/ : /^8\.4\./, 'versión del servidor desechable esperado');
+    assert.ok(Number(uptime) < 3600, 'servidor recién creado');
     assert.deepEqual(await q('SELECT TABLE_SCHEMA AS s FROM information_schema.TABLES WHERE TABLE_SCHEMA NOT IN (?) GROUP BY TABLE_SCHEMA', [SYSTEM]), [], 'solo se permite un servidor vacío');
 
     const env = name => ({ PATH: process.env.PATH ?? '', ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}), DB_HOST: credentials.host, DB_PORT: String(credentials.port), DB_NAME: name, DB_USER: credentials.user, DB_PASS: credentials.password, DB_SSL: 'false' });
@@ -308,6 +309,44 @@ test('Preinscripciones: migración, restricciones, HTTP, canales, mínimo de 10,
     const student = async (n, extra = {}) => { const r = await request('/admin/estudiantes', tokens.g, 'POST', { nombres: 'Estudiante' + n, apellidos: 'Previo', doc_numero: String(70000000 + n), ...extra }); assert.equal(r.status, 201, r.text); return r.body.item; };
     const counts = async () => (await rows('SELECT (SELECT COUNT(*) FROM estudiantes) AS e, (SELECT COUNT(*) FROM matriculas) AS m, (SELECT COUNT(*) FROM academico_historial) AS h, (SELECT COUNT(*) FROM preinscripciones_historial) AS ph, (SELECT COUNT(*) FROM preinscripciones WHERE estado=\'matriculada\') AS pm'))[0];
     const convert = (id, body, token = tokens.s) => act(id, 'conversion', body, token, 'POST');
+
+    await t.test('H-04: más de 50 llenas no ocultan disponibles; cursor con fechas nulas/iguales, límite y contrato público reales', async () => {
+      const fixtures = [];
+      try {
+        // Las dos ediciones anteriores tienen recepción cerrada. Las primeras 60 candidatas de esta prueba están llenas.
+        // Matrículas anuladas en las siguientes no consumen cupo; el orden NULL/fecha/id se contrasta con valores esperados.
+        for (let i = 0; i < 123; i++) {
+          const ed = await legacy('H04 ficticia ' + i, { capacidad: 1 });
+          fixtures.push(ed);
+          const date = i < 63 ? null : i < 90 ? '2026-01-02' : '2026-01-03';
+          await db.execute('UPDATE convocatorias SET fecha_inicio=?, fecha_fin=NULL WHERE id=?', [date, ed.id]);
+          await db.execute('INSERT INTO matriculas (estudiante_id,convocatoria_id,estado) VALUES (1,?,?)', [ed.id, i < 60 ? 'activa' : 'anulada']);
+        }
+        const expected = fixtures.slice(60, 110).map((ed, offset) => ({
+          codigo: ed.codigo_publico, nombre: 'H04 ficticia ' + (offset + 60), apertura_confirmada: true,
+          fecha_inicio: offset < 3 ? null : offset < 30 ? '2026-01-02' : '2026-01-03', fecha_fin: null,
+          curso: { titulo: 'Excel Básico', tipo: 'curso', modalidad: 'presencial', duracion: '20 horas' },
+        }));
+        for (const fn of [request, requestB]) {
+          const response = await fn('/preinscripciones/convocatorias');
+          assert.equal(response.status, 200);
+          assert.deepEqual(response.body, { ok: true, items: expected }, '50 disponibles en orden, sin ids, capacidad ni conteos internos');
+        }
+        // Dejar una sola disponible después de las 60 llenas: nunca debe aparecer una lista falsamente vacía.
+        await db.query('UPDATE convocatorias SET preinscripcion_estado=\'cerrada\' WHERE id IN (?)', [fixtures.slice(60, 122).map(ed => ed.id)]);
+        const last = await request('/preinscripciones/convocatorias');
+        assert.equal(last.status, 200);
+        assert.deepEqual(last.body.items.map(ed => ed.codigo), [fixtures[122].codigo_publico]);
+        await db.query('UPDATE convocatorias SET preinscripcion_estado=\'cerrada\' WHERE id=?', [fixtures[122].id]);
+        assert.deepEqual((await request('/preinscripciones/convocatorias')).body, { ok: true, items: [] });
+      } finally {
+        if (fixtures.length) {
+          const ids = fixtures.map(ed => ed.id);
+          await db.query('DELETE FROM matriculas WHERE convocatoria_id IN (?)', [ids]);
+          await db.query('DELETE FROM convocatorias WHERE id IN (?)', [ids]);
+        }
+      }
+    });
 
     await t.test('permisos: sin JWT 401, cuenta básica 403, gerente/coordinación/secretaría pasan; recepción y apertura solo gerente y coordinación', async () => {
       const routes = [['GET', P], ['GET', P + '/resumen'], ['GET', P + '/999999'], ['GET', P + '/999999/historial'], ['PATCH', P + '/999999', { revision: 1, nombres: 'X' }], ['PUT', P + '/999999/validacion', { revision: 1 }],

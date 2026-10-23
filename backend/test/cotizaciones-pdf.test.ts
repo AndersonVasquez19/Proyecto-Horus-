@@ -198,7 +198,7 @@ test('Autorización: el PDF exige cotizaciones:leer (como el detalle), figura en
 test('Autorización: no existe restricción por registro en cotizaciones — el PDF no devuelve más que el detalle a quien tiene cotizaciones:leer', () => {
   // El detalle (`GET :id`) devuelve el registro completo a cualquier lector; el PDF usa el mismo permiso y un subconjunto estricto de columnas.
   const source = fs.readFileSync(path.join(__dirname, '../src/cotizaciones/cotizaciones.service.ts'), 'utf8');
-  const pdfMethod = /async pdf\([\s\S]*?\n  }\n/.exec(source)![0];
+  const pdfMethod = /async pdf\([\s\S]*?\r?\n  }\r?\n/.exec(source)![0];
   assert.ok(!/\b(create|update|updateMany|upsert|delete|deleteMany|\$transaction|\$executeRaw)\b/.test(pdfMethod));
   assert.ok(!/historial|revision|email|telefono|idempotencia|contacto_id/.test(pdfMethod.replace(/\/\/.*$/gm, '')));
 });

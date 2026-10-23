@@ -37,14 +37,24 @@ export class PreinscripcionesPublicService {
   // devuelve ids secuenciales, cupos, cantidad de preinscritos ni datos personales.
   editions() {
     return this.execute(async () => {
-      const rows = await this.prisma.convocatoria.findMany({
+      const batch = (cursor?: number) => this.prisma.convocatoria.findMany({
         where: { preinscripcion_estado: 'abierta', archivado_at: null, estado: { in: ['planificada', 'abierta'] }, codigo_publico: { not: null }, capacidad: { not: null }, curso: { estado: 'publicado' } },
-        select: { codigo_publico: true, nombre: true, estado: true, fecha_inicio: true, fecha_fin: true, capacidad: true,
+        select: { id: true, codigo_publico: true, nombre: true, estado: true, fecha_inicio: true, fecha_fin: true, capacidad: true,
           curso: { select: { titulo: true, tipo: true, modalidad: true, duracion: true } }, _count: { select: { matriculas: { where: { estado: 'activa' } } } } },
         orderBy: [{ fecha_inicio: 'asc' }, { id: 'asc' }], take: MAX_PUBLIC_EDITIONS,
+        ...(cursor === undefined ? {} : { cursor: { id: cursor }, skip: 1 }),
       });
-      // Una edición ya abierta cuyos cupos están ocupados deja de ofrecerse.
-      const items = rows.filter(row => row.estado !== 'abierta' || row._count.matriculas < (row.capacidad as number)).map(row => ({
+      const available: Awaited<ReturnType<typeof batch>> = [];
+      let cursor: number | undefined;
+      // El límite se aplica a las disponibles. Cada lectura y la memoria están acotadas a 50;
+      // el cursor conserva el orden fecha/id y evita offsets crecientes y consultas por edición.
+      while (available.length < MAX_PUBLIC_EDITIONS) {
+        const rows = await batch(cursor);
+        available.push(...rows.filter(row => row.estado !== 'abierta' || row._count.matriculas < (row.capacidad as number)).slice(0, MAX_PUBLIC_EDITIONS - available.length));
+        if (rows.length < MAX_PUBLIC_EDITIONS) break;
+        cursor = rows[rows.length - 1].id;
+      }
+      const items = available.map(row => ({
         codigo: row.codigo_publico, nombre: row.nombre, apertura_confirmada: row.estado === 'abierta',
         fecha_inicio: calendar(row.fecha_inicio), fecha_fin: calendar(row.fecha_fin),
         curso: { titulo: row.curso.titulo, tipo: row.curso.tipo, modalidad: row.curso.modalidad, duracion: row.curso.duracion },
