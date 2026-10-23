@@ -33,8 +33,36 @@ const output = path.resolve(__dirname, '..', 'dist');
       k.ck(await p.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), width + ' px: sin desborde en ' + route);
       k.ck(!(await p.evaluate('!!document.querySelector("main [role=alert]")')), width + ' px: sin error de contenido en ' + route);
       if (route === '/galeria') {
-        await p.wait('[...document.querySelectorAll(".gl-card img")].some(img => img.naturalWidth > 0)', 'imágenes locales');
-        k.ck(await p.evaluate('document.querySelectorAll(".gl-card").length === 24'), 'galería local paginada');
+        const galleryOutput = path.resolve(__dirname, '..', '.artifacts', 'galeria');
+        fs.mkdirSync(galleryOutput, { recursive: true });
+        const captureGallery = async name => {
+          const screenshot = await p.send('Page.captureScreenshot', { format: 'png' });
+          fs.writeFileSync(path.join(galleryOutput, name + '-' + width + '.png'), Buffer.from(screenshot.data, 'base64'));
+        };
+        await p.wait('[...document.querySelectorAll(".gl-band-panel img")].every(img => img.naturalWidth > 0)', 'mosaico de la portada');
+        await captureGallery('portada');
+        k.ck(await p.evaluate('document.querySelectorAll(".gl-card").length === 11 && document.querySelector(".gl-count").textContent === "11 fotos"'), 'las 11 fotografías nuevas en la galería');
+        k.ck(await p.evaluate('document.querySelector(".gl-chips").scrollWidth <= document.querySelector(".gl-chips").clientWidth + 1'), 'categorías completas sin desplazamiento horizontal');
+        for (let index = 0; index < 11; index++) {
+          await p.evaluate('document.querySelectorAll(".gl-card")[' + index + '].scrollIntoView({block:"center",behavior:"instant"})');
+          await p.wait('document.querySelectorAll(".gl-card img")[' + index + ']?.naturalWidth > 0', 'fotografía nueva ' + (index + 1));
+        }
+        k.ck(await p.evaluate('[...document.querySelectorAll(".gl-card img")].every(img => img.getAttribute("src").startsWith("/galeria/formacion-horus/"))'), 'solo las fotografías nuevas, con archivos locales');
+        await p.click('.gl-chip', 'Primeros Auxilios');
+        await p.wait('document.querySelectorAll(".gl-card").length === 2', 'filtro de primeros auxilios');
+        k.ck((await p.text('.gl-count')) === '2 fotos', 'contador del filtro');
+        await p.click('.gl-chip', 'Todos');
+        await p.wait('document.querySelectorAll(".gl-card").length === 11', 'volver a todas las fotografías');
+        await p.evaluate('document.querySelector(".gl-card").focus(); document.querySelector(".gl-card").click()');
+        await p.wait('document.querySelector(".gl-lightbox[open] .gl-lb-img")?.naturalWidth > 0', 'foto completa en el visor');
+        k.ck((await p.text('.gl-lb-count')) === 'Imagen 1 de 11', 'visor con las fotografías nuevas');
+        await captureGallery('visor');
+        await p.click('[aria-label="Imagen siguiente"]');
+        await p.wait('document.querySelector(".gl-lb-count").textContent === "Imagen 2 de 11"', 'navegación del visor');
+        await p.click('[aria-label="Cerrar visor"]');
+        k.ck(await p.evaluate('document.activeElement.classList.contains("gl-card")'), 'foco restaurado al cerrar el visor');
+        await p.evaluate('document.querySelector("#galeria").scrollIntoView({block:"start",behavior:"instant"})');
+        await captureGallery('galeria');
       }
       if (route === '/educacion/capacitaciones') {
         await p.wait('[...document.querySelectorAll(".edu-card img")].some(img => img.naturalWidth > 0)', 'imágenes versionadas de capacitaciones');
