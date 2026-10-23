@@ -79,8 +79,11 @@ Cualquier otro campo (`nombre`, `telefono`, `search`, `page`, `limit`, `vista`�
 | 401 | Sin sesión, token vencido o inválido | `reportExpiredSession`; no reintentar. |
 | 403 | Sesión sin `mensajes:crear` | `reportAccessDenied`. |
 | 429 | Más de **30 comprobaciones por cuenta en 15 minutos** | Cuerpo `{ ok: false, codigo: 'limite_de_uso', mensaje, reintentar_en_segundos }`. Mostrar «Has comprobado demasiadas veces; espera unos minutos». **No** declarar que no hay duplicados. |
-| 503 | El almacén compartido del límite no responde (falla cerrada: no se lee ningún dato) | Mensaje genérico de reintento. **No** declarar que no hay duplicados. |
+| 503 | Falla **específica del almacén compartido del límite** (`rate_limit_buckets` inaccesible): falla cerrada, no se lee ningún dato | Cuerpo `{ ok: false, codigo: 'limite_no_disponible', mensaje }`. Mensaje genérico de reintento. **No** declarar que no hay duplicados. |
+| 500 | Fallo de base de datos **anterior** al limitador (p. ej. MySQL completamente caído: el guard de permisos no puede leer `admin_users`) | Igual que el 503: mensaje genérico, **no** declarar que no hay duplicados. |
 | 5xx / red / timeout | | Igual: el resultado de la comprobación es desconocido, no «sin coincidencias». |
+
+No todos los fallos de MySQL producen 503: solo los que ocurren **en** el limitador. Una caída completa de la base aborta antes, en el guard de permisos, y sale como **500**. Para el frontend el tratamiento es idéntico (ambos son «no se pudo comprobar»), y en ningún caso se devuelve un 200 sin haber consultado. Comprobado contra MySQL 8.0.46 real el 22/10/2026.
 
 **Límite por cuenta.** 30 por ventana fija de 15 minutos y por cuenta (en el cambio de ventana una cuenta puede concentrar hasta el doble). Usa la tabla existente `rate_limit_buckets` en MySQL, con la misma operación atómica que `PublicRateLimitGuard` y el asistente: es compartido entre instancias y **no requiere migración**. Solo gastan cuota las solicitudes que llegan al servicio con sesión, permiso y cuerpo válidos (los 400, 401 y 403 no la gastan). Un 429 o 503 no gasta cuota ajena.
 
