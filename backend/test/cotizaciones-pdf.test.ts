@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { inflateSync } from 'node:zlib';
+import { deflateSync, inflateSync } from 'node:zlib';
 import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { PrismaService } from '../src/database/prisma.service';
@@ -21,8 +21,11 @@ import { can } from '../src/permissions/policy';
 function pdfContent(buffer: Buffer): { raw: string; text: string; pages: number } {
   const latin = buffer.toString('latin1');
   let raw = latin;
-  for (const match of latin.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
-    try { raw += '\n' + inflateSync(Buffer.from(match[1], 'latin1')).toString('latin1'); } catch { raw += '\n' + match[1]; }
+  // pdfkit declara la longitud directa de sus flujos Flate. No recortar por saltos: el último byte
+  // comprimido puede ser CR y confundirse con el delimitador LF que viene antes de endstream.
+  for (const match of latin.matchAll(/\/Length\s+(\d+)\s+\/Filter \/FlateDecode\s*>>\r?\nstream\r?\n/g)) {
+    const start = match.index + match[0].length;
+    raw += '\n' + inflateSync(buffer.subarray(start, start + Number(match[1]))).toString('latin1');
   }
   const chunks = [...raw.matchAll(/\[((?:\s*<[0-9a-fA-F]*>\s*-?[\d.]*)+)\]\s*TJ|<([0-9a-fA-F]+)>\s*Tj/g)];
   const text = chunks.map(m => [...(m[1] ?? m[2]).matchAll(/<([0-9a-fA-F]*)>/g)].map(h => Buffer.from(h[1], 'hex').toString('latin1')).join('')).join('\n');
@@ -30,6 +33,20 @@ function pdfContent(buffer: Buffer): { raw: string; text: string; pages: number 
 }
 
 const EMAIL = 'compras@andina.example', PHONE = '999 111 222';
+
+test('PDF: el lector de prueba conserva el último byte CR de un flujo comprimido', () => {
+  // Adler-32 acaba en 0x0d para este texto. El salto LF que lo sigue pertenece al PDF, no al flujo.
+  const compressed = deflateSync(Buffer.from('[<41>] TJ\n%xxx ', 'latin1'));
+  assert.equal(compressed.at(-1), 13, 'la fixture debe terminar en CR');
+  for (const eol of ['\n', '\r\n']) {
+    const buffer = Buffer.concat([
+      Buffer.from('1 0 obj\n<< /Length ' + compressed.length + ' /Filter /FlateDecode >>\nstream' + eol, 'latin1'),
+      compressed, Buffer.from(eol + 'endstream\nendobj\n', 'latin1'),
+    ]);
+    assert.equal(pdfContent(buffer).text, 'A');
+  }
+});
+
 const row = (extra: Record<string, unknown> = {}) => ({
   id: 17, numero: 'COT-2026-000017', estado: 'enviada', revision: 9, cliente: 'Constructora Andina Muñoz SAC', email: EMAIL, telefono: PHONE, documento: '20123456789',
   direccion: 'Av. Principal 123, Lima', emisor: 'Horus Group SRL', datos_emisor: 'RUC 20000000000 · Av. Ejemplo 100', moneda: 'PEN', validez: new Date('2099-11-30T00:00:00Z'),
