@@ -24,7 +24,7 @@ const output = path.resolve(__dirname, '..', 'dist');
     const p = await k.open(width);
     await p.send('Page.addScriptToEvaluateOnNewDocument', { source: 'for (const key of ["localStorage","sessionStorage"]) Object.defineProperty(window,key,{get(){throw new DOMException("Storage blocked","SecurityError")}});' });
     const routes = [['/', '[data-agreement-toggle]', 'Economistas'], ['/quienes-somos', 'h1', 'Quiénes'], ['/educacion/asesoramiento', '.edu-card', 'Asesoramiento'],
-      ['/educacion/capacitaciones', '.edu-card', 'Capacitaciones empresariales'], ['/educacion/cursos', '.edu-empty', 'Cursos'], ['/tecnologias/cableado-estructurado', '.cable-panel-info', 'Cableado'],
+      ['/educacion/capacitaciones', '.edu-card', 'Capacitaciones empresariales'], ['/educacion/cursos', '.edu-empty', 'Cursos'], ['/tecnologias/cableado-estructurado', '#categorias article', 'Cableado'],
       ['/tecnologias/camaras-seguridad', 'main h1', 'Cámaras'], ['/tecnologias/soporte-mantenimiento', 'main h1', 'Soporte'], ['/galeria', '.gl-card', 'Nuestro trabajo'],
       ['/preguntas-frecuentes', 'main h1', 'Preguntas'], ['/contactos', 'main h1', 'Contact']];
     for (const [route, selector, text] of routes) {
