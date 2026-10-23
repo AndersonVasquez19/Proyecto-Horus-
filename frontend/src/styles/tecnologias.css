@@ -94,33 +94,29 @@
 .cable-panel .tech-actions { margin-top: .5rem; }
 .cable-panel .tech-desc { color: #d5e0eb; }
 
-/* ---------- Cámaras: compact alternating feature cards ---------- */
-.cam-list { display: grid; gap: 1.25rem; }
+/* ---------- Cámaras: fotografías de equipos y características desplegables ---------- */
+.cam-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; align-items: start; }
 .cam-card {
-  display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); overflow: hidden;
-  border: 1px solid #c9a96145; border-radius: 1rem; background: linear-gradient(135deg, #0f3050, #0a2540);
-  box-shadow: 0 14px 34px #02101f55;
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  border: 1px solid var(--horus-line); border-radius: 1rem; background: #fff;
+  box-shadow: 0 6px 24px #0a254008;
 }
-.cam-card:nth-child(even) .cam-card-media { order: 2; }
 /* Product shots keep their full silhouette on a white backdrop (most are shot on white) instead of being cropped. */
-.cam-card-media { min-height: 15rem; background: #fff; }
-.cam-card-media > img { inset: .75rem; width: calc(100% - 1.5rem); height: calc(100% - 1.5rem); object-fit: contain; }
+.cam-card-media { flex-shrink: 0; aspect-ratio: 4 / 3; background: #fff; border-bottom: 1px solid #e9edf2; }
+.cam-card-media > img { inset: 1rem; width: calc(100% - 2rem); height: calc(100% - 2rem); object-fit: contain; }
 .cam-card-media .tech-media-fallback { background: linear-gradient(160deg, #123a5e, #0a2540); }
-.cam-card-media::before, .cam-card-media::after { content: ''; position: absolute; z-index: 1; width: 1.4rem; height: 1.4rem; border: 2px solid #c9a961b3; pointer-events: none; }
-.cam-card-media::before { top: .8rem; right: .8rem; border-left: 0; border-bottom: 0; border-top-right-radius: 4px; }
-.cam-card-media::after { bottom: .8rem; right: .8rem; border-left: 0; border-top: 0; border-bottom-right-radius: 4px; }
-.cam-card:nth-child(even) .cam-card-media::before, .cam-card:nth-child(even) .cam-card-media::after { right: auto; left: .8rem; }
-.cam-card:nth-child(even) .cam-card-media::before { border-right: 0; border-left: 2px solid #c9a961b3; border-top-right-radius: 0; border-top-left-radius: 4px; }
-.cam-card:nth-child(even) .cam-card-media::after { border-right: 0; border-left: 2px solid #c9a961b3; border-bottom-right-radius: 0; border-bottom-left-radius: 4px; }
-.cam-card-live { position: absolute; top: .8rem; left: .8rem; z-index: 2; display: inline-flex; align-items: center; gap: .4rem; padding: .28rem .65rem; border: 1px solid #c9a96150; border-radius: 999px; background: #071b2ecc; color: #fff; font-size: .66rem; font-weight: 700; letter-spacing: .14em; }
-.cam-card-live::before { content: ''; width: .45rem; height: .45rem; border-radius: 50%; background: #ef4444; }
-.cam-card:nth-child(even) .cam-card-live { left: auto; right: .8rem; }
-.cam-card-scan { position: absolute; left: 0; right: 0; top: 0; z-index: 1; height: 2px; opacity: 0; pointer-events: none; background: linear-gradient(90deg, transparent, #c9a961aa, transparent); }
-.cam-card-body { display: flex; flex-direction: column; justify-content: center; gap: .8rem; padding: 1.5rem 1.75rem; min-width: 0; }
+.cam-card-photo-label { position: absolute; left: .8rem; top: .8rem; z-index: 1; max-width: calc(100% - 1.6rem); padding: .35rem .65rem; border-radius: .35rem; background: #0a2540ed; color: #fff; font-size: .62rem; font-weight: 600; letter-spacing: .04em; }
+.cam-card-body { display: flex; flex-direction: column; gap: .8rem; padding: 1.4rem; min-width: 0; }
 .cam-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
-.cam-card-num { padding: .2rem .55rem; border: 1px solid #c9a96166; border-radius: .5rem; color: var(--horus-gold); font-size: .78rem; font-weight: 800; letter-spacing: .08em; }
-.cam-card h3 { margin: 0; font-family: var(--horus-font-display); font-size: clamp(1.15rem, 2vw, 1.45rem); font-weight: 800; line-height: 1.25; color: #fff; overflow-wrap: anywhere; text-wrap: balance; }
-.cam-card .tech-desc { color: #d5e0eb; }
+.cam-card-num { color: #8b6b2a; font-size: .7rem; font-weight: 800; letter-spacing: .1em; }
+.cam-card h3 { margin: 0; font-family: var(--horus-font-display); font-size: 1.2rem; font-weight: 800; line-height: 1.3; color: var(--horus-navy); overflow-wrap: anywhere; text-wrap: balance; }
+.cam-card .tech-desc { color: var(--horus-muted); font-size: .88rem; }
+.cam-card-details { padding-block: .75rem; border-block: 1px solid var(--horus-line); }
+.cam-card-details summary { min-height: 28px; color: #244d73; font-size: .8rem; font-weight: 700; cursor: pointer; }
+.cam-card-details summary:focus-visible { outline: 3px solid var(--horus-gold); outline-offset: 4px; }
+.cam-card-details[open] summary { margin-bottom: .75rem; }
+.cam-card .tech-actions { flex-direction: column; align-items: stretch; gap: .35rem; padding-top: .5rem; }
+.cam-card .tech-actions .tech-link { justify-content: center; }
 
 /* ---------- Soporte: consistent card grid ---------- */
 .sop-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 1.5rem; align-items: stretch; }
@@ -145,14 +141,10 @@
   .cable-panel { grid-template-columns: minmax(0, 1fr); min-height: 0; }
   .cable-panel-media { min-height: 0; aspect-ratio: 16 / 10; }
   .cable-panel-media::after { background: linear-gradient(180deg, transparent 70%, #0a254099); }
-  .cam-card { grid-template-columns: minmax(0, 1fr); }
-  .cam-card:nth-child(even) .cam-card-media { order: 0; }
-  .cam-card-media { min-height: 0; aspect-ratio: 16 / 9; }
-  .cam-card:nth-child(even) .cam-card-media::before, .cam-card:nth-child(even) .cam-card-media::after { left: auto; right: .8rem; }
-  .cam-card:nth-child(even) .cam-card-media::before { border-left: 0; border-right: 2px solid #c9a961b3; border-top-left-radius: 0; border-top-right-radius: 4px; }
-  .cam-card:nth-child(even) .cam-card-media::after { border-left: 0; border-right: 2px solid #c9a961b3; border-bottom-left-radius: 0; border-bottom-right-radius: 4px; }
-  .cam-card:nth-child(even) .cam-card-live { right: auto; left: .8rem; }
-  .cam-card-body { padding: 1.25rem 1.25rem 1.4rem; }
+  .cam-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .cam-list { grid-template-columns: minmax(0, 1fr); }
 }
 @media (min-width: 1101px) {
   /* Wide screens fit every category without a hidden, scrolled tab. */
@@ -179,8 +171,6 @@
   .cable-panel-media, .cable-panel-info { transition: opacity .18s ease, transform .18s ease; }
   .cable-panel.is-swapping .cable-panel-media, .cable-panel.is-swapping .cable-panel-info { opacity: 0; transform: translateY(6px); }
   .cam-card-media > img, .sop-card-media > img { transition: transform .7s var(--horus-ease); }
-  .cam-card-live::before { animation: tech-pulse 1.8s ease-in-out infinite; }
-  .cam-card:hover .cam-card-scan, .cam-card:focus-within .cam-card-scan { opacity: 1; animation: tech-scan 2.6s linear infinite; }
   .cam-card, .sop-card { transition: border-color .25s ease, box-shadow .25s ease; }
 }
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
@@ -188,5 +178,3 @@
   .site-layout .cam-card.visible:hover, .site-layout .sop-card.visible:hover { transform: translateY(-4px); border-color: var(--horus-gold); box-shadow: var(--horus-shadow-card); }
 }
 @keyframes tech-shimmer { to { background-position: -200% 0; } }
-@keyframes tech-pulse { 50% { opacity: .35; transform: scale(.8); } }
-@keyframes tech-scan { from { top: 0; } to { top: calc(100% - 2px); } }
