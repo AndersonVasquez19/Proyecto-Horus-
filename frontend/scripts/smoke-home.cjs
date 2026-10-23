@@ -778,7 +778,7 @@ async function main() {
 
     await evaluate('document.querySelector(".hc-launcher").focus();document.querySelector(".hc-launcher").click()')
     await wait('!!document.querySelector("#horus-chat[open]")')
-    await evaluate('(()=>{const input=document.getElementById("hc-question");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"Consulta de prueba");input.dispatchEvent(new Event("input",{bubbles:true}));})()')
+    await evaluate('(()=>{const input=document.getElementById("hc-question");Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set.call(input,"Consulta de prueba");input.dispatchEvent(new Event("input",{bubbles:true}));})()')
     await sleep(100)
     await evaluate('document.getElementById("hc-question").form.requestSubmit()')
     await wait('document.querySelector(".hc-log").textContent.includes("Respuesta de prueba del asistente.")')
