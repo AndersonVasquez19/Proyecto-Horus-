@@ -23,7 +23,7 @@ export default function HomeLocation() {
               </div>
               <div className="home-loc-item fade-up">
                 <div className="home-loc-icon"><i aria-hidden="true" className="fas fa-phone" /></div>
-                <div><strong>Teléfono</strong><span>{setting('telefono_principal', '+51 927 582 305')}</span></div>
+                <div><strong>Teléfono</strong><span>{setting('telefono_principal', '+51 972 021 374')}</span></div>
               </div>
             </div>
             <Link to="/contactos" className="home-button">

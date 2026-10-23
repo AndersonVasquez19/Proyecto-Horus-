@@ -32,7 +32,7 @@ export default function Footer() {
           <div className={'ix-footer-col' + reveal}>
             <h5 className="ix-footer-heading">Contacto</h5>
             <ul className="footer-contact">
-              <li><i className="fas fa-phone" />{setting('telefono_principal', '+51 927 582 305')}</li>
+              <li><i className="fas fa-phone" />{setting('telefono_principal', '+51 972 021 374')}</li>
               <li><i className="fas fa-envelope" />{setting('email_contacto', 'horusgroupcajamarca@gmail.com')}</li>
               <li><i className="fas fa-map-marker-alt" />{setting('direccion', 'Cajamarca - Peru')}</li>
             </ul>
@@ -52,6 +52,14 @@ export default function Footer() {
               {social.instagram && <a href={social.instagram} target="_blank" rel="noreferrer" className="ix-social-item">
                 <span className="ix-social-icon ix-social-ig"><i className="fab fa-instagram" /></span>
                 <span>Instagram</span>
+              </a>}
+              {social.tiktok && <a href={social.tiktok} target="_blank" rel="noreferrer" className="ix-social-item">
+                <span className="ix-social-icon ix-social-tt"><i className="fab fa-tiktok" aria-hidden="true" /></span>
+                <span>TikTok</span>
+              </a>}
+              {social.youtube && <a href={social.youtube} target="_blank" rel="noreferrer" className="ix-social-item">
+                <span className="ix-social-icon ix-social-yt"><i className="fab fa-youtube" aria-hidden="true" /></span>
+                <span>YouTube</span>
               </a>}
             </div>
           </div>

@@ -978,14 +978,16 @@ export const institutionalCatalog: InstitutionalCatalog = {
   ],
   "settings": {
     "empresa_nombre": "Horus Group SRL",
-    "ruc": "20608552174",
+    "ruc": "20611010977",
     "email_contacto": "horusgroupcajamarca@gmail.com",
-    "telefono_principal": "+51 927 582 305",
-    "whatsapp": "51927582305",
+    "telefono_principal": "+51 972 021 374",
+    "whatsapp": "51972021374",
     "direccion": "Cajamarca - Peru",
     "horario_atencion": "Lunes a Viernes: 8:00 AM - 6:00 PM",
-    "facebook_url": "https://facebook.com/horusgroupsrl",
-    "instagram_url": "https://instagram.com/horusgroupsrl",
+    "facebook_url": "https://www.facebook.com/HGCAJAMARCA",
+    "instagram_url": "https://www.instagram.com/horusgroupsrl/",
+    "tiktok_url": "https://www.tiktok.com/@horus.group.srl?lang=es",
+    "youtube_url": "https://www.youtube.com/@HORUSGROUPSRL",
     "linkedin_url": "https://linkedin.com/company/horusgroupsrl"
   }
 }
