@@ -14,7 +14,7 @@ function options() {
     database: process.env.DB_NAME, user: process.env.DB_USER, password: process.env.DB_PASS,
     connectTimeout: 10000,
     ...(process.env.DB_SSL === 'true' ? {
-      ssl: { rejectUnauthorized: true, ...(process.env.DB_SSL_CA ? { ca: process.env.DB_SSL_CA.replace(/\\n/g, '\n') } : {}) },
+      ssl: { rejectUnauthorized: true, verifyIdentity: true, ...(process.env.DB_SSL_CA ? { ca: process.env.DB_SSL_CA.replace(/\\n/g, '\n') } : {}) },
     } : {}),
   };
 }
