@@ -1,6 +1,5 @@
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
-const { connect } = require('./database.cjs');
 const { canonical, definitionsFromMigration } = require('./sql-expression.cjs');
 function expectedColumns(legacySesiones = false) {
   const sql = readFileSync(join(__dirname, '../migrations/00000000-initial.sql'), 'utf8');
@@ -310,6 +309,7 @@ async function check(db) {
   return problems;
 }
 if (require.main === module) (async () => {
+  const { connect } = require('./database.cjs');
   const db = await connect();
   try {
     const problems = await check(db);
