@@ -44,7 +44,7 @@
     "dotenv": "^16.4.7",
     "helmet": "^8.3.0",
     "mysql2": "^3.12.0",
-    "nodemailer": "^6.9.16",
+    "nodemailer": "10.2.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pdfkit": "0.17.2",
@@ -57,7 +57,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.7",
-    "@types/nodemailer": "^6.4.17",
+    "@types/nodemailer": "8.0.2",
     "@types/passport-jwt": "^4.0.1",
     "@types/pdfkit": "0.17.6",
     "prisma": "6.19.3",
@@ -70,9 +70,21 @@
     "node": "22.x"
   },
   "overrides": {
+    "body-parser": "1.20.9",
     "@nestjs/platform-express": {
-      "body-parser": "1.20.8",
+      "multer": "2.5.0",
       "qs": "6.16.0"
-    }
+    },
+    "@nestjs/common": { "file-type": "21.3.4" },
+    "@prisma/adapter-mariadb": { "mariadb": "3.5.4" },
+    "@prisma/config": { "deepmerge-ts": "8.0.2" },
+    "lodash": "4.18.1",
+    "js-yaml@^4.0.0": "4.3.2",
+    "ajv@^8.0.0": "8.20.0",
+    "picomatch@^4.0.0": "4.0.7",
+    "brace-expansion@^1.0.0": "1.1.21",
+    "brace-expansion@^2.0.0": "2.1.7",
+    "@nestjs/cli": { "glob": "10.5.0", "webpack": "5.112.2" },
+    "external-editor": { "tmp": "0.2.7" }
   }
 }
