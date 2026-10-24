@@ -62,7 +62,7 @@ const handler = async (req, res, { route, json, body }) => {
   return json({ ok: true, items: [], messages: [], settings: [], sections: [], pagination: { page: 1, total: 0, pages: 1, limit: 20 }, metrics: {} }) || true;
 };
 
-const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Importación académica CSV', 'Mensajes', 'Cotizaciones', 'Consultas del chatbot', 'Mi cuenta'];
+const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Preinscripciones', 'Matrículas', 'Reportes', 'Importación académica CSV', 'Mensajes', 'Cotizaciones', 'Consultas del chatbot', 'Mi cuenta'];
 
 (async () => {
   const k = await start({ prefix: 'permisos', handler, browserArgs: ['--disable-extensions'] });
@@ -87,7 +87,7 @@ const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Matrículas', 'Impo
   const expected = {
     'tk-gerente': { home: '/admin/dashboard', h1: 'Hola', menu: LEGACY_MENU },
     'tk-coord': { home: '/admin/dashboard', h1: 'Hola', menu: LEGACY_MENU.filter(item => item !== 'Biblioteca de contenido') },
-    'tk-sec': { home: '/admin/messages', h1: 'Centro de consultas', menu: ['Estudiantes', 'Ediciones', 'Matrículas', 'Mensajes', 'Consultas del chatbot', 'Mi cuenta'] },
+    'tk-sec': { home: '/admin/messages', h1: 'Centro de consultas', menu: ['Estudiantes', 'Ediciones', 'Preinscripciones', 'Matrículas', 'Mensajes', 'Consultas del chatbot', 'Mi cuenta'] },
   };
   for (const mode of ['heredado', 'por_roles']) {
     for (const [token, want] of Object.entries(expected)) {

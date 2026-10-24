@@ -9,6 +9,7 @@ import PanelDialog from './PanelDialog';
 import PanelIcon from './PanelIcon';
 import EditionEditor from './EditionEditor';
 import EditionCourseSelect from './EditionCourseSelect';
+import EditionSchedules from './EditionSchedules';
 
 export default function PanelEditions() {
   const { token } = useAdminAuth(); const { can } = usePanelAccess();
@@ -18,7 +19,7 @@ export default function PanelEditions() {
   const { loading, error, setError, setLoading } = useRequestStatus(requestKey);
   const [data, setData] = useState<{ key: string; result: EditionList } | null>(null);
   const [editor, setEditor] = useState<{ original: Edition | null } | null>(null), [detail, setDetail] = useState<Edition | null>(null);
-  const [operation, setOperation] = useState<{ item: Edition; action: EditionAction } | null>(null);
+  const [operation, setOperation] = useState<{ item: Edition; action: EditionAction } | null>(null), [schedules, setSchedules] = useState<Edition | null>(null);
   const [busy, setBusy] = useState(false), [operationError, setOperationError] = useState(''), [blocked, setBlocked] = useState(false);
   const request = useRef<AbortController | null>(null), sequence = useRef(0), locked = useRef(false);
   const listing = data?.key === requestKey ? data.result : null;
@@ -82,12 +83,13 @@ export default function PanelEditions() {
       {error ? <div className="hp-empty"><p className="hp-error" role="alert">{error}</p><button className="hp-btn" onClick={reload}>Reintentar</button></div>
         : loading ? <div className="hp-empty" role="status"><span className="hp-loading" /><p>Cargando ediciones…</p></div>
           : !listing?.items.length ? <div className="hp-empty"><PanelIcon name="calendar" size={32} /><h3>No hay ediciones en esta consulta</h3><p>Cambia los filtros o crea una edición para un curso existente.</p>{query.page > 1 && <button className="hp-btn" onClick={() => setQuery(q => ({ ...q, page: 1 }))}>Ir a la primera página</button>}</div>
-            : <div className="hp-table-wrap"><table className="hp-table hs-table"><caption className="hp-sr">Ediciones académicas y acciones disponibles</caption><thead><tr><th scope="col">Edición y curso</th><th scope="col">Fechas</th><th scope="col">Capacidad</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr></thead><tbody>{listing.items.map(item => <tr key={item.id}><th scope="row"><div className="hp-record"><div><strong>{item.nombre}</strong><small>{item.curso.titulo}</small></div></div></th><td><span className="hs-contact">{editionDate(item.fecha_inicio)}<small>hasta {editionDate(item.fecha_fin)}</small></span></td><td>{item.capacidad ?? 'Sin definir'}</td><td><span className={'hp-badge ' + (item.estado === 'abierta' && !item.archivado_at ? 'hp-state-activo' : '')}>{EDITION_STATES[item.estado]}</span>{item.archivado_at && <small> · Archivada</small>}</td><td><div className="hp-row-actions"><button className="hp-btn" disabled={busy} onClick={() => void open(item.id, 'detail')}>Detalle</button>
+            : <div className="hp-table-wrap"><table className="hp-table hs-table"><caption className="hp-sr">Ediciones académicas y acciones disponibles</caption><thead><tr><th scope="col">Edición y curso</th><th scope="col">Fechas</th><th scope="col">Capacidad</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr></thead><tbody>{listing.items.map(item => <tr key={item.id}><th scope="row"><div className="hp-record"><div><strong>{item.nombre}</strong><small>{item.curso.titulo}</small></div></div></th><td><span className="hs-contact">{editionDate(item.fecha_inicio)}<small>hasta {editionDate(item.fecha_fin)}</small></span></td><td>{item.capacidad ?? 'Sin definir'}</td><td><span className={'hp-badge ' + (item.estado === 'abierta' && !item.archivado_at ? 'hp-state-activo' : '')}>{EDITION_STATES[item.estado]}</span>{item.archivado_at && <small> · Archivada</small>}</td><td><div className="hp-row-actions"><button className="hp-btn" disabled={busy} onClick={() => void open(item.id, 'detail')}>Detalle</button><button className="hp-btn" disabled={busy} aria-label={'Horarios de ' + item.nombre} onClick={() => setSchedules(item)}>Horarios</button>
               {can('convocatorias:editar') && !item.archivado_at && ['planificada', 'abierta'].includes(item.estado) && <button className="hp-btn" disabled={busy} onClick={() => void open(item.id, 'edit')}>Editar</button>}
               {editionActions(item, can).map(action => <button key={action} className="hp-btn" disabled={busy} onClick={() => void open(item.id, action)}>{ACTION_LABEL[action]}</button>)}</div></td></tr>)}</tbody></table></div>}
       {listing && <div className="hp-pagination"><span role="status">{listing.pagination.total} ediciones · Página {query.page} de {Math.max(1, listing.pagination.pages)}</span><div><button className="hp-btn" disabled={loading || query.page <= 1} onClick={() => setQuery(q => ({ ...q, page: q.page - 1 }))}>Anterior</button><button className="hp-btn" disabled={loading || query.page >= listing.pagination.pages} onClick={() => setQuery(q => ({ ...q, page: q.page + 1 }))}>Siguiente</button></div></div>}
     </section>
     {editor && <EditionEditor original={editor.original} onClose={() => { setEditor(null); reload(); }} onSaved={() => { notify.success(editor.original ? 'Edición actualizada.' : 'Edición creada.'); setEditor(null); reload(); }} />}
+    {schedules && <EditionSchedules editionId={schedules.id} editionName={schedules.nombre} onClose={() => setSchedules(null)} onSaved={() => { setSchedules(null); reload(); }} />}
     {detail && <PanelDialog title="Detalle de la edición" onClose={() => setDetail(null)} footer={<button className="hp-btn" onClick={() => setDetail(null)}>Cerrar</button>}><dl className="hp-details">{[
       ['Edición', detail.nombre], ['Curso asociado', detail.curso.titulo], ['Fecha de inicio', editionDate(detail.fecha_inicio)], ['Fecha de fin', editionDate(detail.fecha_fin)], ['Capacidad máxima', String(detail.capacidad ?? 'Sin definir')], ['Estado', EDITION_STATES[detail.estado] + (detail.archivado_at ? ' · Archivada' : '')], ['Revisión', String(detail.revision)], ['Última actualización', new Date(detail.updatedAt).toLocaleString('es-PE')],
     ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></PanelDialog>}

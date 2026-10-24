@@ -1,0 +1,24 @@
+/* Preinscripción pública. Reutiliza el formulario del Libro de Reclamaciones (libro.css: campos, secciones, avisos); aquí solo la elección de
+   edición, la trampa para robots y los estados de éxito y vacío. Mantiene la paleta navy/dorado del sitio sobre fondo claro. */
+.pr-editions { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+.pr-edition { display: flex; align-items: flex-start; gap: .75rem; padding: 1rem; border: 1px solid var(--horus-line); border-radius: 14px; background: #fff; cursor: pointer; box-shadow: 0 1px 2px rgba(10, 37, 64, .05); }
+.pr-edition input { flex-shrink: 0; width: 1.2rem; height: 1.2rem; margin: .2rem 0 0; accent-color: var(--horus-navy); cursor: pointer; }
+.pr-edition.is-selected { border-color: var(--horus-navy); background: #f1f5fa; box-shadow: inset 3px 0 0 var(--horus-gold); }
+.pr-edition:focus-within { outline: 3px solid var(--horus-gold); outline-offset: 2px; }
+.pr-edition-body { display: grid; gap: .3rem; min-width: 0; }
+.pr-edition-body strong { color: var(--horus-navy); font-family: var(--horus-font-display); font-weight: 800; overflow-wrap: anywhere; }
+.pr-edition-name { color: var(--horus-blue); font-size: .92rem; font-weight: 600; overflow-wrap: anywhere; }
+.pr-edition-facts { display: flex; flex-wrap: wrap; gap: .25rem .75rem; color: var(--horus-muted); font-size: .86rem; }
+.pr-edition-status { justify-self: start; margin-top: .2rem; padding: .15rem .6rem; border-radius: 99px; background: #eef2f7; color: var(--horus-muted); font-size: .78rem; font-weight: 700; }
+.pr-edition-status.is-open { background: #e3f4ea; color: #1f6b3d; }
+.pr-trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.pr-success, .pr-empty { display: grid; justify-items: center; gap: .75rem; padding: clamp(1.75rem, 5vw, 3rem) 1.25rem; text-align: center; border: 1px solid var(--horus-line); border-radius: 18px; background: #fff; box-shadow: 0 8px 28px rgba(10, 37, 64, .07); }
+.pr-success:focus { outline: none; }
+.pr-success > i, .pr-empty > i { font-size: 2.6rem; color: var(--horus-gold); }
+.pr-success > i { color: #2a8a52; }
+.pr-success h2, .pr-empty h2 { margin: 0; color: var(--horus-navy); font-family: var(--horus-font-display); }
+.pr-success p, .pr-empty p { margin: 0; max-width: 34rem; color: var(--horus-muted); }
+.pr-success-note { font-size: .92rem; }
+.pr-success-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .75rem 1.25rem; margin-top: .5rem; }
+.pr-link { color: var(--horus-blue); font-weight: 700; }
+@media (prefers-reduced-motion: no-preference) { .pr-edition { transition: border-color .2s ease, background .2s ease, box-shadow .2s ease; } }

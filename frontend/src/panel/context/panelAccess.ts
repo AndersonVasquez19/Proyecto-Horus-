@@ -52,6 +52,11 @@ export const RESOURCE_WRITE: Readonly<Record<string, ResourceWrite>> = Object.fr
 export const PANEL_ACTIONS = Object.freeze({
   importarAcademico: 'importaciones:previsualizar',
   crearEdicion: 'convocatorias:crear', editarEdicion: 'convocatorias:editar', cerrarEdicion: 'convocatorias:cerrar', archivarEdicion: 'convocatorias:archivar',
+  editarHorarios: 'convocatorias:editar', // PUT /admin/convocatorias/:id/horarios (el GET exige convocatorias:leer, como la sección)
+  exportarReporte: 'reportes_academicos:exportar', // GET /admin/reportes/:tipo/exportar (reservado al gerente; el catálogo informa `puede_exportar` por reporte)
+  recepcionEdicion: 'convocatorias:editar', // PUT /admin/convocatorias/:id/preinscripcion (habilitar o cerrar la recepción; no abre la edición)
+  editarPreinscripcion: 'preinscripciones:editar', // PATCH y PUT validación, descarte y desistimiento
+  convertirPreinscripcion: 'preinscripciones:convertir', // POST /admin/preinscripciones/:id/conversion
   crearMatricula: 'matriculas:crear', anularMatricula: 'matriculas:anular', reactivarMatricula: 'matriculas:anular',
   crearEstudiante: 'estudiantes:crear', editarEstudiante: 'estudiantes:editar', archivarEstudiante: 'estudiantes:archivar',
   subirImagen: 'archivos:crear', // POST /admin/uploads
@@ -71,6 +76,8 @@ export const PANEL_SECTIONS: readonly PanelSectionRule[] = Object.freeze([
   { key: 'estudiantes', group: 'academico', anyOf: ['estudiantes:leer'], target: '/admin/dashboard?section=estudiantes', note: 'GET /admin/estudiantes' },
   { key: 'ediciones', group: 'academico', anyOf: ['convocatorias:leer'], target: '/admin/dashboard?section=ediciones', note: 'GET /admin/convocatorias' },
   { key: 'matriculas', group: 'academico', anyOf: ['matriculas:leer'], target: '/admin/dashboard?section=matriculas', note: 'GET /admin/matriculas' },
+  { key: 'preinscripciones', group: 'academico', anyOf: ['preinscripciones:leer'], target: '/admin/dashboard?section=preinscripciones', note: 'GET /admin/preinscripciones y /admin/preinscripciones/resumen' },
+  { key: 'reportes', group: 'academico', anyOf: ['reportes_academicos:leer'], target: '/admin/dashboard?section=reportes', note: 'GET /admin/reportes' },
   { key: 'importacion-excel', group: 'academico', anyOf: ['importaciones:previsualizar'], target: '/admin/dashboard?section=importacion-excel', note: 'GET /admin/importaciones/ediciones' },
   { key: 'cursos', group: 'contenido', available: false, anyOf: ['cursos:leer', 'servicios:leer'], target: '/admin/dashboard?section=educacion', note: 'Gestión editorial retirada; los cursos académicos se conservan en MySQL' },
   { key: 'servicios', group: 'contenido', available: false, anyOf: ['servicios:leer'], target: '/admin/dashboard?section=servicios' },
