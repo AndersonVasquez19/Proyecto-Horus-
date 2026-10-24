@@ -162,6 +162,13 @@
 .gl-page-btn:hover { background: #0a254010; }
 .gl-page-btn:disabled { opacity: .45; cursor: default; transform: none; box-shadow: none; background: transparent; }
 
+/* Invitación a Instagram al final de las fotografías. */
+.gl-instagram { margin-top: clamp(2rem, 5vw, 3.5rem); padding-top: 2rem; border-top: 1px solid #e4dfd3; text-align: center; }
+.gl-instagram p { margin: 0 0 1.25rem; color: #52616c; font-size: clamp(1rem, 2vw, 1.15rem); line-height: 1.7; }
+.gl-instagram-link { gap: .65rem; }
+.gl-instagram-link i { font-size: 1.25rem; }
+.gl-instagram-link:focus-visible { outline-color: #102f45; }
+
 /* ---------- Visor ---------- */
 /* Con el visor abierto la página de fondo no se desplaza; el gutter evita el salto por la barra de scroll. */
 html:has(.gl-lightbox[open]) { overflow: hidden; scrollbar-gutter: stable; }
