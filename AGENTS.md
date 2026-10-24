@@ -282,6 +282,11 @@ Los `smoke:*` que compilan antes comprueban además que `dist/` no esté desactu
 
 ## Mantenimiento de esta guía
 
+La copia cifrada local → Aiven tiene herramientas específicas `backend/scripts/aiven-copy.*`
+y un [procedimiento de preparación y ensayo](docs/procedimientos/migracion-aiven-implementacion.md).
+No sustituye `db:restore` ni autoriza bases reales: recibe configuración por stdin, exige TLS/UUID,
+destino vacío y conserva el destino parcial ante error. El ensayo Docker usa únicamente datos ficticios.
+
 Actualiza esta guía cuando cambien comandos, arquitectura, migraciones o contratos importantes. Contrasta las instrucciones con `package.json`, configuración, implementación y pruebas. Los READMEs y planes pueden contener notas históricas: no conviertas sus pendientes en tareas autorizadas ni registres aquí cifras temporales de pruebas, vulnerabilidades o estados de despliegue.
 
 Para ampliar un flujo, consulta su documentación específica: [README.md](README.md), [backend/README.md](backend/README.md), [frontend/README.md](frontend/README.md), [frontend/PANEL-Y-CHATBOT.md](frontend/PANEL-Y-CHATBOT.md) y [backend/CHATBOT.md](backend/CHATBOT.md), [backend/MAIL.md](backend/MAIL.md). Mantén esta guía como instrucciones operativas y evita duplicar inventarios o procedimientos extensos.
