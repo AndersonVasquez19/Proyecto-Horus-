@@ -16,6 +16,7 @@ import SoporteMantenimiento  from './pages/tecnologias/SoporteMantenimiento'
 import Asesoramiento   from './pages/educacion/Asesoramiento'
 import Capacitaciones  from './pages/educacion/Capacitaciones'
 import Cursos          from './pages/educacion/Cursos'
+import Preinscripcion  from './pages/Preinscripcion'
 
 import PoliticasCookies    from './pages/politicas/PoliticasCookies'
 import PoliticasDevolucion from './pages/politicas/PoliticasDevolucion'
@@ -67,6 +68,7 @@ function AppRoutes() {
             <Route path="/educacion/asesoramiento"  element={<Asesoramiento />} />
             <Route path="/educacion/capacitaciones" element={<Capacitaciones />} />
             <Route path="/educacion/cursos"         element={<Cursos />} />
+            <Route path="/preinscripcion"           element={<Preinscripcion />} />
 
             <Route path="/politicas/cookies"           element={<PoliticasCookies />} />
             <Route path="/politicas/devolucion"        element={<PoliticasDevolucion />} />

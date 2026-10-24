@@ -58,7 +58,9 @@ test('cada permiso de la navegación existe en el catálogo y es el que exige el
   for (const permission of Object.values(RESOURCE_READ)) assert.ok(ALL.includes(permission), permission)
   const inventory = backend('route-inventory.ts')
   const requiredBy = route => inventory.match(new RegExp("perm\\('GET', '" + route + "', '([a-z_:]+)'"))?.[1]
-  const loads = { resumen: 'admin/stats', servicios: 'admin/servicios', galeria: 'admin/galeria', faq: 'admin/preguntas-frecuentes', contenido: 'admin/items', convenios: 'admin/convenios', mensajes: 'admin/messages', cotizaciones: 'admin/cotizaciones', chatbot: 'admin/chatbot/sin-respuesta', ajustes: 'admin/settings', cuentas: 'admin/users' }
+  const loads = { resumen: 'admin/stats', servicios: 'admin/servicios', galeria: 'admin/galeria', faq: 'admin/preguntas-frecuentes', contenido: 'admin/items', convenios: 'admin/convenios', mensajes: 'admin/messages', cotizaciones: 'admin/cotizaciones', chatbot: 'admin/chatbot/sin-respuesta', ajustes: 'admin/settings', cuentas: 'admin/users', preinscripciones: 'admin/preinscripciones', reportes: 'admin/reportes' }
+  assert.equal(requiredBy('admin/reportes/:tipo'), 'reportes_academicos:leer', 'la consulta de un reporte usa el mismo permiso que el catálogo')
+  assert.equal(requiredBy('admin/preinscripciones/resumen'), 'preinscripciones:leer', 'el avance por edición usa el mismo permiso de lectura')
   for (const [key, route] of Object.entries(loads)) assert.deepEqual(PANEL_SECTIONS.find(rule => rule.key === key).anyOf, [requiredBy(route)], key)
   assert.equal(requiredBy('admin/stats/actividad'), 'estadisticas:leer', 'el resumen también carga la actividad')
   for (const [resource, route] of Object.entries({ cursos: 'admin/cursos', servicios: 'admin/servicios', faq: 'admin/preguntas-frecuentes', galeria: 'admin/galeria', contenido: 'admin/items' })) assert.equal(RESOURCE_READ[resource], requiredBy(route), resource)
@@ -77,7 +79,7 @@ test('gerente: todas las secciones de trabajo actuales e inicio en Resumen', () 
 test('coordinadora: gestión académica, atención y Resumen, sin gestores editoriales', () => {
   const nav = panelNavigation(session('COORDINADORA_INSTITUCIONAL'))
   assert.equal(nav.home, 'resumen')
-  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'ediciones', 'matriculas', 'importacion-excel', 'mensajes', 'cotizaciones', 'chatbot', 'configuracion'])
+  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'ediciones', 'matriculas', 'preinscripciones', 'reportes', 'importacion-excel', 'mensajes', 'cotizaciones', 'chatbot', 'configuracion'])
   assert.equal(nav.canOpenResource('contenido'), false)
 })
 
@@ -86,7 +88,7 @@ test('secretaria: inicia en la Bandeja, sin Resumen (no consulta estadísticas) 
     const nav = panelNavigation(session('SECRETARIA', modo))
     assert.equal(nav.home, 'mensajes')
     assert.equal(nav.canOpen('resumen'), false, 'GET /admin/stats exige estadisticas:leer')
-    assert.deepEqual(visible(nav), ['estudiantes', 'ediciones', 'matriculas', 'mensajes', 'chatbot', 'configuracion'])
+    assert.deepEqual(visible(nav), ['estudiantes', 'ediciones', 'matriculas', 'preinscripciones', 'mensajes', 'chatbot', 'configuracion'])
     // Educación: puede leer cursos y capacitaciones, pero no Asesoramiento (que es un servicio).
     assert.equal(nav.canOpenResource('cursos'), true)
     assert.equal(nav.canOpenResource('servicios'), false)
@@ -236,6 +238,13 @@ test('las demás operaciones del panel coinciden con sus rutas', () => {
   assert.equal(routePermission('POST', 'admin/convocatorias'), A.crearEdicion)
   assert.equal(routePermission('PUT', 'admin/convocatorias/:id'), A.editarEdicion)
   assert.equal(routePermission('PUT', 'admin/convocatorias/:id/apertura'), A.editarEdicion)
+  assert.equal(routePermission('GET', 'admin/reportes/:tipo/exportar'), A.exportarReporte)
+  assert.equal(routePermission('PUT', 'admin/convocatorias/:id/preinscripcion'), A.recepcionEdicion)
+  for (const route of ['admin/preinscripciones/:id/validacion', 'admin/preinscripciones/:id/descarte', 'admin/preinscripciones/:id/desistimiento']) assert.equal(routePermission('PUT', route), A.editarPreinscripcion, route)
+  assert.equal(routePermission('PATCH', 'admin/preinscripciones/:id'), A.editarPreinscripcion)
+  assert.equal(routePermission('POST', 'admin/preinscripciones/:id/conversion'), A.convertirPreinscripcion)
+  assert.equal(routePermission('PUT', 'admin/convocatorias/:id/horarios'), A.editarHorarios)
+  assert.equal(routePermission('GET', 'admin/convocatorias/:id/horarios'), 'convocatorias:leer')
   assert.equal(routePermission('PUT', 'admin/convocatorias/:id/cierre'), A.cerrarEdicion)
   assert.equal(routePermission('PUT', 'admin/convocatorias/:id/archivo'), A.archivarEdicion)
   // Seguimiento: la ruta es común y el permiso depende de :recurso; la bandeja solo usa «messages».
