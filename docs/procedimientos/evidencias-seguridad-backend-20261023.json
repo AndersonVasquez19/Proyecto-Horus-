@@ -1,0 +1,287 @@
+{
+  "fecha_lima": "2026-10-23",
+  "branch": "anderson",
+  "base": "b55091f76ad8c817d60d5327dba5430485ee3c0b",
+  "npm_initial_all": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 3,
+      "moderate": 11,
+      "high": 15,
+      "critical": 0,
+      "total": 29
+    },
+    "dependencies": {
+      "prod": 235,
+      "dev": 249,
+      "optional": 3,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 483
+    }
+  },
+  "npm_initial_prod": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 6,
+      "high": 11,
+      "critical": 0,
+      "total": 17
+    },
+    "dependencies": {
+      "prod": 235,
+      "dev": 249,
+      "optional": 3,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 483
+    }
+  },
+  "npm_final_all": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 3,
+      "high": 0,
+      "critical": 0,
+      "total": 3
+    },
+    "dependencies": {
+      "prod": 225,
+      "dev": 250,
+      "optional": 3,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 474
+    }
+  },
+  "npm_final_image": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 3,
+      "high": 0,
+      "critical": 0,
+      "total": 3
+    },
+    "dependencies": {
+      "prod": 225,
+      "dev": 250,
+      "optional": 3,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 474
+    }
+  },
+  "unique_initial_advisories": 59,
+  "scout_initial": {
+    "rules": 119,
+    "results": 120,
+    "severity": {
+      "LOW": 41,
+      "MEDIUM": 39,
+      "HIGH": 39
+    }
+  },
+  "scout_final": {
+    "rules": 52,
+    "results": 52,
+    "severity": {
+      "LOW": 38,
+      "MEDIUM": 6,
+      "HIGH": 8
+    }
+  },
+  "continuacion_20261024": {
+    "fecha_lima": "2026-10-24",
+    "node_unitarias_windows": "22.23.3",
+    "tipos_exit_code": 0,
+    "prisma_generate_exit_code": 0,
+    "nest_build_exit_code": 0,
+    "unitarias": {
+      "tests": 807,
+      "pass": 807,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "todo": 0,
+      "exit_code": 0,
+      "duration_ms": 230410.1147,
+      "primera_repeticion_pass": 806,
+      "primera_repeticion_fail": 1,
+      "primera_repeticion_causa": "ETIMEDOUT en compilacion del fixture build-output al limite original de 10 s; no se demostro su causa",
+      "build_output_aislado": "2/2; sin cambiar expectativas o limites"
+    },
+    "integraciones_mysql": {
+      "version": "8.4.11",
+      "archivos": 15,
+      "tests": 205,
+      "pass": 205,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "todo": 0,
+      "servidor_nuevo_por_archivo": true,
+      "uuid_comprobado_por_dos_vias": true,
+      "contenedores_propios_retirados": true,
+      "detalle": {
+        "prisma": 19,
+        "admin_scripts": 12,
+        "admin_access_readiness": 9,
+        "access_guard_http": 28,
+        "academico_schema": 20,
+        "backup_collation": 6,
+        "catalogo_concurrency": 4,
+        "convocatorias": 10,
+        "matriculas": 16,
+        "reportes": 10,
+        "docentes": 7,
+        "horarios": 14,
+        "preinscripciones": 27,
+        "importaciones": 15,
+        "estudiantes": 8
+      },
+      "incidencia_arnes": "Catalogo fallo por DB_NAME=mysql heredado; corregido solo el arnes temporal, repeticion 4/4; log fallido conservado"
+    },
+    "imagen_ensayo": {
+      "exit_code": 0,
+      "cpu": 1,
+      "memory_bytes": 2147483648,
+      "limites_leidos_en_cgroups": true,
+      "uid": 1000,
+      "cap_eff": "0000000000000000",
+      "tls_verificado": true,
+      "ca_hostname_uuid_incorrectos_rechazados": true,
+      "migraciones_activas": 18,
+      "tablas_con_pk": 30,
+      "backup_verify_restore": true,
+      "login_bcrypt_y_sesion": true,
+      "health_concurrentes_ok": 100,
+      "estudiantes_ficticios": 3000,
+      "exportaciones": {
+        "csv": { "bytes": 199579, "duration_ms": 198 },
+        "xlsx": { "bytes": 102854, "duration_ms": 108 },
+        "pdf": { "bytes": 286867, "duration_ms": 1026 }
+      },
+      "memory_peak_cgroup_bytes": 184414208,
+      "memory_observed_mib": 136.9,
+      "stop_exit_code": 0,
+      "oom_killed": false,
+      "contenedores_y_red_propios_retirados": true,
+      "limite": "Ensayo local acotado; no dimensiona carga sostenida ni acredita Aiven o Azure"
+    },
+    "npm_repetido_all_y_imagen": { "high": 0, "critical": 0, "moderate": 3, "audit_exit_code": 1 },
+    "scout_repetido": { "high": 8, "medium": 6, "low": 38, "packages": 371, "exit_code": 0, "sin_supresiones": true },
+    "adjudicacion_debian": "debian-imagen-backend-20261024.md; avisos conservados, sin aceptacion implicita de riesgo",
+    "archivos_locales_respecto_head": 15,
+    "stage_commit_push_publicacion": false,
+    "aiven_real_contactado": false,
+    "credenciales_reales_modificadas": false,
+    "evidencia_directorio": "%TEMP%/horus-security-aiven-20261023/",
+    "sha256": {
+      "unit-tests-complete-repeat-20261024.log": "4ae94721f883e024ae8a2864d810bcc2cb3c96c37cedcddb3655811dd6995eb1",
+      "integrations-fresh-20261024.json": "ddd988e088046b8daa5d2378576374fe47ff188015405557ee95e653638486a9",
+      "scout-final-20261024.sarif": "60459d8d1f8e1ba9a1fc639bc33f902a752ce59ee29e57c5df436c57ceb2ed69",
+      "audit-image-20261024.json": "7038d2c7145a035f2e453114d78cd628414669395b294470b8ba2aaaad5bb73b",
+      "audit-all-20261024.json": "7038d2c7145a035f2e453114d78cd628414669395b294470b8ba2aaaad5bb73b",
+      "image-tls-capacity-20261024.log": "b3258efef4ce2df6a60da50dfec339402effa81504e11b9d82ef13f4fd047a06"
+    }
+  },
+  "cierre_20261024": {
+    "fecha_lima": "2026-10-24",
+    "archivos_revisados": 15,
+    "archivos_codigo_y_config_comparados": 340,
+    "diferencias_con_copia_probada": 0,
+    "sha256_evidencia_previa_coincidente": true,
+    "unitarias_previas_revalidadas": 807,
+    "integraciones_previas_revalidadas": 205,
+    "suites_completas_no_repetidas_en_este_cierre": true,
+    "pruebas_afectadas": {
+      "node": "22.23.3",
+      "plataforma": "linux/amd64",
+      "archivos": 7,
+      "tests": 47,
+      "pass": 47,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "todo": 0,
+      "duration_ms": 329546.475161,
+      "exit_code": 0
+    },
+    "typescript_exit_code": 0,
+    "docker_build_exit_code": 0,
+    "builder_y_apt_actualizado_reutilizados_desde_cache": true,
+    "mitigacion_nueva": "Retirada de SUID/SGID en archivos regulares de /usr/bin y /usr/sbin; sin cambio de versiones",
+    "imagen_ensayo": {
+      "tag": "horus-aca-backend:security-20261024-r4-67ad23fa0935",
+      "oci_index": "sha256:aa5213974af6704ec7addc19f6dfd6b23a7f223c5e1dc0da2eae0f0fb971ff35",
+      "manifest_linux_amd64": "sha256:ad01e0b9880b661c4544d20315f26cd7209081233747c4ea073872845493dc5c",
+      "node": "22.23.4",
+      "bytes_docker_inspect": 800332888,
+      "ensayo_ejecutado_por_id_inmutable": true,
+      "exit_code": 0,
+      "cpu": 1,
+      "memory_bytes": 2147483648,
+      "uid": 1000,
+      "sin_suid_sgid_en_rutas_revisadas": true,
+      "cap_eff": "0000000000000000",
+      "tls_y_negativas_ca_hostname_uuid": true,
+      "migraciones": 18,
+      "tablas_con_pk": 30,
+      "grant_con_underscore_escapado_y_denegacion_otro_esquema": true,
+      "backup_verify_restore": true,
+      "login_bcrypt_sesion": true,
+      "health_concurrentes": 100,
+      "estudiantes_ficticios": 3000,
+      "exportaciones": {
+        "csv": { "bytes": 199579, "duration_ms": 322 },
+        "xlsx": { "bytes": 102905, "duration_ms": 265 },
+        "pdf": { "bytes": 286933, "duration_ms": 1236 }
+      },
+      "memory_observed_mib": 163.7,
+      "memory_peak_cgroup_bytes": 199897088,
+      "stop_exit_code": 0,
+      "oom_killed": false,
+      "recursos_propios_retirados": true,
+      "published": false
+    },
+    "npm": { "moderate": 3, "high": 0, "critical": 0, "exit_code": 1 },
+    "scout": { "high": 8, "medium": 6, "low": 38, "packages": 371, "exit_code": 0, "aviso_limpieza_cache_windows": false, "sin_supresiones": true },
+    "secret_scan": {
+      "layers": 14,
+      "regular_files": 22576,
+      "bytes": 548444748,
+      "coincidencias_publicas_clasificadas_por_hash": 6,
+      "hallazgos_nuevos": 0,
+      "limite": "Deteccion por patrones, rutas y hashes; no prueba ausencia absoluta de secretos arbitrarios"
+    },
+    "aiven_real_contactado": false,
+    "azure_desplegado": false,
+    "stage_commit_push": false,
+    "incidencia_r3": "El cliente del primer build se detuvo pero buildx continuo y sobrescribio r3. Se descarta esa etiqueta y se construye r4 con etiqueta exclusiva y ejecucion por ID inmutable. Logs originales conservados.",
+    "evidencia_directorio": "%TEMP%/horus-security-close-67ad23fa0935/",
+    "sha256": {
+      "affected-tests-r3.log": "8673b9bf29423daae247286e4d8fe4a8bf6dd1639d2fc22588db4e4e425f4ee6",
+      "types-r3.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "final/docker-build.log": "52f31e4addc0a93731783a693aa1e478b83eafa637103c9503c2bba5e6474473",
+      "final/image.log": "d1c1e01a9e2292b4d41e6c8d96e787ab45c652bf51ee214722b3c039a56f1972",
+      "final/scout.sarif": "60459d8d1f8e1ba9a1fc639bc33f902a752ce59ee29e57c5df436c57ceb2ed69",
+      "final/npm.json": "334f9bba28425eecc0ebfc1dda34cc1cfbdf21cf5a8b3c2113914c4651ceca49",
+      "final/secret-scan.json": "774bf951aa7fad60275fc8947feb7dbe31cd16bd0169d04985428e4bd5276ab6"
+    }
+  },
+  "image_r2_historica": {
+    "tag": "horus-aca-backend:security-20261023-r2",
+    "oci_index": "sha256:0710bf09aefdd00b1b3f0c64d37af43077205fde99e56cf98871e3b84cfd8b1b",
+    "platform": "linux/amd64",
+    "published": false
+  },
+  "image": {
+    "tag": "horus-aca-backend:security-20261024-r4-67ad23fa0935",
+    "oci_index": "sha256:aa5213974af6704ec7addc19f6dfd6b23a7f223c5e1dc0da2eae0f0fb971ff35",
+    "platform": "linux/amd64",
+    "published": false
+  }
+}
