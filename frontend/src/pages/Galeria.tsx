@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useInstitutionalResource as usePublicResource } from '../institutional/useInstitutionalResource'
 import useReducedMotion from '../hooks/useReducedMotion'
+import useSocialLinks from '../hooks/useSocialLinks'
 import GalleryBand from '../components/gallery/GalleryBand'
 import GalleryFilters from '../components/gallery/GalleryFilters'
 import { GalleryGrid, GallerySkeleton } from '../components/gallery/GalleryGrid'
@@ -15,6 +16,7 @@ export default function Galeria() {
   const [page, setPage] = useState(1)
   const [lightbox, setLightbox] = useState<number | null>(null)
   const reducedMotion = useReducedMotion()
+  const social = useSocialLinks()
   const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE), ...(category ? { categoria: category } : {}) })
   const { data, loading, error, reload } = usePublicResource<GalleryPage>('galeria?' + params)
   // Se conserva la última página recibida mientras llega la siguiente, para que la altura no colapse al paginar o filtrar.
@@ -76,6 +78,12 @@ export default function Galeria() {
           <span>Página {page} de {pages}</span>
           <button type="button" className="home-button home-button-outline tech-btn gl-page-btn" disabled={loading || page >= pages} onClick={() => goToPage(page + 1)}>Siguiente</button>
         </nav>}
+        {social.instagram && <div className="gl-instagram">
+          <p>Si quieres ver más fotos, visita nuestro Instagram.</p>
+          <a href={social.instagram} className="gl-explore gl-instagram-link" target="_blank" rel="noopener noreferrer">
+            <i className="fab fa-instagram" aria-hidden="true" /> Visitar Instagram
+          </a>
+        </div>}
       </div>
     </section>
     {!loading && !error && view && lightbox !== null && view.items[lightbox] && <GalleryLightbox items={view.items} initial={lightbox} close={() => setLightbox(null)} />}
