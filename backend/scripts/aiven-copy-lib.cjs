@@ -161,4 +161,4 @@ async function apply(db, snapshot) {
   if (differences(snapshot, actual).length) fail('COMPARISON');
   return { tables: actual.tables.length, rows: actual.tables.reduce((n,t) => n+t.rows.length,0) };
 }
-module.exports = { seal, unseal, validate, capture, differences, empty, capacity, apply, hash, fail, comparableDdl };
+module.exports = { seal, unseal, validate, capture, differences, empty, capacity, apply, hash, fail, comparableDdl, quoteIdentifier: id };

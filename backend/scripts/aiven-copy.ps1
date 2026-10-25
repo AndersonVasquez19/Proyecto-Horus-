@@ -1,9 +1,9 @@
 ﻿# Compatible con Windows PowerShell 5.1. El perfil JSON contiene solo datos públicos.
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$true)][ValidateSet('backup','verify','preflight','apply','compare')][string]$Action,
+    [Parameter(Mandatory=$true)][ValidateSet('backup','verify','preflight','apply','compare','inspect')][string]$Action,
     [Parameter(Mandatory=$true)][string]$Profile,
-    [Parameter(Mandatory=$true)][string]$File,
+    [string]$File,
     [string]$Sha256,
     [string]$SecondFile,
     [switch]$NoWriters,
@@ -33,7 +33,14 @@ if ($config.PSObject.Properties.Name -contains 'password' -or $config.PSObject.P
 $request = @{}
 foreach ($property in $config.PSObject.Properties) { $request[$property.Name] = $property.Value }
 $request.action = $Action
-$request.file = [IO.Path]::GetFullPath($File)
+if ($Action -eq 'inspect') {
+    # Solo lectura de la fuente local: sin archivo, sin clave de respaldo y sin respaldo.
+    if ($File -or $SecondFile -or $Sha256 -or $IncludeRateLimits -or $ApproveImport) { throw 'inspect no admite archivos ni opciones de respaldo.' }
+    if ($request.profile -ne 'local-source') { throw 'inspect solo admite el perfil local-source.' }
+} else {
+    if (-not $File) { throw 'Indicar -File.' }
+    $request.file = [IO.Path]::GetFullPath($File)
+}
 $request.sha256 = $Sha256
 $request.noWriters = $NoWriters.IsPresent
 $request.includeRateLimits = $IncludeRateLimits.IsPresent
@@ -45,7 +52,9 @@ if ($Action -eq 'backup') {
     New-PrivateDirectory ([IO.Path]::GetDirectoryName($request.file))
     New-PrivateDirectory ([IO.Path]::GetDirectoryName($SecondFile))
 }
-$request.key = Read-Plain (Read-Host 'Clave de respaldo: 64 caracteres hexadecimales aleatorios, custodiados en el gestor' -AsSecureString)
+if ($Action -ne 'inspect') {
+    $request.key = Read-Plain (Read-Host 'Clave de respaldo: 64 caracteres hexadecimales aleatorios, custodiados en el gestor' -AsSecureString)
+}
 try {
     if ($Action -ne 'verify') {
         # ReadAllText: Get-Content añade propiedades ETS (PSPath, PSProvider…) que ConvertTo-Json serializaría como objeto.
@@ -78,6 +87,8 @@ try {
     $writer.Dispose()
     $process.WaitForExit()
     $output = $outTask.Result
+    # inspect imprime su informe agregado (sin datos personales) también cuando alguna comprobación falla.
+    if ($process.ExitCode -ne 0 -and $Action -eq 'inspect' -and $output.Trim()) { $output.Trim() }
     if ($process.ExitCode -ne 0) { throw 'Operación detenida. Conservar el destino parcial; no habilitar escritores.' }
     $result = $output | ConvertFrom-Json
     if ($Action -eq 'backup') {
