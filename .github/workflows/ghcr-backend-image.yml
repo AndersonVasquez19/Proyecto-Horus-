@@ -1,0 +1,248 @@
+# Imagen del backend para GHCR: construccion, SBOM/procedencia y escaneo (manual).
+# Solo workflow_dispatch: ningun push ni pull_request lo activa.
+# Construye (sin publicar) la imagen del backend desde un commit autorizado, genera SBOM y procedencia (mode=min),
+# la escanea y evalua una politica. La publicacion es un job aparte que exige a la vez: publish=true, frase de confirmacion,
+# politica cumplida, la variable de repositorio GHCR_PUBLISH_ENABLED=true y la aprobacion manual del entorno "ghcr-publish".
+# Sin credenciales de Azure.
+name: GHCR imagen backend (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'SHA completo (40 hex). Debe coincidir con AUTHORIZED_SHA; solo confirma la intencion.'
+        type: string
+        required: true
+      publish:
+        description: 'Publicar en GHCR (privado). Por defecto false: solo construir y escanear.'
+        type: boolean
+        default: false
+      confirm_publish:
+        description: 'Para publicar, escribir exactamente PUBLICAR-PRIVADO'
+        type: string
+        default: ''
+
+# Permiso minimo por defecto. El unico job con escritura de paquetes es "publish".
+permissions:
+  contents: read
+
+concurrency:
+  group: ghcr-backend-image
+  cancel-in-progress: false
+
+env:
+  # Cambiar estos valores exige un cambio revisado en main: el codigo bajo prueba no puede modificar su propia politica.
+  AUTHORIZED_SHA: de772155113d1cef14a70403b6f49909c769900a
+  AUTHORIZED_BRANCH: anderson
+  IMAGE_NAME: ghcr.io/castope/horus-group-api
+  # CVE aceptados POR EL RESPONSABLE solo para una imagen privada de pruebas, separados por comas. Vacio = ninguno.
+  # Los CRITICAL nunca se pueden aceptar aqui.
+  APPROVED_PRIVATE_TEST_CVES: ''
+
+jobs:
+  build:
+    name: Construir, SBOM/procedencia y escaneo (no publica)
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'Castope/Proyecto-Horus-'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read          # sin packages, sin id-token, sin attestations
+    outputs:
+      index_digest: ${{ steps.digest.outputs.index_digest }}
+      tar_sha256: ${{ steps.digest.outputs.tar_sha256 }}
+      policy_ok: ${{ steps.policy.outputs.policy_ok }}
+    steps:
+      - name: Validar entrada (sin interpolar en el script)
+        env:
+          INPUT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -eu
+          printf '%s' "$INPUT_SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "SHA invalido"; exit 1; }
+          [ "$INPUT_SHA" = "$AUTHORIZED_SHA" ] || { echo "El SHA no es el autorizado en este workflow"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.AUTHORIZED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verificar commit, rama y contexto limpio
+        run: |
+          set -eu
+          [ "$(git rev-parse HEAD)" = "$AUTHORIZED_SHA" ]
+          git merge-base --is-ancestor "$AUTHORIZED_SHA" "origin/$AUTHORIZED_BRANCH"
+          [ -z "$(git status --porcelain)" ]
+          if git ls-files backend | grep -Eq '(^|/)\.env$|\.pem$|\.key$|\.pfx$'; then echo "Archivo sensible versionado"; exit 1; fi
+          grep -Eq '^FROM node:22-bookworm-slim@sha256:[0-9a-f]{64}' backend/Dockerfile
+          skopeo --version
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Construir (linux/amd64, sin push, sin build-args ni secretos)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          file: backend/Dockerfile
+          platforms: linux/amd64
+          push: false
+          provenance: mode=min
+          sbom: true
+          no-cache: true
+          tags: ${{ env.IMAGE_NAME }}:${{ env.AUTHORIZED_SHA }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/Castope/Proyecto-Horus-
+            org.opencontainers.image.revision=${{ env.AUTHORIZED_SHA }}
+            org.opencontainers.image.title=horus-group-api
+          outputs: type=oci,dest=${{ runner.temp }}/image.oci.tar
+
+      - name: Digest del indice y comprobacion de atestaciones
+        id: digest
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP"
+          D="$(tar -xOf image.oci.tar index.json | jq -r '.manifests[0].digest')"
+          echo "$D" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          tar -xOf image.oci.tar "blobs/sha256/${D#sha256:}" > index-manifest.json
+          jq -r '.manifests[] | [.platform.os, .platform.architecture, (.annotations["vnd.docker.reference.type"] // "image")] | @tsv' index-manifest.json | tee attestation-summary.txt
+          test "$(jq '[.manifests[] | select(.annotations["vnd.docker.reference.type"]=="attestation-manifest")] | length' index-manifest.json)" -ge 1
+          test "$(jq '[.manifests[] | select(.platform.architecture=="amd64")] | length' index-manifest.json)" -ge 1
+          echo "index_digest=$D" >> "$GITHUB_OUTPUT"
+          echo "tar_sha256=$(sha256sum image.oci.tar | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Escaneo de vulnerabilidades (informe, no falla aqui)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          input: ${{ runner.temp }}/image.oci.tar
+          scanners: vuln
+          severity: CRITICAL,HIGH,MEDIUM
+          format: json
+          output: ${{ runner.temp }}/trivy.json
+          exit-code: '0'
+
+      - name: Evaluar politica
+        id: policy
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP"
+          # Un escaneo vacio o sin sistema operativo detectado NO cuenta como "sin hallazgos".
+          jq -e '.Metadata.OS.Family == "debian" and ((.Results // []) | length) > 0' trivy.json > /dev/null \
+            || { echo "::error::El escaneo no devolvio resultados validos; la politica no se puede evaluar."; exit 1; }
+          jq -r '[.Results[]?.Vulnerabilities[]?] | map({id:.VulnerabilityID,sev:.Severity,pkg:.PkgName,ver:.InstalledVersion,fixed:(.FixedVersion // "none")}) | unique_by(.id+.pkg)' trivy.json > findings.json
+          CRIT="$(jq '[.[]|select(.sev=="CRITICAL")]|length' findings.json)"
+          HIGH="$(jq '[.[]|select(.sev=="HIGH")]|length' findings.json)"
+          MED="$(jq '[.[]|select(.sev=="MEDIUM")]|length' findings.json)"
+          APPROVED="$(jq -cn --arg s "$APPROVED_PRIVATE_TEST_CVES" '$s | gsub("[ \\t]"; "") | split(",") | map(select(length > 0))')"
+          UNAPPROVED="$(jq --argjson ok "$APPROVED" '[.[] | select(.id as $i | any($ok[]; . == $i) | not)] | length' findings.json)"
+          OK=false
+          if [ "$CRIT" -eq 0 ] && [ "$UNAPPROVED" -eq 0 ]; then OK=true; fi
+          {
+            echo "## Politica de escaneo (Trivy; los contadores NO equivalen a Scout)"
+            echo "- CRITICAL: $CRIT | HIGH: $HIGH | MEDIUM: $MED"
+            echo "- Hallazgos sin aprobar explicitamente: $UNAPPROVED"
+            echo "- Politica cumplida para imagen PRIVADA de pruebas: $OK"
+            echo "- Digest del indice OCI construido: ${{ steps.digest.outputs.index_digest }}"
+            echo "- Cumplir esta politica NO aprueba exposicion publica."
+          } | tee policy.md >> "$GITHUB_STEP_SUMMARY"
+          echo "policy_ok=$OK" >> "$GITHUB_OUTPUT"
+
+      - name: Guardar informes (no la imagen)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: informes-${{ env.AUTHORIZED_SHA }}
+          path: |
+            ${{ runner.temp }}/trivy.json
+            ${{ runner.temp }}/findings.json
+            ${{ runner.temp }}/policy.md
+            ${{ runner.temp }}/attestation-summary.txt
+          retention-days: 14
+
+      # La imagen pasa al job de publicacion por cache de Actions (no descargable por terceros), no como artefacto.
+      - name: Guardar imagen para el job de publicacion
+        if: ${{ inputs.publish }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/image.oci.tar
+          key: oci-${{ github.run_id }}-${{ github.run_attempt }}
+
+  publish:
+    name: Publicar privado en GHCR (requiere aprobacion)
+    needs: build
+    # Si falta cualquiera de estas condiciones el job no arranca. GHCR_PUBLISH_ENABLED es una variable de repositorio
+    # que activa el propietario solo en la ventana de publicacion; evita depender unicamente de que el entorno
+    # tenga revisores (un entorno inexistente se crea sin reglas al referenciarlo).
+    if: ${{ inputs.publish && inputs.confirm_publish == 'PUBLICAR-PRIVADO' && needs.build.outputs.policy_ok == 'true' && vars.GHCR_PUBLISH_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: ghcr-publish     # revisores obligatorios configurados por el propietario
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Restaurar imagen construida y escaneada
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/image.oci.tar
+          key: oci-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
+
+      - name: Comprobar que es la misma imagen escaneada
+        env:
+          EXPECTED_TAR: ${{ needs.build.outputs.tar_sha256 }}
+        run: |
+          set -eu
+          [ "$(sha256sum "$RUNNER_TEMP/image.oci.tar" | cut -d' ' -f1)" = "$EXPECTED_TAR" ]
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Etiqueta libre (no sobrescribir)
+        run: |
+          set -eu
+          if docker buildx imagetools inspect "$IMAGE_NAME:$AUTHORIZED_SHA" >/dev/null 2>&1; then echo "La etiqueta ya existe"; exit 1; fi
+
+      - name: Publicar conservando el digest (indice completo con atestaciones)
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          set -eu
+          printf '%s' "$REGISTRY_TOKEN" | skopeo login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          skopeo copy --all --preserve-digests "oci-archive:$RUNNER_TEMP/image.oci.tar" "docker://$IMAGE_NAME:$AUTHORIZED_SHA"
+
+      - name: Verificar digest remoto, SBOM y procedencia
+        env:
+          EXPECTED_DIGEST: ${{ needs.build.outputs.index_digest }}
+        run: |
+          set -eu
+          REMOTE="$(docker buildx imagetools inspect "$IMAGE_NAME:$AUTHORIZED_SHA" --format '{{.Manifest.Digest}}')"
+          [ "$REMOTE" = "$EXPECTED_DIGEST" ] || { echo "Digest remoto distinto del construido"; exit 1; }
+          docker buildx imagetools inspect "$IMAGE_NAME@$REMOTE" --format '{{json .Provenance}}' | jq -e '.' >/dev/null
+          docker buildx imagetools inspect "$IMAGE_NAME@$REMOTE" --format '{{json .SBOM}}' | jq -e '.' >/dev/null
+          echo "REMOTE_DIGEST=$REMOTE" >> "$GITHUB_ENV"
+          {
+            echo "## Publicado (privado esperado)"
+            echo "- Referencia inmutable: \`$IMAGE_NAME@$REMOTE\`"
+            echo "- Etiqueta: \`$AUTHORIZED_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comprobar que NO es anonimo (visibilidad privada)
+        run: |
+          set -eu
+          TOKEN="$(curl -sS 'https://ghcr.io/token?scope=repository:castope/horus-group-api:pull' | jq -r '.token // empty' || true)"
+          if [ -n "$TOKEN" ]; then
+            CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/castope/horus-group-api/manifests/$REMOTE_DIGEST")"
+          else
+            CODE="$(curl -s -o /dev/null -w '%{http_code}' -H 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/castope/horus-group-api/manifests/$REMOTE_DIGEST")"
+          fi
+          echo "Codigo anonimo: $CODE"
+          if [ "$CODE" = "200" ]; then echo "::error::El paquete es legible sin autenticacion. Cambiarlo a Private en los ajustes del paquete y revisar."; exit 1; fi
+
+      - name: Cerrar sesion
+        if: always()
+        run: |
+          docker logout ghcr.io || true
+          skopeo logout ghcr.io || true
