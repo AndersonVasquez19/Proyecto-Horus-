@@ -109,15 +109,104 @@ jobs:
           echo "index_digest=$D" >> "$GITHUB_OUTPUT"
           echo "tar_sha256=$(sha256sum image.oci.tar | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
+      # Trivy no reconoce un archivo OCI (.tar) como entrada. Se extrae una COPIA a un directorio exclusivo del escaneo;
+      # image.oci.tar no se modifica ni se vuelve a escribir (el job publish sigue usando el mismo archivo).
+      - name: Preparar directorio OCI para el escaneo (copia, extraccion segura)
+        id: scanprep
+        env:
+          EXPECTED_INDEX: ${{ steps.digest.outputs.index_digest }}
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP"
+          TAR="$RUNNER_TEMP/image.oci.tar"
+          SCAN="$RUNNER_TEMP/trivy-oci-scan"
+          fail() { echo "::error::$1"; exit 1; }
+          [ ! -e "$SCAN" ] || fail "El directorio de escaneo ya existe"
+
+          # 1) Inspeccionar el TAR ANTES de extraer: solo ficheros regulares y directorios, con las rutas del formato OCI.
+          TYPES="$(tar -tvf "$TAR" | cut -c1 | sort -u)"
+          if printf '%s\n' "$TYPES" | grep -Evq '^[-d]$'; then fail "El archivo OCI contiene enlaces u otros tipos de entrada no permitidos"; fi
+          BAD="$(tar -tf "$TAR" | sed 's#^\./##' | grep -Ev '^(\.?|oci-layout|index\.json|blobs/?|blobs/sha256/?|blobs/sha256/[0-9a-f]{64})$' || true)"
+          [ -z "$BAD" ] || fail "El archivo OCI contiene rutas no permitidas (absolutas, con .. o ajenas al formato OCI)"
+
+          # 2) Extraer solo en el directorio temporal, sin propietarios ni permisos del archivo.
+          mkdir "$SCAN"
+          tar -xf "$TAR" -C "$SCAN" --no-same-owner --no-same-permissions
+          if find "$SCAN" -type l -o \( ! -type f ! -type d \) | grep -q .; then fail "La extraccion produjo enlaces o ficheros especiales"; fi
+
+          # 3) Validar estructura e integridad: cada blob existe, su tamano coincide y su sha256 coincide con su nombre.
+          blob() { printf '%s/blobs/sha256/%s' "$SCAN" "${1#sha256:}"; }
+          check_blob() { # digest size
+            printf '%s' "$1" | grep -Eq '^sha256:[0-9a-f]{64}$' || fail "Digest invalido: $1"
+            [ -f "$(blob "$1")" ] || fail "Falta el blob $1"
+            [ "$(stat -c %s "$(blob "$1")")" = "$2" ] || fail "Tamano distinto en el blob $1"
+            [ "$(sha256sum "$(blob "$1")" | cut -d' ' -f1)" = "${1#sha256:}" ] || fail "Integridad del blob $1 no valida"
+          }
+          [ -f "$SCAN/oci-layout" ] || fail "Falta oci-layout"
+          jq -e '.imageLayoutVersion == "1.0.0"' "$SCAN/oci-layout" > /dev/null || fail "oci-layout invalido"
+          [ -f "$SCAN/index.json" ] || fail "Falta index.json"
+          jq -e '(.manifests | length) == 1' "$SCAN/index.json" > /dev/null || fail "index.json no tiene exactamente un manifiesto"
+          IDX="$(jq -r '.manifests[0].digest' "$SCAN/index.json")"
+          [ "$IDX" = "$EXPECTED_INDEX" ] || fail "El indice extraido no es el construido"
+          check_blob "$IDX" "$(jq -r '.manifests[0].size' "$SCAN/index.json")"
+
+          # 4) Elegir la imagen linux/amd64 del indice (nunca un manifiesto de atestacion: SBOM/procedencia).
+          SEL="$(jq -c '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64" and ((.annotations["vnd.docker.reference.type"] // "image") == "image"))]' "$(blob "$IDX")")"
+          [ "$(printf '%s' "$SEL" | jq 'length')" = "1" ] || fail "El indice no contiene exactamente una imagen linux/amd64"
+          MDESC="$(printf '%s' "$SEL" | jq -c '.[0]')"
+          MDIGEST="$(printf '%s' "$MDESC" | jq -r '.digest')"
+          check_blob "$MDIGEST" "$(printf '%s' "$MDESC" | jq -r '.size')"
+          MFILE="$(blob "$MDIGEST")"
+          jq -e '(.layers | length) >= 1' "$MFILE" > /dev/null || fail "El manifiesto de la imagen no tiene capas"
+          CDIGEST="$(jq -r '.config.digest' "$MFILE")"
+          check_blob "$CDIGEST" "$(jq -r '.config.size' "$MFILE")"
+          jq -e '.os == "linux" and .architecture == "amd64"' "$(blob "$CDIGEST")" > /dev/null || fail "La configuracion no es linux/amd64"
+          jq -r '.layers[] | [.digest, .size] | @tsv' "$MFILE" > layers.tsv
+          while IFS="$(printf '\t')" read -r LD LS; do check_blob "$LD" "$LS"; done < layers.tsv
+
+          # 5) index.json de la COPIA: solo la imagen amd64 (sin atestaciones), para que Trivy no pueda tomar otra entrada.
+          jq -n --argjson m "$MDESC" '{schemaVersion: 2, mediaType: "application/vnd.oci.image.index.v1+json", manifests: [$m]}' > "$SCAN/index.json.tmp"
+          mv "$SCAN/index.json.tmp" "$SCAN/index.json"
+
+          {
+            echo "indice_oci=$IDX"
+            echo "manifiesto_escaneado=$MDIGEST"
+            echo "config_escaneada=$CDIGEST"
+            echo "capas=$(wc -l < layers.tsv | tr -d ' ')"
+          } | tee scan-identity.txt
+          {
+            echo "scan_manifest_digest=$MDIGEST"
+            echo "scan_config_digest=$CDIGEST"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Escaneo de vulnerabilidades (informe, no falla aqui)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          input: ${{ runner.temp }}/image.oci.tar
+          input: ${{ runner.temp }}/trivy-oci-scan
           scanners: vuln
           severity: CRITICAL,HIGH,MEDIUM
           format: json
           output: ${{ runner.temp }}/trivy.json
           exit-code: '0'
+
+      - name: Verificar identidad de lo escaneado y que el TAR original no cambio
+        env:
+          EXPECTED_CONFIG: ${{ steps.scanprep.outputs.scan_config_digest }}
+          EXPECTED_MANIFEST: ${{ steps.scanprep.outputs.scan_manifest_digest }}
+          EXPECTED_TAR_SHA: ${{ steps.digest.outputs.tar_sha256 }}
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP"
+          # Trivy debe haber examinado la imagen linux/amd64 elegida (ImageID = digest de su configuracion), no una atestacion.
+          jq -e --arg cfg "$EXPECTED_CONFIG" '.ArtifactType == "container_image" and .Metadata.ImageID == $cfg and .Metadata.ImageConfig.architecture == "amd64" and .Metadata.ImageConfig.os == "linux"' trivy.json > /dev/null \
+            || { echo "::error::Trivy no escaneo la imagen linux/amd64 esperada (ImageID distinto de la configuracion elegida)."; exit 1; }
+          [ "$(sha256sum image.oci.tar | cut -d' ' -f1)" = "$EXPECTED_TAR_SHA" ] \
+            || { echo "::error::image.oci.tar cambio durante el escaneo."; exit 1; }
+          {
+            echo "manifiesto_escaneado=$EXPECTED_MANIFEST"
+            echo "config_escaneada=$EXPECTED_CONFIG"
+            echo "tar_sha256=$EXPECTED_TAR_SHA"
+          } >> scan-identity.txt
 
       - name: Evaluar politica
         id: policy
@@ -155,6 +244,7 @@ jobs:
             ${{ runner.temp }}/findings.json
             ${{ runner.temp }}/policy.md
             ${{ runner.temp }}/attestation-summary.txt
+            ${{ runner.temp }}/scan-identity.txt
           retention-days: 14
 
       # La imagen pasa al job de publicacion por cache de Actions (no descargable por terceros), no como artefacto.
