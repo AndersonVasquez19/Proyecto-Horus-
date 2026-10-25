@@ -23,6 +23,8 @@
     "test:notify": "node --experimental-strip-types --test tests/notify.test.mjs",
     "test:session-access": "node --experimental-strip-types --test tests/session-access.test.mjs",
     "test:panel-access": "node --experimental-strip-types --test tests/panel-access.test.mjs",
+    "test:quote-pipeline": "node --experimental-strip-types --test tests/quote-pipeline.test.mjs",
+    "smoke:quote-pipeline": "npm run build && node scripts/smoke-quote-pipeline.cjs",
     "smoke:messages-table": "npm run build && node scripts/smoke-messages-table.cjs",
     "smoke:message-detail": "npm run build && node scripts/smoke-message-detail.cjs",
     "smoke:attention-conflicts": "npm run build && node scripts/smoke-attention-conflicts.cjs",
