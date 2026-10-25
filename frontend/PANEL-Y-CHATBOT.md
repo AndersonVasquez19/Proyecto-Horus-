@@ -12,7 +12,7 @@ Cuentas permite cambiar contraseña y activar/desactivar administradores. La des
 
 ## Chatbot
 
-El widget abre con el saludo de Horus y un campo para escribir. No muestra menú, preguntas sugeridas ni botones o formularios de cotización y atención. «Nueva conversación» aparece al comenzar a consultar y permite volver al saludo. Las respuestas conservan sus fuentes y el reintento explícito si falla una consulta. El historial del asistente no se usa como fuente de hechos.
+El widget abre con el saludo de Horus, cuatro preguntas sugeridas y un campo para escribir. Tras una respuesta muestra solo sus sugerencias válidas (hasta cuatro de 160 caracteres, sin duplicados, marcado, enlaces ni indicadores comunes de datos sensibles). El filtro es conservador y no garantiza detectar todo dato personal en texto libre. Cada botón usa el mismo envío que el campo, solo con activación explícita; durante la espera y ante errores no hay sugerencias activas. No muestra menú ni formularios de cotización y atención. «Nueva conversación» vuelve al saludo y descarta sugerencias anteriores. Las respuestas conservan sus fuentes y el reintento explícito si falla una consulta. El historial del asistente no se usa como fuente de hechos.
 
 El endpoint de contacto se conserva en la API, pero el widget ya no lo utiliza. El chat no confirma reservas, pagos ni inscripciones. La IA es opcional; cuando falla, se muestran las fuentes del catálogo.
 

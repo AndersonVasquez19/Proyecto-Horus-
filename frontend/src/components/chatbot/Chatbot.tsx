@@ -4,6 +4,7 @@ import { chatRequest, internalPath, type ChatReply, type ChatTurn } from './chat
 import './chatbot.css';
 import ChatIcon from './ChatIcon';
 import RobotMascot from './RobotMascot';
+import { INITIAL_SUGGESTIONS, validSuggestions } from './chatSuggestions';
 
 const greeting: ChatTurn = {
   role: 'assistant',
@@ -28,6 +29,7 @@ export default function Chatbot() {
   const locked = useRef(false);
   const hasOpened = useRef(false);
   const followReply = useRef(true);
+  const suggestionEpoch = useRef(0);
 
   useEffect(() => {
     if (open) { dialog.current?.showModal(); hasOpened.current = true; }
@@ -77,6 +79,7 @@ export default function Chatbot() {
   const close = () => { if (!closing) setClosing(true); };
   const reset = () => {
     if (locked.current) return;
+    suggestionEpoch.current++;
     setTurns([greeting]); setMessage(''); setError(''); setSuccess(''); setRetry('');
     setMode('Información del catálogo');
     focusInput();
@@ -84,6 +87,7 @@ export default function Chatbot() {
   const send = async (text = message) => {
     const question = text.trim();
     if (!question || question.length > 1000 || locked.current) return;
+    suggestionEpoch.current++;
     locked.current = true; setBusy(true); setError(''); setSuccess(''); setRetry('');
     followReply.current = true;
     const before = turns;
@@ -96,7 +100,7 @@ export default function Chatbot() {
         message: question,
         history: before.filter(turn => turn !== greeting).slice(-6).map(({ role, content }) => ({ role, content })),
       }, abort.signal);
-      setTurns(previous => [...previous, { role: 'assistant' as const, content: response.answer, sources: response.sources, suggestions: response.suggestions }].slice(-30));
+      setTurns(previous => [...previous, { role: 'assistant' as const, content: response.answer, sources: response.sources, suggestions: validSuggestions(response.suggestions) }].slice(-30));
       setSuccess(response.notice || '');
       setMode(response.mode === 'ia' ? 'Respuesta asistida por IA' : 'Información del catálogo');
     } catch (err) {
@@ -107,6 +111,10 @@ export default function Chatbot() {
       window.clearTimeout(timeout); locked.current = false; setBusy(false);
     }
   };
+  const latest = turns[turns.length - 1];
+  const suggestions = busy || error || latest.role !== 'assistant' ? []
+    : turns.length === 1 ? INITIAL_SUGGESTIONS : latest.suggestions || [];
+  const epoch = suggestionEpoch.current;
   return <>
     <button ref={launcher} type="button" className="hc-launcher" onClick={() => setOpen(true)} aria-label="Abrir chat con el asistente Horus" aria-haspopup="dialog" aria-expanded={open} aria-controls="horus-chat">
       <span className="hc-launcher-hint" aria-hidden="true">¿En qué te ayudo?</span>
@@ -139,6 +147,12 @@ export default function Chatbot() {
             </details>}
           </article>)}
           {busy && <p className="hc-thinking" role="status"><span className="hc-thinking-dots" aria-hidden="true"><i /><i /><i /></span>Consultando información…</p>}
+          {!!suggestions.length && <section className="hc-suggestions" aria-label="Preguntas sugeridas">
+            <p>{turns.length === 1 ? 'Puedes empezar por aquí' : 'Sigue explorando'}</p>
+            <div>{suggestions.map(text => <button key={text} type="button" onClick={() => {
+              if (epoch === suggestionEpoch.current && !closing) void send(text);
+            }}>{text}</button>)}</div>
+          </section>}
         </div>
         <div className="hc-compose">
           <div className="hc-compose-heading"><label htmlFor="hc-question">Escribe tu consulta</label><span id="hc-question-limit">{message.length} / 1000</span></div>

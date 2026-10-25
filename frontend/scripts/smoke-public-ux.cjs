@@ -88,7 +88,7 @@ const key = async (p, name, code) => {
     await capture(p, 'chatbot-' + width);
     k.ck(await p.evaluate('[...document.querySelectorAll(".hc-close,.hc-compose form button")].every(e=>{const r=e.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight})'), width + ': cierre y envío de al menos 44 × 44 visibles');
     k.ck(await p.evaluate('[".hc-compose-heading>span",".hc-footer summary",".hc-message>strong"].every(s=>parseFloat(getComputedStyle(document.querySelector(s)).fontSize)>=12)'), width + ': textos auxiliares de al menos 12 px');
-    k.ck(await p.evaluate('!document.querySelector(".hc-followups")'), width + ': sugerencias sin activar');
+    k.ck(await p.evaluate('document.querySelectorAll(".hc-suggestions button").length===1 && document.querySelector(".hc-suggestions button").textContent==="Sugerencia de prueba"'), width + ': sugerencia de la última respuesta disponible sin envío automático');
     await p.type('#hc-question', 0, 'Otra respuesta');
     await p.evaluate('document.querySelector(".hc-compose form").requestSubmit()');
     await p.wait('document.querySelector(".hc-thinking")', 'segunda espera');

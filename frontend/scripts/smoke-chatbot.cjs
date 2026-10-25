@@ -51,7 +51,7 @@ const handler = async (req, res, { route, url, json, body }) => {
   for (const width of [1280, 390]) {
     const p = await open(width, 844); await openChat(p);
     await sleep(1200);
-    ck(await p.evaluate('document.querySelectorAll(".hc-log article").length === 1 && !document.querySelector(".hc-guide, .hc-actions, .hc-followups, .hc-contact, .hc-toolbar")') && /¿En qué te puedo ayudar\?/.test(await p.text('.hc-assistant')), 'solo queda el saludo, sin menú ni accesos adicionales, a ' + width + ' px');
+    ck(await p.evaluate('document.querySelectorAll(".hc-log article").length === 1 && document.querySelectorAll(".hc-suggestions button").length === 4 && !document.querySelector(".hc-guide, .hc-actions, .hc-contact, .hc-toolbar")') && /¿En qué te puedo ayudar\?/.test(await p.text('.hc-assistant')), 'saludo y cuatro preguntas sugeridas, sin menú ni formularios, a ' + width + ' px');
     ck((await state()).requests.length === 0 && await p.evaluate('!document.querySelector("#hc-question").disabled'), 'se puede escribir de inmediato y abrir no envía solicitudes');
     await p.click('.hc-close'); await p.wait('!document.querySelector(".hc-dialog[open]")', 'cierre');
     await p.click('.hc-launcher'); await p.wait('document.querySelector(".hc-dialog[open]")', 'reapertura');
@@ -74,7 +74,7 @@ const handler = async (req, res, { route, url, json, body }) => {
     await p.wait('document.querySelectorAll(".hc-assistant").length === 2', 'respuesta a consulta multilínea');
     ck((await sent()).join() === 'Quiero información\nsobre cursos' && await p.evaluate('document.querySelector("#hc-question-limit").textContent') === '0 / 1000', 'Enter envía el texto completo y reinicia el contador');
     await p.click('.hc-toolbar button', 'Nueva conversación');
-    ck(await p.evaluate('document.querySelectorAll(".hc-log article").length === 1 && !document.querySelector(".hc-toolbar, .hc-guide")') && /¿En qué te puedo ayudar\?/.test(await p.text('.hc-assistant')), 'reiniciar vuelve a mostrar únicamente el saludo'); await p.close(); }
+    ck(await p.evaluate('document.querySelectorAll(".hc-log article").length === 1 && document.querySelectorAll(".hc-suggestions button").length === 4 && !document.querySelector(".hc-toolbar, .hc-guide")') && /¿En qué te puedo ayudar\?/.test(await p.text('.hc-assistant')), 'reiniciar vuelve al saludo y las sugerencias iniciales'); await p.close(); }
   await clean();
   { const p = await open(1280); await openChat(p);
     await p.type('#hc-question', 0, 'Servicios de asesoramiento');
@@ -83,7 +83,7 @@ const handler = async (req, res, { route, url, json, body }) => {
     await p.evaluate('document.querySelector(".hc-sources summary").click(); 1');
     const links = await p.evaluate('[...document.querySelectorAll(".hc-sources a")].map(a => a.getAttribute("href"))');
     ck(links.join() === '/tecnologias/servicios/4', 'solo se enlaza la ruta propia del sitio; el enlace externo de una fuente se ignora', links);
-    ck(await p.evaluate('!document.querySelector(".hc-followups, .hc-guide, .hc-actions")'), 'sin opciones adicionales al responder');
+    ck(await p.evaluate('document.querySelectorAll(".hc-suggestions button").length === 2 && !document.querySelector(".hc-guide, .hc-actions")'), 'dos sugerencias de la última respuesta, sin acciones adicionales');
     await p.type('#hc-question', 0, 'Contacto');
     await p.evaluate('document.querySelector(".hc-compose form").requestSubmit(); 1');
     await p.wait('document.querySelectorAll(".hc-assistant").length === 3', 'segunda respuesta');

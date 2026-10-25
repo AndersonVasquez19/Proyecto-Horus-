@@ -22,7 +22,7 @@
 .hc-header :focus-visible{outline-color:#edcc8a}
 .hc-dialog a{color:#1e4976;text-decoration:underline;text-underline-offset:3px}
 .hc-shell{display:flex;flex-direction:column;height:100%;min-height:0}
-.hc-header{position:relative;display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:2px solid var(--hc-gold);background:radial-gradient(ellipse at top right,#1e497670,transparent 65%),var(--hc-navy);color:#fff;flex-shrink:0}
+.hc-header{position:relative;display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:2px solid var(--hc-gold);background:radial-gradient(ellipse at top right,#2563eb80,transparent 75%),var(--hc-navy);color:#fff;flex-shrink:0}
 .hc-header::after{content:"";position:absolute;right:52px;top:-65px;width:180px;height:180px;border:1px solid #ffffff0c;border-radius:50%;pointer-events:none}
 .hc-mark{display:grid;place-items:center;flex:none;width:58px;height:58px;border:1px solid #ffffff24;border-radius:19px;background:#ffffff0b;padding:3px;box-shadow:inset 0 1px 0 #ffffff0d}.hc-header-copy{min-width:0}.hc-header-brand{display:block;font-size:8px;letter-spacing:2px;font-weight:700;color:#edcc8a;margin-bottom:2px}
 .hc-header h2{margin:0;color:#fff;font-family:Manrope,Inter,sans-serif;font-size:20px;font-weight:700;letter-spacing:-.4px;line-height:1.5}
@@ -34,7 +34,7 @@
 .hc-toolbar i{width:6px;height:6px;flex:none;border-radius:50%;background:#1e4976;box-shadow:0 0 0 3px #eaf0f6}
 .hc-toolbar button{display:flex;align-items:center;gap:5px;min-height:32px;padding:5px 0;border:0;background:none;color:var(--hc-muted);font-size:11px}
 .hc-toolbar button:hover{color:var(--hc-navy)}
-.hc-log{flex:1;min-height:0;overflow:auto;overflow-anchor:none;overscroll-behavior:contain;padding:22px;scrollbar-width:thin;scrollbar-color:#c5d1df transparent;background:radial-gradient(ellipse at top left,#f5eedf80,transparent 55%),#f6f8fb}
+.hc-log{flex:1;min-height:0;overflow:auto;overflow-anchor:none;overscroll-behavior:contain;padding:22px;scrollbar-width:thin;scrollbar-color:#a8c5ec transparent;background:radial-gradient(ellipse at top left,#06b6d40c,transparent 65%),var(--hc-sky)}
 .hc-welcome{padding:0 0 20px;text-align:center}
 .hc-welcome-art{position:relative;display:grid;place-items:center;width:154px;height:94px;margin:0 auto 8px;isolation:isolate}
 .hc-welcome-art>.hc-robot{position:relative;width:76px;height:89px}
@@ -48,13 +48,13 @@
 .hc-message{width:fit-content;max-width:94%;margin:0 0 18px;padding:15px 17px;border:1px solid var(--hc-line);border-radius:5px 18px 18px;background:#fff;box-shadow:0 3px 10px #0a254005;overflow-wrap:anywhere}
 .hc-message>strong{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#1e4976}
 .hc-message-avatar{display:block;width:25px;height:23px;margin:-4px 0 -2px}.hc-message p{white-space:pre-wrap;margin:8px 0 0;font-size:14px;line-height:1.75}
-.hc-user{margin-left:auto;border:0;background:var(--hc-navy);color:#fff;border-radius:18px 5px 18px 18px}
-.hc-user>strong{color:#e8dcc4}
+.hc-user{margin-left:auto;border:0;background:var(--hc-blue);color:#fff;border-radius:18px 5px 18px 18px;box-shadow:0 4px 12px #2563eb20}
+.hc-user>strong{color:#fff}
 .hc-sources{margin-top:14px;padding-top:10px;border-top:1px solid var(--hc-line);font-size:12px;color:var(--hc-muted)}
 .hc-sources summary{cursor:pointer;color:#1e4976;font-weight:600;min-height:32px;align-content:center}
 .hc-sources div{padding-top:12px}.hc-sources p{font-size:12px}
 .hc-thinking{display:flex;align-items:center;gap:10px;color:var(--hc-muted);font-size:12px;padding:8px 0}
-.hc-thinking-dots{display:flex;gap:4px}.hc-thinking-dots i{width:5px;height:5px;border-radius:50%;background:#1e4976;animation:hc-pulse 1.2s infinite}
+.hc-thinking-dots{display:flex;gap:4px}.hc-thinking-dots i{width:6px;height:6px;border-radius:50%;background:var(--hc-blue);animation:hc-pulse 1.2s infinite}
 .hc-thinking-dots i:nth-child(2){animation-delay:.15s}.hc-thinking-dots i:nth-child(3){animation-delay:.3s}
 .hc-guide{margin-top:3px}
 .hc-guide-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;color:var(--hc-muted)}
@@ -88,8 +88,8 @@
 .hc-compose textarea{min-width:0;flex:1;field-sizing:content;min-height:42px;max-height:96px;resize:none;border:0;border-radius:8px;background:transparent;padding:10px 8px;color:var(--hc-ink);font-size:13px;line-height:1.6}
 .hc-compose textarea:focus-visible{outline:0}
 .hc-compose textarea::placeholder{color:#63758a}
-.hc-compose form button{display:grid;place-items:center;border:0;border-radius:10px;background:var(--hc-navy);color:#fff;width:44px;height:44px;flex:none}
-.hc-compose form button:hover:not(:disabled){background:#1e4976}
+.hc-compose form button{display:grid;place-items:center;border:0;border-radius:10px;background:var(--hc-blue);color:#fff;width:44px;height:44px;flex:none}
+.hc-compose form button:hover:not(:disabled){background:#1d4ed8}
 .hc-compose form button:disabled{background:#e3e9f0;color:#718398;opacity:1}
 .hc-compose-help{margin:5px 0 8px;font-size:12px;color:var(--hc-muted)}
 @media(pointer:coarse){.hc-compose-help{display:none}}
@@ -237,3 +237,17 @@
 .hc-header p,.hc-toolbar>span,.hc-toolbar button{font-size:12px}
 .hc-toolbar>span{min-width:0}
 .hc-toolbar button{max-width:50%;min-height:36px;text-align:left}
+
+/* Paleta local del panel: el lanzador y la mascota conservan su identidad. */
+.hc-dialog{--hc-navy:#142e52;--hc-blue:#2563eb;--hc-sky:#f4f9ff;--hc-gold:#eab84a;--hc-line:#d4e2f2;background:var(--hc-sky)}
+.hc-dialog :focus-visible{outline-color:#1d4ed8}
+.hc-header :focus-visible{outline-color:#edcc8a}
+.hc-compose form{background:var(--hc-sky)}
+.hc-compose form:focus-within{border-color:#1d4ed8;outline-color:#1d4ed8}
+.hc-suggestions{margin:4px 0 8px}
+.hc-suggestions>p{margin:0 0 10px;color:var(--hc-muted);font-size:12px;font-weight:600}
+.hc-suggestions>div{display:grid;gap:8px}
+.hc-suggestions button{display:block;width:100%;min-height:44px;padding:10px 13px;text-align:left;overflow-wrap:anywhere;border:1px solid #8caddb;border-radius:12px;background:#fff;color:#1847a3;font-size:13px;font-weight:500;line-height:1.5;box-shadow:0 2px 6px #142e5206}
+.hc-suggestions button:hover{background:#eaf3ff;border-color:var(--hc-blue);box-shadow:0 3px 10px #2563eb14}
+.hc-toolbar button,.hc-footer summary,.hc-sources summary,.hc-retry{min-height:44px;align-content:center}
+.hc-thinking{width:fit-content;border:1px solid var(--hc-line);border-radius:12px;padding:10px 12px;background:#fff}
