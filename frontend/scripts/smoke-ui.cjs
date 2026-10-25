@@ -138,7 +138,7 @@ async function main(){
  await typeLogin('email','admin@example.com');await typeLogin('password','incorrecta');await sleep(100);await evaluate('document.querySelector(".admin-auth__form").requestSubmit()');
  await wait('!!document.querySelector(".admin-auth__error")');
  assert.equal(await evaluate('document.querySelector(".admin-auth__error").textContent'),'Revisa tu correo y contraseña e inténtalo nuevamente.'); // Mensaje genérico propio: el texto del servidor no se muestra.
- assert.equal(await evaluate('getComputedStyle(document.querySelector(".admin-auth__error")).color'),'rgb(151, 43, 37)','El error se muestra en rojo.');
+ assert.equal(await evaluate('getComputedStyle(document.querySelector(".admin-auth__error")).color'),'rgb(168, 38, 31)','El error se muestra en rojo.');
  await wait('document.querySelector(".admin-auth__submit").disabled===false');
  await typeLogin('password','Clave-correcta-1');
  await evaluate('window.__loginMessages=[];const before=new WeakSet(document.querySelectorAll(".admin-auth__error,[data-sonner-toast]"));new MutationObserver(()=>{document.querySelectorAll(".admin-auth__error,[data-sonner-toast]").forEach(e=>{if(!before.has(e))window.__loginMessages.push(e.textContent)})}).observe(document.body,{childList:true,subtree:true})');

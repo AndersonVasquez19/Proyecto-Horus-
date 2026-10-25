@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { chatRequest, internalPath, type ChatReply, type ChatTurn } from './chatApi';
 import './chatbot.css';
@@ -27,6 +27,7 @@ export default function Chatbot() {
   const controller = useRef<AbortController | null>(null);
   const locked = useRef(false);
   const hasOpened = useRef(false);
+  const followReply = useRef(true);
 
   useEffect(() => {
     if (open) { dialog.current?.showModal(); hasOpened.current = true; }
@@ -42,15 +43,28 @@ export default function Chatbot() {
     media.addEventListener('change', finish, { once: true });
     return () => { window.clearTimeout(timer); media.removeEventListener('change', finish); };
   }, [closing]);
-  useEffect(() => {
-    if (log.current) log.current.scrollTop = turns.length === 1 ? 0 : log.current.scrollHeight;
-  }, [turns, busy, open]);
+  useLayoutEffect(() => {
+    const node = log.current;
+    if (!node || !dialog.current?.open) return;
+    if (turns.length === 1) { node.scrollTop = 0; return; }
+    if (turns[turns.length - 1].role === 'user') {
+      node.scrollTop = node.scrollHeight;
+    } else if (followReply.current) {
+      // Alinear el comienzo, incluso cuando la respuesta ocupa más que el registro.
+      const reply = node.querySelector('article:last-of-type');
+      if (reply) node.scrollTop += reply.getBoundingClientRect().top - node.getBoundingClientRect().top - node.clientTop - 12;
+    }
+  }, [turns]);
   useEffect(() => () => controller.current?.abort(), []);
   // En pantallas táctiles no se enfoca el campo solo: abriría el teclado y taparía la respuesta recién recibida.
-  const focusInput = () => { if (!window.matchMedia('(pointer: coarse)').matches) input.current?.focus(); };
+  const focusInput = () => { if (dialog.current?.open && !window.matchMedia('(pointer: coarse)').matches) input.current?.focus({ preventScroll: true }); };
   useEffect(() => {
-    if (open && !busy) focusInput();
-  }, [open, busy]);
+    if (open) focusInput();
+  }, [open]);
+  useEffect(() => {
+    // El campo deshabilitado pierde el foco al enviar; recuperarlo solo si nadie eligió otro control.
+    if (!busy && (document.activeElement === document.body || document.activeElement === dialog.current)) focusInput();
+  }, [busy]);
   // Con el teclado en pantalla el navegador reduce el área visible: el diálogo se ajusta para que el campo y el botón de envío no queden tapados.
   useEffect(() => {
     const viewport = window.visualViewport, node = dialog.current;
@@ -71,6 +85,7 @@ export default function Chatbot() {
     const question = text.trim();
     if (!question || question.length > 1000 || locked.current) return;
     locked.current = true; setBusy(true); setError(''); setSuccess(''); setRetry('');
+    followReply.current = true;
     const before = turns;
     setTurns(previous => [...previous, { role: 'user', content: question }]);
     setMessage('');
@@ -89,7 +104,7 @@ export default function Chatbot() {
       setTurns(before); setMessage(question); setRetry(question);
       setError(abort.signal.aborted ? 'La consulta tardó demasiado. Puedes volver a enviarla.' : err instanceof Error ? err.message : 'No se pudo conectar con el servidor.');
     } finally {
-      window.clearTimeout(timeout); locked.current = false; setBusy(false); focusInput();
+      window.clearTimeout(timeout); locked.current = false; setBusy(false);
     }
   };
   return <>
@@ -111,7 +126,12 @@ export default function Chatbot() {
           <button type="button" className="hc-close" aria-label="Cerrar chat" onClick={close}><ChatIcon name="close" size={18} /></button>
         </header>
         {turns.length > 1 && <div className="hc-toolbar"><span><i aria-hidden="true" />{mode}</span><button onClick={reset} disabled={busy}><ChatIcon name="reset" size={12} />Nueva conversación</button></div>}
-        <div ref={log} className="hc-log" role="log" aria-label="Conversación con Horus" aria-live="polite" aria-relevant="additions" aria-busy={busy}>
+        <div ref={log} className="hc-log" role="log" tabIndex={0} aria-label="Conversación con Horus" aria-live="polite" aria-relevant="additions" aria-busy={busy}
+          onScroll={event => {
+            if (!locked.current) return;
+            const node = event.currentTarget;
+            followReply.current = node.scrollHeight - node.clientHeight - node.scrollTop <= 32;
+          }}>
           {turns.map((turn, index) => <article key={index} className={'hc-message hc-' + turn.role}>
             <strong>{turn.role === 'assistant' && <span className="hc-message-avatar"><RobotMascot portrait /></span>}{turn.role === 'user' ? 'Tú' : 'Horus'}</strong><p>{turn.content}</p>
             {!!turn.sources?.length && <details className="hc-sources"><summary>Información consultada ({turn.sources.length})</summary>

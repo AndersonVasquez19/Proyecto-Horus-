@@ -43,7 +43,7 @@
   text-align: center;
   cursor: pointer;
 }
-.logo { display: grid; place-items: center; min-height: 156px; padding: .5rem; }
+.logo { display: grid; place-items: center; height: 156px; flex-shrink: 0; padding: .5rem; }
 .logo img {
   width: 140px;
   height: 140px;
@@ -56,7 +56,7 @@
 }
 .logo > span, .thumbnail > span { color: #54677e; font-size: .8rem; }
 .identity { display: flex; flex: 1; flex-direction: column; gap: .5rem; padding-block: .65rem 1rem; }
-.initials { color: #0a2540; font-family: 'Manrope', sans-serif; font-size: 1.1rem; font-weight: 800; }
+.initials { display: grid; align-items: center; min-height: 2.8em; color: #0a2540; font-family: 'Manrope', sans-serif; font-size: 1.1rem; line-height: 1.4; font-weight: 800; }
 .name { color: #54677e; line-height: 1.55; font-size: .95rem; }
 .cta {
   display: flex;
@@ -110,6 +110,11 @@
 }
 @media (max-width: 639px) {
   .grid { grid-template-columns: minmax(0, 1fr); max-width: 420px; }
+  .frontButton { min-height: 320px; padding-block: 1rem; }
+  .logo { height: 132px; }
+  .logo img { width: 120px; height: 120px; }
+  .identity { padding-block: .5rem .75rem; }
+  .initials { min-height: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .card { transition: none; translate: none !important; }

@@ -110,6 +110,12 @@ async function main() {
     let sequence = 0
     socket.onmessage = event => {
       const message = JSON.parse(event.data)
+      if (message.method === 'Fetch.requestPaused') {
+        const { requestId, request } = message.params
+        const url = new URL(request.url)
+        const local = url.origin === origin || ['data:', 'blob:'].includes(url.protocol)
+        send(local ? 'Fetch.continueRequest' : 'Fetch.failRequest', local ? { requestId } : { requestId, errorReason: 'BlockedByClient' }).catch(() => {})
+      }
       if (message.method === 'Runtime.exceptionThrown') exceptions.push(message.params.exceptionDetails.text)
       if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') exceptions.push(message.params.args.map(arg => arg.value || arg.description || '').join(' '))
       if (message.id) {
@@ -119,6 +125,7 @@ async function main() {
       }
     }
     const ready = new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject })
+      .then(() => send('Fetch.enable', { patterns: [{ urlPattern: '*' }] }))
     const send = (method, params = {}) => new Promise((resolve, reject) => {
       const id = ++sequence
       pending.set(id, { resolve, reject })
@@ -463,10 +470,11 @@ async function main() {
     // Los ajustes vienen del catálogo en código: el cambio de horario se comprueba más abajo recargando la página.
     await evaluate('localStorage.setItem("horus-admin-token","isolated-home-ui-token")')
     const homeAddress = await evaluate('document.querySelector(".home-loc-items").textContent')
-    const adminTarget = await fetch('http://127.0.0.1:' + port + '/json/new?' + encodeURIComponent(origin + '/admin/dashboard?section=ajustes'), { method: 'PUT' }).then(response => response.json())
+    const adminTarget = await fetch('http://127.0.0.1:' + port + '/json/new?about:blank', { method: 'PUT' }).then(response => response.json())
     const admin = connect(adminTarget.webSocketDebuggerUrl)
     await admin.ready
     try {
+      await admin.send('Page.navigate', { url: origin + '/admin/dashboard?section=ajustes' })
       await admin.wait('!!document.querySelector("[data-panel-editorial-retired]")')
       assert.equal(await admin.evaluate('!!document.querySelector(".hp-settings-card, main form")'), false, 'La dirección antigua no monta el formulario de empresa.')
       await sleep(300)
@@ -691,11 +699,12 @@ async function main() {
     console.log('Convenios: fila de cuatro tarjetas, apertura 3D, nombres largos, paginación, visor único, indicadores y movimiento reducido: OK.')
 
     // La administración editorial ya no se monta, ni por dirección antigua.
-    const convenioAdminTarget = await fetch('http://127.0.0.1:' + port + '/json/new?' + encodeURIComponent(origin + '/admin/dashboard?section=convenios&crear=1'), { method: 'PUT' }).then(response => response.json())
+    const convenioAdminTarget = await fetch('http://127.0.0.1:' + port + '/json/new?about:blank', { method: 'PUT' }).then(response => response.json())
     const convenioAdmin = connect(convenioAdminTarget.webSocketDebuggerUrl)
     await convenioAdmin.ready
     try {
       await convenioAdmin.send('Runtime.enable')
+      await convenioAdmin.send('Page.navigate', { url: origin + '/admin/dashboard?section=convenios&crear=1' })
       await convenioAdmin.wait('!!document.querySelector("[data-panel-editorial-retired]")')
       assert.equal(await convenioAdmin.evaluate('!!document.querySelector(".hp-convenios, dialog[open], main form")'), false)
       assert.equal(await convenioAdmin.evaluate('document.querySelector("main").textContent.includes("se retiró del panel")'), true)
