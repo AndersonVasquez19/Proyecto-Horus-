@@ -21,3 +21,77 @@
 .hp-form .hp-actions { flex-wrap:wrap; margin-top:1rem; }
 .hq-document { overflow-x:auto; }
 @media(max-width:760px){.hp-form :is(input,select,textarea){font-size:16px;}}
+
+/* ── Tablero de cotizaciones (vista «Tablero»; distribución inspirada en Stitch, con la identidad navy/dorado de Horus) ── */
+.hw-tabs.hqp-views{flex-wrap:nowrap;flex:none}
+/* Encabezado: el título puede encogerse hasta 300 px y los controles envuelven en vez de salirse del contenedor (antes «Actualizar» quedaba fuera de pantalla). */
+.hqp-heading>div:first-child{flex:1 1 300px;min-width:0}
+.hqp-head-actions{flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;min-width:0}
+.hqp-kpis{padding:0 24px 6px}
+.hqp-kpis>ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.hqp-kpi{position:relative;overflow:hidden;display:flex;gap:14px;align-items:flex-start;min-width:0;padding:16px 16px 20px;background:#fff;border:1px solid #e2e9f3;border-radius:14px;box-shadow:0 4px 18px #21417006}
+.hqp-kpi::after{content:"";position:absolute;left:0;bottom:0;width:40%;height:3px;background:#b8903a;border-radius:0 3px 0 0}
+.hqp-kpi-icon{flex:none;width:42px;height:42px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;background:#eef2f8;color:#182e50}
+.hqp-kpi>div{min-width:0}
+.hqp-kpi h3{margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#5b6c82}
+.hqp-kpi strong{display:block;font-size:24px;line-height:1.2;font-weight:800;color:#182e50;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.hqp-kpi p{margin:4px 0 0;font-size:12px;line-height:1.4;color:#5b6c82}
+.hqp-amounts{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.hqp-amounts strong{font-size:18px}
+.hqp-scope{margin:12px 0 4px;font-size:12px;color:#5b6c82}
+.hqp-truncated{margin:16px 24px 0}
+.hqp-scroll{padding:18px 24px 24px;overflow-x:auto;overscroll-behavior-x:contain}
+.hqp-scroll:focus-visible,.hqp-open:focus-visible{outline:2px solid #182e50;outline-offset:2px}
+.hqp-columns{display:grid;grid-template-columns:repeat(5,minmax(260px,1fr));gap:16px;align-items:stretch}
+.hqp-column{min-width:0;padding:12px;background:#f2f5fa;border-radius:16px}
+.hqp-col-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 4px 12px}
+.hqp-col-head h3{margin:0;display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:#172c48;min-width:0}
+.hqp-dot{flex:none;width:10px;height:10px;border-radius:50%;background:#8b9bb0}
+.hqp-col-enviada .hqp-dot{background:#2b5d8a}.hqp-col-aceptada .hqp-dot{background:#2c8a73}.hqp-col-rechazada .hqp-dot{background:#b5503f}.hqp-col-anulada .hqp-dot{background:#6b7280}
+.hqp-count{flex:none;min-width:26px;height:22px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#fff;color:#182e50;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.hqp-cards{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.hqp-card{display:grid;gap:8px;padding:14px;background:#fff;border:1px solid #e2e9f3;border-radius:14px;box-shadow:0 1px 3px #0f172a0d;transition:box-shadow .15s ease,border-color .15s ease}
+.hqp-card:hover,.hqp-card:focus-within{border-color:#b8903a;box-shadow:0 6px 18px #2141701a}
+.hqp-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.hqp-number{font-size:12px;letter-spacing:.04em;color:#7d5d14;overflow-wrap:anywhere}
+.hqp-client{margin:0;font-size:15px;line-height:1.3;font-weight:650;color:#172c48;overflow-wrap:anywhere}
+.hqp-total{margin:0;font-size:20px;line-height:1.2;font-weight:800;color:#182e50;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.hqp-meta{margin:0;display:grid;gap:4px;font-size:12px;color:#5b6c82}
+.hqp-meta>div{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.hqp-meta dt{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;line-height:18px}
+.hqp-meta dd{margin:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px 6px;text-align:right;line-height:18px;color:#3f5169;font-variant-numeric:tabular-nums}
+.hqp-date{white-space:nowrap}
+/* «Vencida» es una insignia propia (texto + color): si no cabe junto a la fecha pasa a la línea siguiente sin partir la fecha. */
+.hqp-expired{padding:0 6px;border-radius:6px;background:#fbe9e5;color:#9a3a2c;font-size:11px;font-weight:700;white-space:nowrap}
+.hqp-open{width:100%;min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.hqp-open[aria-disabled=true]{opacity:.6;cursor:progress}
+.hqp-empty{margin:0;padding:18px 8px;text-align:center;font-size:13px;color:#5f7086;border:1px dashed #cfd9e6;border-radius:12px}
+@media(max-width:1100px){
+ .hqp-kpis>ul{grid-template-columns:repeat(2,minmax(0,1fr))}
+ /* Con el panel lateral visible el contenido es estrecho: los controles pasan a su propia fila bajo el título, alineados a la izquierda. */
+ .hqp-heading{flex-wrap:wrap}
+ .hqp-head-actions{flex:1 1 100%;justify-content:flex-start}
+}
+@media(max-width:760px){
+ .hqp-kpis{padding:0 16px 4px}.hqp-truncated{margin:12px 16px 0}
+ .hqp-scroll{padding:14px 16px 20px;overflow-x:visible}
+ .hqp-columns{grid-template-columns:minmax(0,1fr)}
+}
+/* Teléfono: selector de vistas a todo el ancho, acciones repartidas en la fila siguiente y indicadores 2×2 (icono sobre el texto para ganar ancho). */
+@media(max-width:560px){
+ .hw-tabs.hqp-views{flex:1 1 100%;width:100%}
+ .hw-tabs.hqp-views button{flex:1 1 0}
+ .hqp-head-actions>.hp-btn{flex:1 1 auto}
+ .hqp-kpis>ul{gap:10px}
+ .hqp-kpi{flex-direction:column;gap:8px;padding:12px 12px 18px}
+ .hqp-kpi-icon{width:34px;height:34px;border-radius:10px}
+ .hqp-kpi strong{font-size:20px}
+ .hqp-amounts strong{font-size:16px}
+}
+/* Por debajo de 360 px dos columnas ya no son legibles: una sola columna, con el icono de nuevo al lado. */
+@media(max-width:359px){
+ .hqp-kpis>ul{grid-template-columns:minmax(0,1fr)}
+ .hqp-kpi{flex-direction:row;gap:12px;padding:14px 14px 18px}
+ .hqp-kpi-icon{width:38px;height:38px}
+}
+@media(prefers-reduced-motion:reduce){.hqp-card{transition:none}}
