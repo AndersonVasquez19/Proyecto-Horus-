@@ -23,6 +23,7 @@ import '../styles/workspace.css';
 import '../styles/panel-polish.css';
 import '../styles/academic-panel.css';
 import '../styles/operational-panel.css';
+import '../styles/dashboard-analytics.css';
 
 const mobileQuery = '(max-width: 760px)';
 const subscribeToViewport = (callback: () => void) => {

@@ -6,9 +6,12 @@ const permissionSource = require('node:fs').readFileSync(require('node:path').jo
 const managerPermissions = [...permissionSource.match(/RESOURCE_OPERATIONS = \{([\s\S]*?)\} as const/)[1].matchAll(/^\s*([a-z_]+): \[([^\]]*)\]/gm)]
   .flatMap(([, resource, ops]) => [...ops.matchAll(/'([a-z_]+)'/g)].map(op => resource + ':' + op[1]));
 
-const sim = { stats: 'ok', list: 'ok', libro: 'ok', unsub: 'ok', activity: 'ok' };
+const sim = { stats: 'ok', list: 'ok', libro: 'ok', unsub: 'ok', activity: 'ok', chatbot: 'ok' };
 const requests = [];
 const academico = { estudiantes: 12, edicionesActivas: 2, matriculasRegistradas: 9, matriculasVigentes: 7 };
+// Preinscripciones: estados excluyentes (4 + 2 + 1 + 2 + 1 = 10); vigentes = recibidas + validadas + convertidas = 7; 3 por revisar.
+const preinscripciones = { total: 10, vigentes: 7, recibidas: 4, pendientesRevision: 3, validadas: 2, convertidas: 1, descartadas: 2, desistidas: 1 };
+const chatbotMetrics = { dias: 30, interacciones: 10, resueltas: 7, sinRespuesta: 3, conIa: 4, conCatalogo: 6 };
 const messages = Array.from({ length: 6 }, (_, i) => { const id = 6 - i; return { id, nombre: 'Persona ' + id, email: 'p' + id + '@example.test', telefono: '987654' + String(id).padStart(3, '0'), asunto: 'Asunto ' + id, mensaje: 'Mensaje ' + id, estado: id % 2 ? 'nuevo' : 'en_proceso', createdAt: '2026-05-0' + id + 'T10:00:00.000Z', updatedAt: '2026-05-0' + id + 'T10:00:00.000Z' }; });
 // Serie ficticia terminada hoy (UTC): día i → i % 4 mensajes, la mitad (redondeo hacia abajo) del chatbot.
 const activity = dias => { const today = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate());
@@ -17,7 +20,7 @@ const activity = dias => { const today = Date.UTC(new Date().getUTCFullYear(), n
 const attention = id => ({ ok: true, item: { estado: messages.find(m => m.id === id)?.estado || 'nuevo', responsable: '', notas: '', respuesta: '', revision: 1, historial: [] } });
 
 const handler = async (req, res, { route, url, json, body }) => {
-  if (route.startsWith('/__s/')) { const [, , key, value] = route.split('/'); if (key === 'clear') { requests.length = 0; Object.assign(sim, { stats: 'ok', list: 'ok', libro: 'ok', unsub: 'ok', activity: 'ok' }); } else sim[key] = value; return json({ ok: true }) || true; }
+  if (route.startsWith('/__s/')) { const [, , key, value] = route.split('/'); if (key === 'clear') { requests.length = 0; Object.assign(sim, { stats: 'ok', list: 'ok', libro: 'ok', unsub: 'ok', activity: 'ok', chatbot: 'ok' }); } else sim[key] = value; return json({ ok: true }) || true; }
   if (route === '/__state') return json({ requests }) || true;
   if (!route.startsWith('/api/')) return false;
   const token = (req.headers.authorization || '').replace('Bearer ', '');
@@ -32,7 +35,9 @@ const handler = async (req, res, { route, url, json, body }) => {
   const sub = route.slice('/api/admin/'.length); let m;
   if (sub === 'stats/actividad') return (sim.activity === 'error' ? json({ message: 'Internal server error ER_SECRET' }, 500) : sim.activity === 'malformed' ? json({ ok: true, items: [] }) : json(activity(+url.searchParams.get('dias') || 30))) || true;
   if (sub === 'stats' && sim.stats === 'malformed') return json({ ok: true, items: [], pagination: { page: 1, total: 0, pages: 1 } }) || true;
-  if (sub === 'stats') return (sim.stats === 'error' ? json({ message: 'Internal server error ER_SECRET' }, 500) : json({ ok: true, stats: { academico, mensajes: { total: 6, nuevos: 3, enProceso: 3, atendidos: 0, archivados: 0, pendientes: 6 } }, actividadReciente: { mensajes: messages.slice(0, 2).map(x => ({ id: x.id, nombre: x.nombre, asunto: x.asunto, estado: x.estado, createdAt: x.createdAt })) } })) || true;
+  if (sub === 'stats') return (sim.stats === 'error' ? json({ message: 'Internal server error ER_SECRET' }, 500) : json({ ok: true, stats: { academico, mensajes: { total: 6, nuevos: 3, enProceso: 3, atendidos: 0, archivados: 0, pendientes: 6 }, preinscripciones }, actividadReciente: { mensajes: messages.slice(0, 2).map(x => ({ id: x.id, nombre: x.nombre, asunto: x.asunto, estado: x.estado, createdAt: x.createdAt })) } })) || true;
+  if (sub === 'chatbot/sin-respuesta') return (sim.chatbot === 'error' ? json({ message: 'Internal server error ER_SECRET' }, 500)
+    : json({ ok: true, items: [{ id: 1, pregunta: 'PREGUNTA_PRIVADA_NO_MOSTRAR', veces: 2, createdAt: '2026-05-01T10:00:00.000Z', updatedAt: '2026-05-02T10:00:00.000Z' }], pagination: { total: 1, page: 1, limit: 1, pages: 1 }, metrics: sim.chatbot === 'malformed' ? {} : chatbotMetrics })) || true;
   if (sub === 'messages') {
     if (sim.list === 'error') return json({ message: 'Internal server error ER_SECRET' }, 500) || true;
     if (sim.list === 'malformed') return json({ ok: true, pagination: { total: 6, page: 1, limit: 20, pages: 1 }, metrics: {} }) || true;
@@ -65,7 +70,7 @@ const handler = async (req, res, { route, url, json, body }) => {
   await clean();
   { const p = await session('/admin/dashboard'); await p.wait('document.querySelector(".hp-metrics article strong") && document.querySelector(".hp-metrics article strong").textContent !== "…" && document.querySelector(".hw-work")', 'indicadores cargados');
     const values = await metricValues(p);
-    ck(values.join() === '12,2,9,7,6', 'los indicadores muestran estudiantes, ediciones abiertas, matrículas registradas/vigentes y consultas pendientes de la API', values);
+    ck(values.join() === '12,2,9,7,3,6', 'los indicadores muestran estudiantes, ediciones abiertas, matrículas registradas/vigentes y consultas pendientes de la API', values);
     ck(!(await p.evaluate('!!document.querySelector(".hp-error")')), 'sin aviso de error cuando la API responde');
     ck(await p.evaluate('!!document.querySelector(".hw-work")'), 'se muestra «Tu trabajo pendiente»');
     const labels = await navLabels(p);
@@ -114,7 +119,7 @@ const handler = async (req, res, { route, url, json, body }) => {
   await clean();
   { await ctl('activity', 'error'); const p = await session('/admin/dashboard'); await p.wait('document.querySelector(".hp-activity-card [role=alert]")', 'error de actividad'); const text = await p.text('.hp-activity-card'); const values = await metricValues(p);
     ck(!/ER_SECRET/.test(text) && /No se pudo cargar la actividad/.test(text) && !(await p.evaluate('!!document.querySelector(".hp-chart")')), 'si falla la actividad se avisa sin texto técnico y no se dibuja un gráfico inventado', text.slice(0, 160));
-    ck(values.join() === '12,2,9,7,6', 'los indicadores del resumen siguen disponibles aunque falle el gráfico', values);
+    ck(values.join() === '12,2,9,7,3,6', 'los indicadores del resumen siguen disponibles aunque falle el gráfico', values);
     await ctl('activity', 'ok'); await p.click('.hp-activity-card [role=alert] .hp-btn', 'Reintentar'); await p.wait('document.querySelectorAll(".hp-chart title").length === 30', 'recuperación'); ck(true, '«Reintentar» recupera el gráfico'); await p.close(); }
   await clean();
   { await ctl('activity', 'malformed'); const p = await session('/admin/dashboard'); await p.wait('document.querySelector(".hp-activity-card [role=alert]")', 'formato inesperado');

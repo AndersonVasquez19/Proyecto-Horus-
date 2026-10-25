@@ -5,10 +5,14 @@ import { useAdminAuth } from '../context';
 import { usePanelAccess } from '../context/usePanelAccess';
 import { PANEL_ACTIONS } from '../context/panelAccess';
 import { panelRequest, errorMessage } from '../services/panelApi';
-import { isOperationalStats, type OperationalStats } from '../services/operationalStats';
+import { isOperationalStats, readPreregistrations, type OperationalStats } from '../services/operationalStats';
+import { overviewKpis } from '../services/overviewAnalytics';
 import { label } from '../types/workspace';
 import PanelIcon from './PanelIcon';
 import OverviewActivity from './workspace/OverviewActivity';
+import KpiCard from './workspace/KpiCard';
+import PreregistrationFunnel from './workspace/PreregistrationFunnel';
+import ChatbotEffectiveness from './workspace/ChatbotEffectiveness';
 
 export default function PanelOverview({ go }: { go: (section: string, create?: boolean) => void }) {
   const { token, user } = useAdminAuth();
@@ -26,35 +30,36 @@ export default function PanelOverview({ go }: { go: (section: string, create?: b
     return () => controller.abort();
   }, [token, reload, setLoading, setError]);
   const data = result?.token === token ? result.data : null;
-  const academic = data?.stats.academico;
   const messages = data?.stats.mensajes;
   const canMessages = access.canOpen('mensajes');
-  const metrics = [
-    { title: 'Total de estudiantes', value: academic?.estudiantes, sub: 'Incluye estudiantes archivados', icon: 'user', section: 'estudiantes', color: 'blue' },
-    { title: 'Ediciones activas', value: academic?.edicionesActivas, sub: 'Abiertas y sin archivar', icon: 'calendar', section: 'ediciones', color: 'teal' },
-    { title: 'Matrículas registradas', value: academic?.matriculasRegistradas, sub: 'Activas y anuladas', icon: 'book', section: 'matriculas', color: 'blue' },
-    { title: 'Matrículas vigentes', value: academic?.matriculasVigentes, sub: 'Con estado activa', icon: 'check', section: 'matriculas', color: 'teal' },
-    { title: 'Consultas pendientes', value: messages?.pendientes, sub: 'Nuevas y en proceso', icon: 'mail', section: 'mensajes', color: 'gold' },
-  ].filter(item => access.canOpen(item.section));
+  // Bloque de preinscripciones: null = «No disponible» (ausente, nulo o incoherente), nunca ceros.
+  const preregistrations = data ? readPreregistrations(data) : null;
+  const metrics = overviewKpis(data, preregistrations).filter(item => access.canOpen(item.section));
+  const canPreregistrations = access.canOpen('preinscripciones'), canChatbot = access.canOpen('chatbot');
   const shortcuts = [
     { section: 'estudiantes', permission: PANEL_ACTIONS.crearEstudiante, title: 'Registrar estudiante', text: 'Crear su ficha académica.', icon: 'user', create: true },
     { section: 'ediciones', permission: PANEL_ACTIONS.crearEdicion, title: 'Crear edición', text: 'Programar una edición y sus cupos.', icon: 'calendar', create: true },
     { section: 'matriculas', permission: PANEL_ACTIONS.crearMatricula, title: 'Registrar matrícula', text: 'Vincular un estudiante y una edición.', icon: 'book', create: true },
     { section: 'importacion-excel', permission: PANEL_ACTIONS.importarAcademico, title: 'Importar CSV', text: 'Revisar el archivo antes de confirmar.', icon: 'file', create: false },
   ].filter(item => access.canOpen(item.section) && access.can(item.permission));
-  const metric = (value?: number) => loading ? '…' : error || value === undefined ? '—' : String(value);
+  const metric = (value?: number | null) => loading ? '…' : error || value === undefined || value === null ? '—' : String(value);
   return <div className="hp-operational-overview">
     <div className="hp-heading"><div><p className="hp-kicker">VISTA GENERAL</p><h1>Hola, {user?.nombre?.split(' ')[0] || 'administrador'}</h1><p>Gestión académica y atención al usuario en un solo espacio.</p></div><button className="hp-btn" disabled={loading} onClick={() => setReload(n => n + 1)}><PanelIcon name="refresh" />Actualizar resumen</button></div>
     {error && <p className="hp-error" role="alert">{error} Los indicadores no están disponibles.</p>}
     <section className="hp-operational-hero"><div><p className="hp-kicker">HORUS GROUP SRL</p><h2>Organiza la formación.<br />Da seguimiento a cada consulta.</h2><p>Estudiantes, ediciones y matrículas con su historial, junto a los canales de atención del equipo.</p></div><span aria-hidden="true"><PanelIcon name="book" size={48} /></span></section>
     <section className="hp-metrics" aria-label="Indicadores del sistema" aria-busy={loading}>
-      {metrics.map(item => <article key={item.title}><div className="hp-metric-top"><span className={'hp-metric-icon hp-tone-' + item.color}><PanelIcon name={item.icon} /></span><span className="hp-metric-label">{item.title}</span></div><strong>{metric(item.value)}</strong><p>{item.sub}</p></article>)}
+      {metrics.map(item => <KpiCard key={item.key} title={item.title} value={metric(item.value)} sub={item.sub} icon={item.icon} tone={item.tone} action={item.action} onAction={() => go(item.section)} />)}
     </section>
     {(shortcuts.length > 0 || canMessages) && <section className="hp-shortcuts"><div><p className="hp-kicker">ACCESOS DIRECTOS</p><h2>Continúa con tu trabajo</h2></div><div className="hp-shortcut-grid">
       {shortcuts.map(item => <button key={item.section} onClick={() => go(item.section, item.create)}><span className="hp-shortcut-icon"><PanelIcon name={item.icon} size={23} /></span><div><strong>{item.title}</strong><small>{item.text}</small></div><PanelIcon name="arrow" /></button>)}
       {canMessages && <button onClick={() => go('mensajes')}><span className="hp-shortcut-icon"><PanelIcon name="mail" size={23} /></span><div><strong>Atender consultas</strong><small>Mensajes y seguimiento de atención.</small></div><PanelIcon name="arrow" /></button>}
     </div></section>}
+    {(canPreregistrations || canChatbot) && <div className="hp-analytics-grid">
+      {canPreregistrations && <PreregistrationFunnel stats={preregistrations} loading={loading} error={!!error} onOpen={() => go('preinscripciones')} />}
+      {canChatbot && <ChatbotEffectiveness refreshKey={reload} onOpen={() => go('chatbot')} />}
+    </div>}
     {canMessages && <>
+      <OverviewActivity go={go} refreshKey={reload} />
       {!loading && !error && messages && <section className="hw-work"><div><p className="hp-kicker">ATENCIÓN AL USUARIO</p><h2>Consultas por atender</h2><p>El seguimiento se realiza dentro de Mensajes.</p></div><div className="hw-work-grid">
         <Link to="/admin/messages?estado=nuevo"><PanelIcon name="mail" /><div><strong>{messages.nuevos} consultas nuevas</strong><small>Inicia su atención</small></div><PanelIcon name="arrow" /></Link>
         <Link to="/admin/messages?estado=en_proceso"><PanelIcon name="check" /><div><strong>{messages.enProceso} en seguimiento</strong><small>Continúa la atención iniciada</small></div><PanelIcon name="arrow" /></Link>
@@ -65,7 +70,6 @@ export default function PanelOverview({ go }: { go: (section: string, create?: b
           <Link key={message.id} to={'/admin/messages?id=' + message.id}><span className="hp-avatar">{message.nombre.charAt(0).toUpperCase()}</span><div><strong>{message.asunto}</strong><small>{message.nombre} · {new Date(message.createdAt).toLocaleDateString('es-PE', { timeZone: 'America/Lima' })}</small></div><span className={'hp-badge hp-state-' + message.estado}>{label(message.estado)}</span></Link>)}</div>
           : <div className="hp-empty hp-empty-compact"><PanelIcon name="mail" size={28} /><h3>Aún no hay consultas</h3><p>Las consultas recibidas aparecerán aquí.</p></div>}
       </section>
-      <OverviewActivity go={go} />
     </>}
   </div>;
 }

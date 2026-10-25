@@ -1,0 +1,107 @@
+/* Resumen analítico (Fase 2A). Todo vive bajo .hp-operational-overview: no afecta a otras secciones del panel.
+   Se importa después de operational-panel.css para ganar en igualdad de especificidad. Sin CDN, sin Tailwind y con las fuentes
+   autoalojadas del panel. Paleta Horus: navy #102d4f y dorado #d4a93c. */
+.hp-operational-overview {
+  --ov-navy: #102d4f; --ov-gold: #d4a93c; --ov-gold-soft: #faf2dc; --ov-line: #e2e9f3; --ov-ink: #172c48; --ov-muted: #52647c;
+  --ov-blue: #2b5d8a; --ov-green: #2c8a73; --ov-red: #b5503f; --ov-grey: #8b9bb0; --ov-focus: #2554eb;
+}
+.hp-operational-overview .hp-operational-hero { background: linear-gradient(135deg, #102d4f 0%, #17406d 100%); box-shadow: 0 14px 30px -18px #102d4f99; }
+
+/* --- Indicadores (KPI): 3 columnas en escritorio (6 tarjetas), 2 en tablet y 1 en móvil --- */
+.hp-operational-overview .hp-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 0; }
+.hp-operational-overview .hp-metrics .hp-kpi {
+  position: relative; display: flex; flex-direction: column; min-width: 0; padding: 20px 20px 4px; overflow: hidden;
+  background: #fff; border: 1px solid var(--ov-line); border-radius: 16px; box-shadow: 0 1px 3px #0f172a0d, 0 10px 26px -16px #102d4f40;
+  transition: box-shadow .2s ease, transform .2s ease, border-color .2s ease;
+}
+.hp-operational-overview .hp-metrics .hp-kpi::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, var(--ov-navy), var(--ov-gold)); }
+.hp-operational-overview .hp-metrics .hp-kpi:hover { transform: translateY(-2px); border-color: #cfdaea; box-shadow: 0 1px 3px #0f172a0d, 0 16px 30px -16px #102d4f55; }
+.hp-operational-overview .hp-metrics .hp-kpi > strong { margin-top: 2px; color: var(--ov-navy); font-size: clamp(30px, 3.2vw, 40px); line-height: 1.1; }
+.hp-operational-overview .hp-metrics .hp-kpi > p { margin: 8px 0 14px; color: var(--ov-muted); font-size: 13px; line-height: 1.5; }
+.hp-operational-overview .hp-metrics .hp-kpi .hp-metric-label { color: var(--ov-muted); font-size: 13px; font-weight: 600; }
+.hp-operational-overview .hp-kpi-link {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: calc(100% + 40px); min-height: 44px; margin: auto -20px 0; padding: 0 20px;
+  border: 0; border-top: 1px solid #eef2f7; background: #f8fafd; color: #24507f; font-size: 13px; font-weight: 600; text-align: left;
+}
+.hp-operational-overview .hp-kpi-link:hover { background: var(--ov-gold-soft); color: var(--ov-navy); }
+
+/* --- Rejilla de analítica y tarjetas --- */
+.hp-operational-overview .hp-analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 24px; align-items: stretch; }
+.hp-operational-overview .hp-analytics-grid > .hp-card { margin-bottom: 0; }
+.hp-operational-overview .hp-analytics-card { display: flex; flex-direction: column; box-shadow: 0 1px 3px #0f172a0d, 0 10px 26px -16px #102d4f40; }
+.hp-operational-overview .hp-analytics-card .hp-empty { flex: 1; }
+.hp-operational-overview .hp-analytics-body { display: grid; gap: 16px; padding: 0 24px 24px; }
+.hp-operational-overview .hp-stat-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.hp-operational-overview .hp-stat-line strong { color: var(--ov-navy); font-family: var(--panel-heading-font); font-size: 40px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.hp-operational-overview .hp-stat-line span { color: var(--ov-muted); font-size: 14px; }
+
+/* Distribución por estado (preinscripciones) */
+.hp-operational-overview .hp-stack, .hp-operational-overview .hp-split-bar { display: flex; gap: 2px; height: 14px; overflow: hidden; border-radius: 999px; background: #eef2f7; }
+.hp-operational-overview .hp-stack > span, .hp-operational-overview .hp-split-bar > span { flex: 0 1 0; min-width: 6px; }
+.hp-operational-overview .hp-stack-recibidas { background: var(--ov-blue); }
+.hp-operational-overview .hp-stack-validadas { background: var(--ov-gold); }
+.hp-operational-overview .hp-stack-convertidas { background: var(--ov-green); }
+.hp-operational-overview .hp-stack-descartadas { background: var(--ov-red); }
+.hp-operational-overview .hp-stack-desistidas { background: var(--ov-grey); }
+.hp-operational-overview .hp-split-ok { background: var(--ov-green); }
+.hp-operational-overview .hp-split-miss { background: var(--ov-gold); }
+.hp-operational-overview .hp-state-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.hp-operational-overview .hp-state-list li { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto 56px; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #eef2f7; }
+.hp-operational-overview .hp-state-list li:last-child { border-bottom: 0; }
+.hp-operational-overview .hp-state-dot { width: 12px; height: 12px; border-radius: 4px; }
+.hp-operational-overview .hp-state-list strong { display: block; color: var(--ov-ink); font-size: 14px; }
+.hp-operational-overview .hp-state-list small { display: block; margin-top: 2px; color: var(--ov-muted); font-size: 12px; line-height: 1.4; }
+.hp-operational-overview .hp-state-value { color: var(--ov-ink); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.hp-operational-overview .hp-state-percent { color: var(--ov-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.hp-operational-overview .hp-callout { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 12px 14px; border-left: 3px solid var(--ov-gold); border-radius: 0 10px 10px 0; background: var(--ov-gold-soft); color: var(--ov-ink); font-size: 14px; }
+.hp-operational-overview .hp-callout strong { font-size: 18px; }
+.hp-operational-overview .hp-callout small { display: block; margin-top: 2px; color: var(--ov-muted); font-size: 12px; }
+
+/* Chatbot */
+.hp-operational-overview .hp-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin: 0; }
+.hp-operational-overview .hp-facts > div { padding: 10px 12px; border: 1px solid #eef2f7; border-radius: 10px; background: #f8fafd; }
+.hp-operational-overview .hp-facts dt { color: var(--ov-muted); font-size: 12px; }
+.hp-operational-overview .hp-facts dd { margin: 2px 0 0; color: var(--ov-navy); font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Actividad: origen de las consultas y cotizaciones, lado a lado cuando hay espacio */
+.hp-operational-overview .hp-activity-aside { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1px; border-top: 1px solid var(--ov-line); background: var(--ov-line); }
+.hp-operational-overview .hp-activity-aside > div { background: #fff; align-content: start; }
+.hp-operational-overview .hp-activity-aside .hp-quotes-chart { border-top: 0; }
+.hp-operational-overview .hp-channel-split { display: grid; gap: 14px; padding: 20px 24px 22px; }
+.hp-operational-overview .hp-channel-split h3 { font-size: 16px; font-weight: 650; }
+.hp-operational-overview .hp-channel-split ul, .hp-operational-overview .hp-quotes-chart ul { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.hp-operational-overview .hp-channel-split li { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(48px, 1fr) 32px 52px; align-items: center; gap: 12px; color: #4c5f77; font-size: 13px; }
+.hp-operational-overview .hp-channel-split li strong, .hp-operational-overview .hp-quotes-chart li strong { color: var(--ov-ink); font-variant-numeric: tabular-nums; text-align: right; }
+.hp-operational-overview .hp-channel-bot { background: var(--ov-gold); }
+.hp-operational-overview .hp-channel-contact { background: var(--ov-blue); }
+.hp-operational-overview .hp-channel-percent, .hp-operational-overview .hp-quote-percent { color: var(--ov-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.hp-operational-overview .hp-quotes-chart li { grid-template-columns: 104px minmax(0, 1fr) 32px 52px; }
+.hp-operational-overview .hp-quote-dot { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; }
+.hp-operational-overview .hp-bar-track { height: 10px; }
+.hp-operational-overview .hp-chart-summary > div:not(.hp-legend) { min-width: 0; }
+
+/* Accesibilidad y objetivos táctiles */
+.hp-operational-overview :is(.hp-kpi-link, .hp-text-btn, .hp-btn, .hw-tabs button):focus-visible { outline: 2px solid var(--ov-focus); outline-offset: 2px; }
+.hp-operational-overview .hw-tabs button { min-height: 44px; }
+.hp-operational-overview .hp-text-btn { min-height: 44px; }
+
+@media (max-width: 1000px) {
+  .hp-operational-overview .hp-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .hp-operational-overview .hp-analytics-body { padding: 0 16px 20px; }
+  .hp-operational-overview .hp-channel-split, .hp-operational-overview .hp-activity-aside .hp-quotes-chart { padding: 18px 16px 20px; }
+}
+@media (max-width: 520px) {
+  .hp-operational-overview .hp-metrics { grid-template-columns: minmax(0, 1fr); }
+  .hp-operational-overview .hp-metrics .hp-kpi { padding: 18px 16px 4px; }
+  .hp-operational-overview .hp-kpi-link { width: calc(100% + 32px); margin: auto -16px 0; padding: 0 16px; }
+  .hp-operational-overview .hp-state-list li { grid-template-columns: 12px minmax(0, 1fr) auto 48px; gap: 10px; }
+  .hp-operational-overview .hp-channel-split li { grid-template-columns: minmax(0, 1fr) 32px 52px; }
+  .hp-operational-overview .hp-channel-split li > .hp-bar-track { grid-column: 1 / -1; order: 3; }
+  .hp-operational-overview .hp-quotes-chart li { grid-template-columns: 96px minmax(0, 1fr) 28px 48px; gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp-operational-overview .hp-metrics .hp-kpi { transition: none; }
+  .hp-operational-overview .hp-metrics .hp-kpi:hover { transform: none; }
+}
