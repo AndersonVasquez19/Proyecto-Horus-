@@ -125,7 +125,25 @@ imagen ni la latencia hacia Aiven. No se probaron proveedores reales de correo n
 4. **Railway**: el arranque como root se probó en Docker local, no en Railway.
 5. **Arranque en frío** con `minReplicas=0`: ~8 s locales sin red; el chatbot del frontend tiene un límite de 22 s.
 
-## 7. Cómo repetir
+## 7. Ruta hacia GHCR y Azure (cada paso exige autorización)
+
+1. **Publicar la rama**: fast-forward de `origin/anderson` con los commits de `security/trivy-hardening` (sin reescribir
+   historia). El workflow solo admite un `AUTHORIZED_SHA` antecesor de `origin/anderson`.
+2. **Workflow**: PR desde la rama local `ci/ghcr-distroless-authorize` (basada en `main`), que fija
+   `AUTHORIZED_SHA=3e319be7…` y exige bases por digest y runtime distroless con `USER 1000:1000`. El contenido del backend de
+   `3e319be7` es el probado; commits posteriores solo de documentación no cambian la imagen.
+3. **Ejecución sin publicar** (`publish=false`): comprobar en el informe `OS.Family=debian`, 0 CRITICAL/HIGH, SBOM y
+   procedencia, y comparar los CVE con este documento. `policy_ok` será `false` mientras haya hallazgos sin aprobar.
+4. **Decisión del responsable** sobre los MEDIUM residuales (aprobación explícita y revisada en `main`, o esperar
+   correcciones). Sin ella no se publica.
+5. **Publicación privada** solo con las cinco condiciones del workflow (`publish=true`, frase, `policy_ok`,
+   `GHCR_PUBLISH_ENABLED`, aprobación del entorno `ghcr-publish`) y uso del **digest** remoto, nunca de la etiqueta.
+6. **Azure**: seguir [azure-container-apps-e1.md](azure-container-apps-e1.md) §6–§7 (cuota, costes, presupuesto con
+   alertas, logs, reversión). Diferencias con la imagen nueva: probes HTTP de ACA (no lee `HEALTHCHECK`); sin shell
+   para `az containerapp exec` (usar `--command "node scripts/check-database.cjs"` o similar, por comprobar); no forzar
+   root; Azure Files con opciones `uid=1000,gid=1000`; arranque en frío local ~8 s con 0,5 vCPU.
+
+## 8. Cómo repetir
 
 ```powershell
 docker build --platform linux/amd64 -t horus-aca-backend:hardening-local backend
