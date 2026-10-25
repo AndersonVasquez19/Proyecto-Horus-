@@ -504,17 +504,19 @@ no se probaron proveedores reales.
 
 ### Persistencia y usuario
 
-El comando inicia brevemente como root, corrige el propietario de `UPLOAD_DIR` bajo `/data/` y ejecuta
-`node dist/main.js` con UID/GID 1000 mediante setpriv. La imagen no declara `USER node`;
-también puede iniciarse como UID 1000 si el almacenamiento ya es escribible, como se comprobó.
+**Vigente desde el 25/10/2026** (imagen distroless, ver
+[seguridad-imagen-trivy-20261025.md](seguridad-imagen-trivy-20261025.md)): la imagen declara `USER 1000:1000` y
+arranca con `/nodejs/bin/node scripts/container-start.cjs`, sin shell. Con el usuario de la imagen (lo normal en
+Container Apps) no se cambia ningún propietario. Solo si se fuerza root, corrige `UPLOAD_DIR` bajo `/data/` con
+`lchown` y abandona root antes de cargar la API. El texto anterior sobre `setpriv` describe la imagen del 23/10.
 
 El directorio de la imagen **no ofrece persistencia** en Azure. Planificar Azure Files y comprobar una escritura
-real tras montarlo. En un montaje SMB, el `chown -R` del comando puede fallar y detener el arranque.
-No asumir que las reglas de volúmenes Railway se aplican a Azure Files.
+real tras montarlo. Si se forzara root sobre un montaje SMB, el cambio de propietario puede fallar y detener el
+arranque: no forzar root en Container Apps. No asumir que las reglas de volúmenes Railway se aplican a Azure Files.
 
 Alternativa de configuración pendiente de probar en Azure: montar el share en `/mnt/horus-uploads`,
-usar esa ruta como `UPLOAD_DIR` (fuera de `/data/`, para evitar el chown del comando actual) y establecer
-permisos/opciones de montaje compatibles con UID/GID 1000. No cambiar el usuario de la API a root.
+usar esa ruta como `UPLOAD_DIR` y establecer permisos/opciones de montaje compatibles con UID/GID 1000
+(p. ej. `uid=1000,gid=1000` en SMB). No cambiar el usuario de la API a root.
 La selección concreta de protocolo y opciones depende del entorno; no se creó un share.
 
 ## Impedimentos y condiciones pendientes
@@ -530,6 +532,9 @@ La selección concreta de protocolo y opciones depende del entorno; no se creó 
 - Sin proxies confiables, visitantes distintos pueden compartir cuota por la IP del proxy.
 - Resolver o evaluar explícitamente los hallazgos altos de npm y Scout antes de exposición pública.
   No se demostró explotación de Horus ni se declara la imagen libre de vulnerabilidades.
+  Estado del 25/10/2026: Trivy local de la imagen distroless sin CRITICAL ni HIGH (24 MEDIUM sin corrección
+  publicada o en versión mayor); detalle y riesgos residuales en
+  [seguridad-imagen-trivy-20261025.md](seguridad-imagen-trivy-20261025.md).
 
 ## Referencias oficiales y evidencia local
 

@@ -49,20 +49,20 @@ Todos desde la raíz del repositorio, con el prefijo completo (`--env-file` es o
 **Una instalación nueva no es utilizable todavía:** la base nace sin tablas y sin administrador. `/` y `/admin/login` cargan (son archivos estáticos), pero las páginas que
 consultan la API (catálogo, galería, formularios…) devuelven error y **nadie puede iniciar sesión en el panel** hasta ejecutar los pasos de la sección siguiente, incluida la creación del primer administrador.
 
-El contenedor del backend arranca como root solo para corregir el propietario de `/data/uploads` y ejecuta la API como `node` (UID 1000). Por eso los comandos de abajo usan `exec -u node`.
+La imagen del backend es distroless (desde el 25/10/2026): arranca como `node` (UID 1000) y **no tiene shell, `npm` ni utilidades como `printenv`**; los scripts operativos se ejecutan con `node scripts/<script>.cjs` y los argumentos van directamente, sin el `--` de `npm run`. Si se fuerza el arranque como root (p. ej. un volumen de Railway), `scripts/container-start.cjs` corrige solo el propietario de `UPLOAD_DIR` bajo `/data/` y abandona root antes de cargar la API. Los comandos de abajo usan `exec -u node` para no depender del usuario con que arrancó el contenedor. Detalle: [seguridad-imagen-trivy-20261025.md](seguridad-imagen-trivy-20261025.md).
 
 ## Preparar una base local vacía (explícito)
 
-Estos pasos escriben **solo** en el MySQL del volumen `horus-local_mysql_data`. Compruébalo con `docker compose … exec backend printenv DB_HOST DB_NAME` (debe ser `mysql` / el nombre de tu `.env.docker`).
+Estos pasos escriben **solo** en el MySQL del volumen `horus-local_mysql_data`. Compruébalo con `docker compose … exec backend node -p "process.env.DB_HOST + ' / ' + process.env.DB_NAME"` (debe ser `mysql` / el nombre de tu `.env.docker`).
 No los ejecutes contra otra base. En una base ya inicializada, omite `db:init`.
 
 ```powershell
-docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend npm run db:init       # solo si la base no tiene tablas
-docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend npm run db:migrate    # aplica TODAS las migraciones, incluidas 20261009-chatbot-metrics, 20261010-newsletter-default-novedades y 20261011-cotizaciones-idempotencia; sin las dos columnas de esta última, las cotizaciones fallan
-docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend npm run db:check      # solo lectura; debe terminar con «Esquema compatible»
-docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend npm run admin:assign-role -- --listar   # solo lectura; muestra la línea --destino=… --servidor=<server_uuid> que se usa abajo
+docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend node scripts/init-database.cjs   # db:init; solo si la base no tiene tablas
+docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend node scripts/migrate.cjs         # db:migrate; aplica TODAS las migraciones, incluidas 20261009-chatbot-metrics, 20261010-newsletter-default-novedades y 20261011-cotizaciones-idempotencia; sin las dos columnas de esta última, las cotizaciones fallan
+docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend node scripts/check-database.cjs  # db:check; solo lectura; debe terminar con «Esquema compatible»
+docker compose --env-file .env.docker -f docker-compose.local.yml exec -u node backend node scripts/assign-role.cjs --listar   # admin:assign-role; solo lectura; muestra la línea --destino=… --servidor=<server_uuid> que se usa abajo
 $env:ADMIN_INITIAL_PASSWORD = "<clave-local>"
-docker compose --env-file .env.docker -f docker-compose.local.yml exec -it -u node -e ADMIN_INITIAL_PASSWORD backend npm run admin:create -- --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>   # pide nombre y correo; crea la cuenta sin rol
+docker compose --env-file .env.docker -f docker-compose.local.yml exec -it -u node -e ADMIN_INITIAL_PASSWORD backend node scripts/create-admin.cjs --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>   # pide nombre y correo; crea la cuenta sin rol
 Remove-Item Env:ADMIN_INITIAL_PASSWORD
 ```
 
@@ -104,9 +104,9 @@ docker run --rm -v horus-local_uploads_data:/data:ro -v "${PWD}/backups:/backup"
 
 Estos dos comandos **no se ejecutaron** al preparar la guía: pruébalos con una base de prueba antes de fiarte de ellos. No uses `>` en PowerShell 5.1: escribe UTF-16 y corrompe el volcado.
 
-Para los archivos subidos, el proyecto también ofrece `uploads:backup` / `uploads:restore` (manifiesto SHA-256, sin sobrescribir; ver [backup-restauracion.md](backup-restauracion.md)), que no dependen de `tar` ni del volumen montado en el anfitrión: `docker compose … exec -u node backend npm run uploads:backup -- --dir=/tmp/respaldo-uploads` y luego `docker compose … cp backend:/tmp/respaldo-uploads ./backups/`. Haz primero el respaldo de la base y después el de los archivos.
+Para los archivos subidos, el proyecto también ofrece `uploads:backup` / `uploads:restore` (manifiesto SHA-256, sin sobrescribir; ver [backup-restauracion.md](backup-restauracion.md)), que no dependen de `tar` ni del volumen montado en el anfitrión: `docker compose … exec -u node backend node scripts/backup-uploads.cjs --dir=/tmp/respaldo-uploads` y luego `docker compose … cp backend:/tmp/respaldo-uploads ./backups/`. Haz primero el respaldo de la base y después el de los archivos.
 
-Alternativa del proyecto para la base (tampoco ejecutada en este entorno): `docker compose … exec -u node backend npm run db:backup -- --dir=/tmp/respaldo` y copiar el resultado fuera con
+Alternativa del proyecto para la base (tampoco ejecutada en este entorno): `docker compose … exec -u node backend node scripts/backup.cjs --dir=/tmp/respaldo` y copiar el resultado fuera con
 `docker compose … cp backend:/tmp/respaldo ./backups/` antes de recrear el contenedor. Sin `--dir` escribe en `/app/.backups`, donde `node` no puede escribir.
 La restauración con `db:restore` solo acepta bases aisladas `horus_restore_*` y, al ser un servidor no local, exige `ALLOW_RESTORE_DB=true`: ver [backup-restauracion.md](backup-restauracion.md).
 

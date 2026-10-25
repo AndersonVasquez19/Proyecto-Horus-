@@ -12,7 +12,8 @@ Esta propuesta precisa la configuración económica de E.1 frente al ejemplo ant
 
 | Requisito | Evidencia disponible y conclusión |
 | --- | --- |
-| Node 22 | `backend/Dockerfile`: dos etapas `node:22-bookworm-slim`, base fijada por digest. El host actual tiene Node 24.19.0; no usarlo para afirmar compatibilidad Node 22. |
+| Imagen (25/10/2026) | Runtime distroless `nodejs22-debian13` por digest, sin shell; arranque `scripts/container-start.cjs`, `USER 1000:1000`, `HEALTHCHECK` solo para Docker. Trivy local: 0 CRITICAL/HIGH, 24 MEDIUM. Ver [seguridad-imagen-trivy-20261025.md](seguridad-imagen-trivy-20261025.md); las filas siguientes describen la imagen anterior salvo donde se indica. |
+| Node 22 | `backend/Dockerfile`: dos etapas `node:22-bookworm-slim`, base fijada por digest (desde el 25/10: construcción en bookworm y runtime distroless Debian 13, ambos con Node 22.23.4). El host actual tiene Node 24.19.0; no usarlo para afirmar compatibilidad Node 22. |
 | Compilación | `npm ci`, generación Prisma, `npm run build`, poda de desarrollo y copia de `dist`. El cierre r4 documenta build satisfactorio; no se repitió en E.1. No hay migración en build ni arranque. |
 | Prisma/MariaDB | Manifiesto: Prisma y adaptador 6.19.3, MariaDB 3.5.4 mediante override. `PrismaService` usa el adaptador, pool de dos conexiones, TLS y `SELECT 1` al iniciar. |
 | Sin root | `USER node`, copias con propietario node y eliminación de SUID/SGID en `/usr/bin` y `/usr/sbin`. CMD termina con `exec node`; si se fuerza root, intenta bajar privilegios. No forzar root en ACA. |
