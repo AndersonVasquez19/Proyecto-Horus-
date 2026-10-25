@@ -32,7 +32,8 @@ concurrency:
 
 env:
   # Cambiar estos valores exige un cambio revisado en main: el codigo bajo prueba no puede modificar su propia politica.
-  AUTHORIZED_SHA: de772155113d1cef14a70403b6f49909c769900a
+  # 5c01c5f: runtime distroless Debian 13 (security/trivy-hardening). Solo es valido cuando ese commit este en origin/anderson.
+  AUTHORIZED_SHA: 5c01c5f8d51f5015c810c6c3e77ac948dd59302b
   AUTHORIZED_BRANCH: anderson
   IMAGE_NAME: ghcr.io/castope/horus-group-api
   # CVE aceptados POR EL RESPONSABLE solo para una imagen privada de pruebas, separados por comas. Vacio = ninguno.
@@ -74,6 +75,14 @@ jobs:
           [ -z "$(git status --porcelain)" ]
           if git ls-files backend | grep -Eq '(^|/)\.env$|\.pem$|\.key$|\.pfx$'; then echo "Archivo sensible versionado"; exit 1; fi
           grep -Eq '^FROM node:22-bookworm-slim@sha256:[0-9a-f]{64}' backend/Dockerfile
+          # Toda imagen externa fijada por digest (las referencias a etapas previas no llevan registro ni digest).
+          if grep -E '^FROM ' backend/Dockerfile | awk '{print $2}' | grep -Ev '^[a-z-]+$' | grep -Evq '@sha256:[0-9a-f]{64}$'; then
+            echo "Imagen base sin digest en backend/Dockerfile"; exit 1
+          fi
+          # La etapa final debe ser el runtime distroless de Debian 13 (fijado arriba) y no ejecutar como root.
+          grep -Eq '^FROM gcr\.io/distroless/nodejs22-debian13@sha256:[0-9a-f]{64} AS distroless-base$' backend/Dockerfile
+          [ "$(grep -E '^FROM ' backend/Dockerfile | tail -1)" = "FROM distroless-base AS runtime" ]
+          grep -Eq '^USER 1000:1000$' backend/Dockerfile
           skopeo --version
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
