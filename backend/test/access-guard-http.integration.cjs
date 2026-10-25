@@ -252,7 +252,7 @@ test('E3.6: AccessGuard activa en el AppModule normal, HTTP real contra MySQL de
       assert.deepEqual(inventory.filter(route => !registered.includes(route)), [], 'ruta del inventario no registrada');
       // El arranque de prueba replica main.ts: si main.ts cambia su configuración HTTP, esta comprobación obliga a revisarlo.
       const main = readFileSync(join(backend, 'src', 'main.ts'), 'utf8');
-      for (const line of ["app.setGlobalPrefix('api')", 'configureHttpSecurity(app, process.env)', 'app.useGlobalPipes(createValidationPipe())', "app.set('trust proxy', trustedProxies(process.env.TRUSTED_PROXY_CIDRS))", 'NestFactory.create<NestExpressApplication>(AppModule)']) {
+      for (const line of ["app.setGlobalPrefix('api')", 'configureHttpSecurity(app, process.env)', 'app.useGlobalPipes(createValidationPipe())', "app.set('trust proxy', trustedProxies(process.env.TRUSTED_PROXY_CIDRS, process.env.TRUSTED_PROXY_HOPS))", 'NestFactory.create<NestExpressApplication>(AppModule)']) {
         assert.ok(main.includes(line), 'main.ts conserva: ' + line);
       }
       const appModule = readFileSync(join(dist, 'app.module.js'), 'utf8');

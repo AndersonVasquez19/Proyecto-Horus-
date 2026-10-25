@@ -69,7 +69,7 @@ Reflect.decorate([Module({
 
 async function bootstrap() {
   const created = await NestFactory.create(AccessGuardTestModule, { logger: ['error', 'warn'] });
-  created.set('trust proxy', trustedProxies(process.env.TRUSTED_PROXY_CIDRS));
+  created.set('trust proxy', trustedProxies(process.env.TRUSTED_PROXY_CIDRS, process.env.TRUSTED_PROXY_HOPS));
   created.enableShutdownHooks();
   created.setGlobalPrefix('api');
   configureHttpSecurity(created, process.env);
