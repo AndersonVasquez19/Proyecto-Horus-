@@ -1,7 +1,12 @@
 import { isIP } from 'node:net';
 
-// Empty by default. Never trust every source or a user-controlled hop count.
-export function trustedProxies(value: unknown): string[] | false {
+// Sin confianza por defecto. Un salto solo es seguro si no existe acceso directo a NestJS.
+export function trustedProxies(value: unknown, hops?: unknown): string[] | false | 1 {
+  if (hops !== undefined) {
+    if (hops !== '1') throw new Error('TRUSTED_PROXY_HOPS solo admite el valor 1.');
+    if (trustedProxies(value) !== false) throw new Error('TRUSTED_PROXY_HOPS y TRUSTED_PROXY_CIDRS son mutuamente excluyentes.');
+    return 1;
+  }
   if (value === undefined || value === '') return false;
   if (typeof value !== 'string') throw new Error('TRUSTED_PROXY_CIDRS debe contener IPs o CIDRs explícitos.');
   const addresses = value.split(/[\s,]+/).filter(Boolean);
@@ -22,8 +27,9 @@ export function trustedProxies(value: unknown): string[] | false {
 // valores de configuración. No presupone rangos de ninguna plataforma: quien despliega debe confirmarlos con su proveedor.
 export function proxyTrustWarning(env: Record<string, unknown>): string | null {
   const hosted = env.VERCEL === '1' || env.NODE_ENV === 'production';
-  if (!hosted || trustedProxies(env.TRUSTED_PROXY_CIDRS) !== false) return null;
+  if (!hosted || trustedProxies(env.TRUSTED_PROXY_CIDRS, env.TRUSTED_PROXY_HOPS) !== false) return null;
   return 'TRUSTED_PROXY_CIDRS no está configurado en un despliegue alojado: si la API recibe el tráfico a través de un proxy, todos los visitantes ' +
     'compartirán el mismo límite de frecuencia. Configura las IPs o CIDRs de los proxies confiables (y las del proxy de entrada en el frontend) ' +
-    'confirmados con tu proveedor; si la API recibe conexiones directas de los clientes, puedes ignorar este aviso.';
+    'confirmados con tu proveedor, o TRUSTED_PROXY_HOPS=1 exclusivamente tras un único ingress sin acceso directo a NestJS; ' +
+    'si la API recibe conexiones directas de los clientes, puedes ignorar este aviso.';
 }

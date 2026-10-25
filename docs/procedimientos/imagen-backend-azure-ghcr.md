@@ -1,5 +1,9 @@
 # Imagen del backend para Azure Container Apps y GHCR
 
+La configuración de proxy añadida en D.4 se describe en [Proxy HTTP de Azure](proxy-azure.md).
+El modo `TRUSTED_PROXY_HOPS=1` es una alternativa excluyente a CIDRs y exige ingress único sin acceso
+directo a NestJS. La imagen r4 descrita abajo es anterior a D.4 y no contiene ese cambio.
+
 ## Cierre del 24/10/2026: candidata r4 y operación futura
 
 La candidata actual es **`horus-aca-backend:security-20261024-r4-67ad23fa0935`**, índice OCI local
