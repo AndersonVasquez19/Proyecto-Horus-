@@ -3,7 +3,7 @@ import { useAdminAuth } from '../context';
 import { usePanelAccess } from '../context/usePanelAccess';
 import { PANEL_ACTIONS } from '../context/panelAccess';
 import { errorMessage, PanelApiError, panelRequest } from '../services/panelApi';
-import { EMPTY_STUDENT, studentForm, studentFormErrors, studentPayload, type Student, type StudentForm } from '../services/students';
+import { EMPTY_STUDENT, studentForm, studentFormErrors, studentPayload, type Student, type StudentForm, type StudentList } from '../services/students';
 import { useUnsavedChangesControl } from '../unsaved/unsavedContext';
 import PanelDialog from './PanelDialog';
 
@@ -15,6 +15,8 @@ export default function StudentEditor({ original, onClose, onSaved }: { original
   const [errors, setErrors] = useState<Partial<Record<keyof StudentForm, string>>>({});
   const [saving, setSaving] = useState(false), [error, setError] = useState(''), [blocked, setBlocked] = useState(false);
   const [current, setCurrent] = useState<Student | null>(null), [reading, setReading] = useState(false);
+  const [consulted, setConsulted] = useState(false), [consultError, setConsultError] = useState('');
+  const readLock = useRef(false), blockedRef = useRef(false);
   const locked = useRef(false), mounted = useRef(true), controller = useRef<AbortController | null>(null);
   const initial = original ? studentForm(original) : EMPTY_STUDENT;
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
@@ -25,7 +27,7 @@ export default function StudentEditor({ original, onClose, onSaved }: { original
 
   const save = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!writable || locked.current || blocked) return;
+    if (!writable || locked.current || blockedRef.current) return;
     const nextErrors = studentFormErrors(form, original); setErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
     locked.current = true; setSaving(true); setError('');
@@ -38,20 +40,29 @@ export default function StudentEditor({ original, onClose, onSaved }: { original
     } catch (err) {
       if (!mounted.current) return;
       // Un timeout o fallo de red puede ocurrir después de persistir. Conservar borrador, no repetir automáticamente.
-      const uncertain = request.signal.aborted || err instanceof TypeError;
+      const uncertain = request.signal.aborted || !(err instanceof PanelApiError) || err.status >= 500 || err.status < 400;
       const conflict = err instanceof PanelApiError && err.status === 409 && !/DNI/.test(err.message);
-      setBlocked(uncertain || conflict);
+      blockedRef.current = uncertain || conflict; setBlocked(blockedRef.current);
       setError(uncertain ? 'No se pudo confirmar el resultado. Conserva tus datos y revisa la lista antes de repetir el registro o la edición.' : errorMessage(err));
     } finally { window.clearTimeout(timer); locked.current = false; if (mounted.current) setSaving(false); }
   };
   const consult = async () => {
-    if (!original || reading) return;
-    setReading(true);
+    if (readLock.current || !can('estudiantes:leer')) return;
+    readLock.current = true; setReading(true); setConsultError('');
     const request = new AbortController(); controller.current = request;
     const timer = window.setTimeout(() => request.abort(), 15000);
-    try { const result = await panelRequest<{ item: Student }>('estudiantes/' + original.id, token, 'GET', undefined, request.signal); if (mounted.current) setCurrent(result.item); }
-    catch (err) { if (mounted.current) setError(errorMessage(err)); }
-    finally { window.clearTimeout(timer); if (mounted.current) setReading(false); }
+    try {
+      let found: Student | null;
+      if (original) {
+        const result = await panelRequest<{ item: Student }>('estudiantes/' + original.id, token, 'GET', undefined, request.signal); found = result.item;
+      } else {
+        const result = await panelRequest<StudentList>('estudiantes?' + new URLSearchParams({ page: '1', limit: '20', estado: 'todos', search: form.doc_numero }), token, 'GET', undefined, request.signal);
+        found = result.items.find(item => item.doc_numero === form.doc_numero) || null;
+      }
+      if (mounted.current && !request.signal.aborted) { setCurrent(found); setConsulted(true); }
+    }
+    catch (err) { if (mounted.current) setConsultError(request.signal.aborted ? 'La consulta tardó demasiado. Puedes volver a consultar sin reenviar el formulario.' : errorMessage(err)); }
+    finally { window.clearTimeout(timer); readLock.current = false; if (mounted.current) setReading(false); }
   };
   return <PanelDialog title={original ? 'Editar estudiante' : 'Registrar estudiante'} onClose={close} busy={saving} lockScroll>
     <form onSubmit={save} noValidate aria-busy={saving} data-student-form>
@@ -71,7 +82,9 @@ export default function StudentEditor({ original, onClose, onSaved }: { original
         })}
       </fieldset>
       {error && <p className="hp-error" role="alert">{error}</p>}
-      {blocked && original && <div className="hs-conflict"><button className="hp-btn" type="button" onClick={() => void consult()} disabled={reading}>{reading ? 'Consultando…' : 'Consultar versión actual'}</button>
+      {blocked && <div className="hs-conflict">{can('estudiantes:leer') && <button className="hp-btn" type="button" onClick={() => void consult()} disabled={reading}>{reading ? 'Consultando…' : original ? 'Consultar versión actual' : 'Consultar por DNI'}</button>}
+        {consultError && <p role="alert">{consultError}</p>}
+        {consulted && !current && <p role="status">Aún no aparece un registro con este DNI. Esto no confirma que la solicitud haya fallado. Consulta de nuevo antes de iniciar otro registro; no cambies el DNI para repetirlo.</p>}
         {current && <dl className="hp-details"><div><dt>Versión actual (revisión {current.revision})</dt><dd>{current.nombres} {current.apellidos} · DNI {current.doc_numero || 'sin registrar'}</dd></div><div><dt>Contacto actual</dt><dd>{current.email || 'Sin correo'} · {current.telefono || 'Sin teléfono'}</dd></div><div><dt>Estado</dt><dd>{current.archivado_at ? 'Archivado' : 'Activo'}</dd></div></dl>}
         <p>Copia los cambios que necesites conservar. Cierra el formulario y vuelve a abrir el registro para editar la versión vigente.</p></div>}
       <footer className="hp-dialog-footer"><button type="button" className="hp-btn" onClick={close} disabled={saving}>Cancelar</button>

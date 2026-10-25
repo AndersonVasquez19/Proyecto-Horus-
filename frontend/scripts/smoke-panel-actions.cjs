@@ -208,6 +208,9 @@ const handler = async (req, res, { route, json, body }) => {
     let p = await restore('tk-coord', '/admin/dashboard?section=cotizaciones', 'document.querySelector(".hp-table tbody tr")');
     await p.click('main .hp-table button', 'Ver propuesta'); await p.wait('document.querySelector("dialog[open]")', 'detalle de la cotización');
     await p.click('dialog[open] button', 'Marcar anulada');
+    await p.wait('document.querySelector(".hq-void-confirm[open]")', 'confirmación de anulación');
+    await noWrites('coordinadora: pedir confirmación de anulación todavía no escribe');
+    await p.click('.hq-void-confirm button', 'Confirmar anulación');
     ck((await sent('tk-coord', 'POST', '/api/admin/cotizaciones/61/estado', 'anular cotización')).body?.estado === 'anulada', 'coordinadora: «Marcar anulada» envía POST /admin/cotizaciones/61/estado (cotizaciones:anular)');
     await closePages();
     p = await restore('tk-sec', '/admin/messages?id=71', 'document.querySelector(".hw-inbox-detail form textarea")');
