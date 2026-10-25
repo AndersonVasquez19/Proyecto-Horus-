@@ -63,7 +63,6 @@ export default function PanelImportations() {
   const rows = result?.filas || preview?.filas || [];
   return <section className="hi-import">
     <div className="hp-heading"><div><p className="hp-kicker">GESTIÓN ACADÉMICA</p><h1>Importación académica CSV</h1><p>Importa estudiantes y matrículas a una edición existente desde una hoja exportada como CSV.</p></div></div>
-    <p className="hp-notice">CSV: coma, punto y coma o tabulación · UTF-8, UTF-16LE o Windows-1252 · 48 KiB · 200 filas. XLSX pendiente de soporte seguro. No se importan notas, pagos, asistencia ni certificados.</p>
     <div className="hp-card"><h2>1. Archivo y edición</h2>
       <fieldset className="hp-form-grid" disabled={busy || !!uncertain}><legend className="hp-sr">Archivo y destino</legend>
         <label>Archivo CSV<input type="file" accept=".csv,text/csv" onChange={e => selectFile(e.target.files?.[0])} /></label>
