@@ -1,7 +1,11 @@
 /* Solo el espacio de trabajo: no modifica Login/Register ni la web de Carlos. */
 /* Fuente original de google/fonts/ofl/montserrat; licencia en /licenses/Montserrat-OFL.txt. */
 @font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 100 900; font-display: swap; src: url('../assets/fonts/Montserrat-Variable.ttf') format('truetype'); }
-.hp-shell { background: #f5f8fc; --panel-heading-font: 'Montserrat', 'Manrope', 'Inter', sans-serif; }
+.hp-shell, .hp-dialog { --panel-heading-font: 'Montserrat', 'Manrope', 'Inter', sans-serif; }
+.hp-shell { background: #f5f8fc; }
+.hp-shell form, .hp-dialog { font-family: var(--panel-heading-font); }
+/* La barra compartida por Tabla/Tablero conserva Inter; sus botones mantienen Montserrat. */
+.hp-shell .hp-toolbar:has(input[aria-label="Buscar cotización"]) { font-family: 'Inter', system-ui, sans-serif; }
 .hp-shell .hp-sidebar { background: #102d4f; }
 .hp-shell .hp-nav-item, .hp-shell .hp-btn, .hp-shell .hp-shortcut-grid button { font-family: var(--panel-heading-font); }
 .hp-operational-overview { display: grid; gap: 24px; }
