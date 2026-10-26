@@ -1,0 +1,62 @@
+/* «Mi Día» (Fase 4C-B). Todo bajo .hp-myday: no modifica reglas compartidas del panel. Paleta y tipografías del panel (navy #172c48,
+   dorado #d4a93c, foco #b79342, Inter/Manrope). La prioridad se comunica con texto y franja, nunca solo con color. */
+.hp-myday{display:flex;flex-direction:column;gap:22px;min-width:0}
+.hp-myday .hp-heading{align-items:flex-end;flex-wrap:wrap;gap:14px}
+.hp-myday-sub{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;color:#62748a;margin-top:4px}
+.hp-myday-role{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;background:#faf2dc;color:#7a5a14;font-weight:600;font-size:12px}
+.hp-myday-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.hp-myday-stamp{font-size:12px;color:#62748a;font-variant-numeric:tabular-nums}
+.hp-myday-alert{margin:0;padding:12px 14px;border-radius:10px;background:#fdecea;color:#8a2a20;font-size:13px}
+.hp-myday-alert.is-limit{background:#fbf2dc;color:#6b4f0f}
+
+.hp-myday-queue{background:#fff;border:1px solid #e2e7ed;border-radius:12px;overflow:hidden}
+.hp-myday-queue-head{padding:18px 20px;border-bottom:1px solid #edf1f6}
+.hp-myday-queue-head h2,.hp-myday-section-title{margin:0;font-family:var(--panel-heading-font,'Manrope','Inter',sans-serif);font-size:18px;font-weight:700;color:#102d4f}
+.hp-myday-queue-head p{margin:4px 0 0;color:#62748a;font-size:13px}
+.hp-myday-section-title{margin-bottom:12px}
+.hp-myday-list{list-style:none;margin:0;padding:0}
+.hp-myday-item{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px 20px 14px 16px;border-bottom:1px solid #edf1f6;border-left:5px solid #466cb4}
+.hp-myday-item:last-child{border-bottom:0}
+.hp-myday-item.is-alta{border-left-color:#b3261e}.hp-myday-item.is-media{border-left-color:#d4a93c}
+.hp-myday-count{font-family:var(--panel-heading-font,'Manrope','Inter',sans-serif);font-weight:800;font-size:26px;line-height:1;text-align:right;color:#102d4f;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.hp-myday-item-text{min-width:0;display:flex;flex-direction:column;gap:2px}
+.hp-myday-item-text strong{color:#172c48;font-size:14px;overflow-wrap:anywhere}
+.hp-myday-item-text small{color:#62748a;font-size:12px;overflow-wrap:anywhere}
+.hp-myday-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.hp-myday-chip{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:#f0f2f6;color:#4c5f77}
+.hp-myday-chip.is-alta{background:#fdecea;color:#8a2a20}.hp-myday-chip.is-media{background:#faf2dc;color:#6b4f0f}.hp-myday-chip.is-info{background:#e9f0fb;color:#3d5f9c}
+.hp-myday-chip.is-readonly{background:#fff;color:#4c5f77;border:1px dashed #b9c4d2}
+.hp-myday-go{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;color:#2b5d8a;font-weight:600;font-size:13px;text-decoration:none;white-space:nowrap}
+.hp-myday-go:hover{background:#eaf0fc}
+
+.hp-myday-state{display:flex;flex-direction:column;align-items:center;gap:8px;padding:30px 20px;text-align:center;color:#62748a}
+.hp-myday-state strong{color:#172c48;font-size:15px}
+.hp-myday-state.is-empty{color:#2c7558}.hp-myday-state.is-empty strong{color:#235e46}
+.hp-myday-state.is-error strong{color:#8a2a20}
+.hp-myday-state p{margin:0;max-width:60ch}
+.hp-myday-muted{font-size:12px}
+
+.hp-myday-areas{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.hp-myday-area{display:flex;flex-direction:column;gap:10px;min-width:0;background:#fff;border:1px solid #e2e7ed;border-radius:12px;padding:16px 18px}
+.hp-myday-area h3{margin:0;font-family:var(--panel-heading-font,'Manrope','Inter',sans-serif);font-size:15px;font-weight:700;color:#102d4f}
+.hp-myday-area-desc{margin:-4px 0 0;font-size:12px;line-height:1.45;color:#62748a}
+.hp-myday-area dl{margin:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;font-size:13px}
+.hp-myday-area dt{color:#62748a}
+.hp-myday-area dd{margin:0;text-align:right;font-weight:700;color:#172c48;font-variant-numeric:tabular-nums}
+.hp-myday-area.is-unavailable{background:#f8fafd}
+.hp-myday-unavailable{margin:0;font-size:13px;color:#4c5f77}
+.hp-myday-area-link{margin-top:auto;padding-top:8px;border-top:1px solid #edf1f6;display:inline-flex;align-items:center;gap:6px;color:#2b5d8a;font-weight:600;font-size:12px;text-decoration:none}
+
+.hp-myday-quick{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.hp-myday-quick a{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:10px;background:#fff;border:1px solid #e2e7ed;text-decoration:none;color:inherit;min-width:0}
+.hp-myday-quick a:hover{border-color:#d4a93c}
+.hp-myday-quick a>span:last-child{display:flex;flex-direction:column;min-width:0}
+.hp-myday-quick strong{color:#172c48;font-size:13px}.hp-myday-quick small{color:#62748a;font-size:12px}
+.hp-myday-note{margin:0;font-size:12px;color:#62748a;border-top:1px solid #e2e7ed;padding-top:14px}
+
+@media(max-width:760px){
+  .hp-myday-item{grid-template-columns:44px minmax(0,1fr);padding-right:14px}
+  .hp-myday-count{font-size:22px}
+  .hp-myday-go{grid-column:2;justify-self:start;padding-left:0}
+  .hp-myday-areas,.hp-myday-quick{grid-template-columns:minmax(0,1fr)}
+}

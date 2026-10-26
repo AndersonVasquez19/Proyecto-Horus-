@@ -25,7 +25,8 @@ const identity = { id: 7, nombre: 'Persona Ficticia', email: 'persona@example.te
 const session = (rol, modo = 'heredado', permisos = rol ? PERMISOS[rol] : []) => parseSession({ ok: true, user: { ...identity, rol, permisos }, acceso: { modo } }).access
 const legacyBackend = () => parseSession({ ok: true, user: identity }).access
 // Secciones de trabajo disponibles en cualquier modo. «Roles y usuarios» (cuentas) exige además el modo por_roles y se prueba aparte.
-const WORK = PANEL_SECTIONS.filter(rule => rule.anyOf.length && rule.available !== false && !rule.requiresRolesMode).map(rule => rule.key)
+// «Mi Día» (requiresRole) exige además una cuenta con rol y también se prueba aparte.
+const WORK = PANEL_SECTIONS.filter(rule => rule.anyOf.length && rule.available !== false && !rule.requiresRolesMode && !rule.requiresRole).map(rule => rule.key)
 const visible = nav => PANEL_SECTIONS.map(rule => rule.key).filter(key => nav.canOpen(key))
 
 test('exportar consultas exige el permiso efectivo, sin concederlo por leer ni por el nombre del rol', () => {
@@ -84,7 +85,7 @@ test('gerente: todas las secciones de trabajo actuales e inicio en Resumen', () 
     const nav = panelNavigation(session('GERENTE_GENERAL', modo))
     assert.equal(nav.kind, 'roles')
     assert.equal(nav.home, 'resumen')
-    for (const key of [...WORK, 'configuracion']) assert.ok(nav.canOpen(key), key)
+    for (const key of [...WORK, 'mi-dia', 'configuracion']) assert.ok(nav.canOpen(key), key)
     for (const resource of Object.keys(RESOURCE_READ)) assert.ok(nav.canOpenResource(resource), resource)
   }
 })
@@ -92,7 +93,7 @@ test('gerente: todas las secciones de trabajo actuales e inicio en Resumen', () 
 test('coordinadora: gestión académica, atención y Resumen, sin gestores editoriales', () => {
   const nav = panelNavigation(session('COORDINADORA_INSTITUCIONAL'))
   assert.equal(nav.home, 'resumen')
-  assert.deepEqual(visible(nav), ['resumen', 'estudiantes', 'ediciones', 'matriculas', 'preinscripciones', 'reportes', 'importacion-excel', 'mensajes', 'cotizaciones', 'chatbot', 'configuracion'])
+  assert.deepEqual(visible(nav), ['mi-dia', 'resumen', 'estudiantes', 'ediciones', 'matriculas', 'preinscripciones', 'reportes', 'importacion-excel', 'mensajes', 'cotizaciones', 'chatbot', 'configuracion'])
   assert.equal(nav.canOpenResource('contenido'), false)
 })
 
@@ -101,7 +102,7 @@ test('secretaria: inicia en la Bandeja, sin Resumen (no consulta estadísticas) 
     const nav = panelNavigation(session('SECRETARIA', modo))
     assert.equal(nav.home, 'mensajes')
     assert.equal(nav.canOpen('resumen'), false, 'GET /admin/stats exige estadisticas:leer')
-    assert.deepEqual(visible(nav), ['estudiantes', 'ediciones', 'matriculas', 'preinscripciones', 'mensajes', 'chatbot', 'configuracion'])
+    assert.deepEqual(visible(nav), ['mi-dia', 'estudiantes', 'ediciones', 'matriculas', 'preinscripciones', 'mensajes', 'chatbot', 'configuracion'])
     // Educación: puede leer cursos y capacitaciones, pero no Asesoramiento (que es un servicio).
     assert.equal(nav.canOpenResource('cursos'), true)
     assert.equal(nav.canOpenResource('servicios'), false)
@@ -172,6 +173,25 @@ test('Roles y usuarios: solo en por_roles con cuentas:leer; nunca en heredado, s
   assert.equal(readOnly.can(PANEL_ACTIONS.asignarRol), false)
   assert.equal(readOnly.can(PANEL_ACTIONS.editarCuenta), false)
   assert.equal(panelNavigation(session('GERENTE_GENERAL', 'por_roles')).can(PANEL_ACTIONS.asignarRol), true)
+})
+
+test('Mi Día: solo con rol y algún permiso de lectura de sus áreas; nunca heredado, sin rol ni como inicio', () => {
+  const rule = PANEL_SECTIONS.find(item => item.key === 'mi-dia')
+  assert.equal(rule.requiresRole, true)
+  assert.equal(rule.group, 'principal')
+  for (const modo of ['heredado', 'por_roles']) for (const rol of Object.keys(PERMISOS)) {
+    const nav = panelNavigation(session(rol, modo))
+    assert.equal(nav.canOpen('mi-dia'), true, rol + ' ' + modo)
+    assert.equal(nav.home, rol === 'SECRETARIA' ? 'mensajes' : 'resumen', 'el inicio no cambia: ' + rol + ' ' + modo)
+  }
+  for (const access of [legacyBackend(), session(null, 'heredado'), session(null, 'por_roles'), null]) assert.equal(panelNavigation(access).canOpen('mi-dia'), false, JSON.stringify(access))
+  // Con rol pero sin ninguna lectura de sus áreas no se ofrece (no tendría nada que mostrar).
+  assert.equal(panelNavigation(session('SECRETARIA', 'por_roles', ['mensajes:crear', 'estudiantes:leer'])).canOpen('mi-dia'), false)
+  assert.equal(panelNavigation(session('SECRETARIA', 'por_roles', ['matriculas:leer'])).canOpen('mi-dia'), true)
+  // Un rol con solo lecturas de Mi Día no la toma como inicio: el inicio sigue siendo la primera sección de trabajo.
+  assert.equal(panelNavigation(session('SECRETARIA', 'por_roles', ['matriculas:leer'])).home, 'matriculas')
+  // El endpoint no exige un permiso propio: es una ruta autenticada y el servicio filtra por rol.
+  assert.match(backend('route-inventory.ts'), /auth\('GET', 'admin\/asistente\/resumen'/)
 })
 
 test('secciones desconocidas o con forma rara no se abren; el nombre del rol no concede nada', () => {

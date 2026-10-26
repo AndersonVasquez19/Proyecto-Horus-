@@ -17,6 +17,9 @@ export interface PanelSectionRule {
   target: string; // destino actual
   // Condiciones especiales (justificadas en `note`).
   requiresRolesMode?: boolean;
+  // Solo cuentas con rol (navegación «roles»): nunca en la navegación heredada ni sin rol, donde su endpoint respondería 403 o no existiría.
+  // Tampoco se usa para elegir el inicio, que no cambia al añadir estas secciones.
+  requiresRole?: true;
   available?: false; // declarada pero sin habilitar en esta etapa: nunca se muestra ni se monta
   note?: string;
 }
@@ -71,7 +74,12 @@ export const PANEL_ACTIONS = Object.freeze({
   editarCuenta: 'cuentas:editar', // PUT /admin/users/:id (activar o desactivar)
 } as const);
 
+// Permisos de lectura de las áreas que consulta HORUS Assistant (backend/src/asistente/asistente.rules.ts, SECTION_PERMISSIONS; test:panel-access
+// los contrasta). «Mi Día» se ofrece con cualquiera de ellos; el servidor decide además, con el rol vigente de la base, qué áreas devuelve.
+export const MY_DAY_READ = Object.freeze(['mensajes:leer', 'chatbot_consultas:leer', 'cotizaciones:leer', 'preinscripciones:leer', 'convocatorias:leer', 'matriculas:leer'] as const);
+
 export const PANEL_SECTIONS: readonly PanelSectionRule[] = Object.freeze([
+  { key: 'mi-dia', group: 'principal', anyOf: MY_DAY_READ, requiresRole: true, target: '/admin/dashboard?section=mi-dia', note: 'GET /admin/asistente/resumen (@AuthenticatedRoute: el servicio exige rol y filtra las áreas por sus permisos de lectura)' },
   { key: 'resumen', group: 'principal', anyOf: ['estadisticas:leer'], target: '/admin/dashboard?section=resumen', note: 'GET /admin/stats y /admin/stats/actividad' },
   { key: 'estudiantes', group: 'academico', anyOf: ['estudiantes:leer'], target: '/admin/dashboard?section=estudiantes', note: 'GET /admin/estudiantes' },
   { key: 'ediciones', group: 'academico', anyOf: ['convocatorias:leer'], target: '/admin/dashboard?section=ediciones', note: 'GET /admin/convocatorias' },
@@ -126,6 +134,7 @@ export function panelNavigation(access: SessionAccess | null | undefined): Panel
     const rule = typeof section === 'string' ? RULES.get(section) : undefined;
     if (!rule || rule.available === false || kind === 'none') return false;
     if (rule.requiresRolesMode && mode !== 'por_roles') return false;
+    if (rule.requiresRole && kind !== 'roles') return false;
     if (rule.anyOf.length === 0) return true; // autoservicio
     if (kind === 'legacy') return true;
     if (kind === 'sin-rol') return false;
@@ -136,7 +145,7 @@ export function panelNavigation(access: SessionAccess | null | undefined): Panel
   const home = kind === 'none' ? null
     : canOpen('resumen') ? 'resumen'
       : canOpen('mensajes') ? 'mensajes'
-        : PANEL_SECTIONS.find(rule => rule.anyOf.length > 0 && canOpen(rule.key))?.key ?? null;
+        : PANEL_SECTIONS.find(rule => rule.anyOf.length > 0 && !rule.requiresRole && canOpen(rule.key))?.key ?? null;
   const can = (permission: string) => typeof permission === 'string' && permission.length > 0
     && (kind === 'legacy' || (kind === 'roles' && granted.has(permission)));
   return { kind, home, canOpen, canOpenResource, can };

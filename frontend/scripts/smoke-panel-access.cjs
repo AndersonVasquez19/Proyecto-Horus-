@@ -84,10 +84,11 @@ const LEGACY_MENU = ['Resumen', 'Estudiantes', 'Ediciones', 'Preinscripciones', 
 
   // ===== 1. Los tres roles en modo heredado y por_roles =====
   console.log('\n== MENÚ E INICIO DE CADA ROL');
+  // «Mi Día» (Fase 4C-B) solo aparece en cuentas con rol: no forma parte de la navegación heredada (LEGACY_MENU) y no cambia el inicio.
   const expected = {
-    'tk-gerente': { home: '/admin/dashboard', h1: 'Hola', menu: LEGACY_MENU },
-    'tk-coord': { home: '/admin/dashboard', h1: 'Hola', menu: LEGACY_MENU.filter(item => item !== 'Biblioteca de contenido') },
-    'tk-sec': { home: '/admin/messages', h1: 'Centro de consultas', menu: ['Estudiantes', 'Ediciones', 'Preinscripciones', 'Matrículas', 'Mensajes', 'Consultas del chatbot', 'Mi cuenta'] },
+    'tk-gerente': { home: '/admin/dashboard', h1: 'Hola', menu: ['Mi Día', ...LEGACY_MENU] },
+    'tk-coord': { home: '/admin/dashboard', h1: 'Hola', menu: ['Mi Día', ...LEGACY_MENU.filter(item => item !== 'Biblioteca de contenido')] },
+    'tk-sec': { home: '/admin/messages', h1: 'Centro de consultas', menu: ['Mi Día', 'Estudiantes', 'Ediciones', 'Preinscripciones', 'Matrículas', 'Mensajes', 'Consultas del chatbot', 'Mi cuenta'] },
   };
   for (const mode of ['heredado', 'por_roles']) {
     for (const [token, want] of Object.entries(expected)) {
