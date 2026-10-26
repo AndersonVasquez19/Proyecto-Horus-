@@ -5,8 +5,9 @@ import { errorMessage, panelRequest } from '../services/panelApi';
 import type { EnrollmentList } from '../services/enrollments';
 
 // Búsqueda y páginas explícitas; conserva la selección aunque quede fuera de la página consultada.
-export default function AcademicSelect<T extends { id: number }>({ path, label, value, onChange, text, unavailable, disabled = false }: {
+export default function AcademicSelect<T extends { id: number }>({ path, label, value, onChange, text, unavailable, disabled = false, errorId }: {
   path: string; label: string; value: T | null; onChange: (value: T | null) => void; text: (item: T) => string; unavailable?: (item: T) => boolean; disabled?: boolean;
+  errorId?: string;
 }) {
   const { token } = useAdminAuth(); const id = useId();
   const [search, setSearch] = useState(''), [query, setQuery] = useState({ search: '', page: 1, refresh: 0 });
@@ -24,7 +25,7 @@ export default function AcademicSelect<T extends { id: number }>({ path, label, 
   }, [token, path, query, key, setError, setLoading]);
   return <div className="he-course-picker">
     <label htmlFor={id + '-search'}>Buscar {label.toLowerCase()}</label><div className="hp-actions"><input id={id + '-search'} type="search" maxLength={100} value={search} disabled={disabled} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setQuery(q => ({ ...q, search: search.trim(), page: 1 })); } }} /><button type="button" className="hp-btn" disabled={disabled || loading} onClick={() => setQuery(q => ({ ...q, search: search.trim(), page: 1 }))}>Buscar {label.toLowerCase()}</button></div>
-    <label htmlFor={id}>{label}</label><select id={id} aria-describedby={id + '-status'} value={value?.id || ''} disabled={disabled || loading || !!error} onChange={e => onChange(result?.items.find(i => i.id === Number(e.target.value)) ?? (value?.id === Number(e.target.value) ? value : null))}>
+    <label htmlFor={id}>{label}</label><select id={id} aria-invalid={errorId ? true : undefined} aria-describedby={id + '-status' + (errorId ? ' ' + errorId : '')} value={value?.id || ''} disabled={disabled || loading || !!error} onChange={e => onChange(result?.items.find(i => i.id === Number(e.target.value)) ?? (value?.id === Number(e.target.value) ? value : null))}>
       <option value="">Selecciona una opción</option>{value && !result?.items.some(i => i.id === value.id) && <option value={value.id}>{text(value)}</option>}{result?.items.map(i => <option key={i.id} value={i.id} disabled={unavailable?.(i)}>{text(i)}</option>)}
     </select>
     <p id={id + '-status'} role="status">{loading ? 'Cargando opciones…' : result ? `${result.pagination.total} resultados · Página ${query.page} de ${Math.max(1, result.pagination.pages)}` : ''}</p>
