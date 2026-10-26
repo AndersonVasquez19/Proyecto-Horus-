@@ -158,3 +158,12 @@
  .hqf-dialog .hqf-footer { padding-block:8px; }
  .hqf-footer > span { display:none; }
 }
+/* Filtro «Vencidas» (Fase 4D): el estado activo se comunica con texto y borde, no solo con color. */
+.hqp-overdue[aria-pressed=true]{border-color:#9a3a2c;background:#fbe9e5;color:#7a2c20;font-weight:700}
+.hqp-overdue:disabled{opacity:.55;cursor:not-allowed}
+.hqp-overdue-note{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 24px 12px}
+/* La búsqueda ya no se encoge hasta 0 px al sumar el botón «Vencidas»: con poco ancho pasa a la línea siguiente. */
+.hp-toolbar:has(input[aria-label="Buscar cotización"]) .hp-search{flex:1 1 220px}
+/* Confirmación de duplicado: el texto y los avisos no quedan pegados al borde del diálogo. */
+.hq-dup-confirm>:is(p,.hp-btn){margin-left:24px;margin-right:24px}
+.hq-dup-confirm>.hp-btn{margin-bottom:16px}

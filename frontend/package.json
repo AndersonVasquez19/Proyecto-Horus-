@@ -27,6 +27,8 @@
     "test:operational-stats": "node --experimental-strip-types --test tests/operational-stats.test.mjs",
     "test:overview-analytics": "node --experimental-strip-types --test tests/overview-analytics.test.mjs",
     "test:quote-pipeline": "node --experimental-strip-types --test tests/quote-pipeline.test.mjs",
+    "test:quote-actions": "node --experimental-strip-types --test tests/quote-actions.test.mjs",
+    "smoke:quote-actions": "npm run build && node scripts/smoke-quote-actions.cjs",
     "smoke:quote-pipeline": "npm run build && node scripts/smoke-quote-pipeline.cjs",
     "smoke:messages-table": "npm run build && node scripts/smoke-messages-table.cjs",
     "smoke:message-detail": "npm run build && node scripts/smoke-message-detail.cjs",
