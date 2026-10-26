@@ -14,6 +14,8 @@ const accounts = { 1: { id: 1, nombre: 'Ana Administradora', email: 'ana@example
 const known = new Set(Object.values(TOK));
 const sim = { meMode: 'ok', writeMode: 'ok', expired: new Set() };
 const writes = [], me = [];
+let allowedTransitions;
+const withTransitions = item => ({ ...item, transiciones_permitidas: allowedTransitions(item.estado) });
 const messages = [1, 2, 3].map(id => ({ id, nombre: 'Persona ' + id, email: 'p' + id + '@example.test', telefono: '987654321', asunto: 'Asunto ' + id, mensaje: 'Mensaje ' + id, estado: 'nuevo', createdAt: '2026-01-0' + id + 'T10:00:00.000Z' }));
 const attention = Object.fromEntries(messages.map(m => [m.id, { estado: 'nuevo', responsable: '', notas: '', respuesta: '', revision: 1, historial: [] }]));
 const settings = [{ clave: 'empresa_nombre', valor: 'Horus Group', descripcion: 'Nombre de la empresa', grupo: 'general' }, { clave: 'email_contacto', valor: 'info@example.test', descripcion: 'Correo de contacto', grupo: 'general' }];
@@ -49,7 +51,7 @@ const server = http.createServer(async (req, res) => {
           if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/)) && req.method === 'PUT') {
             const current = attention[m[1]]; if (data.revision !== current.revision) return json({ message: 'La respuesta cambió. Recarga el caso.' }, 409);
             attention[m[1]] = { ...current, ...data, revision: current.revision + 1 }; messages.find(x => x.id === +m[1]).estado = data.estado;
-            return json({ ok: true, item: attention[m[1]] });
+            return json({ ok: true, item: withTransitions(attention[m[1]]) });
           }
           if (sub === 'settings') { for (const [clave, valor] of Object.entries(data.ajustes || {})) { const s = settings.find(x => x.clave === clave); if (s) s.valor = valor; } return json({ ok: true }); }
           if (sub === 'cotizaciones') return json({ ok: true, item: { id: 1 } });
@@ -64,7 +66,7 @@ const server = http.createServer(async (req, res) => {
           const rows = messages.filter(x => !search || x.nombre.toLowerCase().includes(search));
           return json({ ok: true, messages: rows, pagination: { total: rows.length, pages: 1 }, metrics: { nuevo: rows.filter(x => x.estado === 'nuevo').length, en_proceso: 0, atendido: 0 } });
         }
-        if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/))) return json({ ok: true, item: attention[m[1]] });
+        if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/))) return json({ ok: true, item: withTransitions(attention[m[1]]) });
         if (sub === 'settings') return json({ ok: true, settings });
         if (sub === 'cotizaciones') return json({ ok: true, items: [], pagination: { total: 0, pages: 0 } });
         if ((m = sub.match(/^messages\/(\d+)$/))) return json({ ok: true, message: messages.find(x => x.id === +m[1]) });
@@ -103,6 +105,7 @@ function newestMtime(dir) {
   return newest;
 }
 async function main() {
+  ({ allowedTransitions } = await import(require('node:url').pathToFileURL(path.resolve(__dirname, '../../backend/src/attention/attention-rules.ts'))));
   // El smoke sirve dist/: si el código fuente es más reciente, probaría una versión antigua. (npm run smoke:unsaved compila antes, en local y sin red.)
   if (!fs.existsSync(path.join(root, 'index.html'))) throw new Error('Falta dist/: ejecuta "npm run build".');
   const builtAt = fs.statSync(path.join(root, 'index.html')).mtimeMs, changedAt = Math.max(newestMtime(path.resolve(__dirname, '../src')), fs.statSync(path.resolve(__dirname, '../index.html')).mtimeMs);

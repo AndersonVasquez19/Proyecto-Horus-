@@ -11,6 +11,8 @@ const TOKEN = 'e30.' + Buffer.from(JSON.stringify({ id: 1 })).toString('base64ur
 const sim = { putMode: 'ok', getMode: 'ok', nextGetDelay: 0 };
 const writes = [], gets = [];
 const heldPuts = new Map();
+let allowedTransitions;
+const withTransitions = item => ({ ...item, transiciones_permitidas: allowedTransitions(item.estado) });
 const releasePuts = () => { sim.holdPut = 0; for (const release of heldPuts.values()) release(); heldPuts.clear(); };
 let messages = [], reclamaciones = [], attention = {};
 const fresh = (resource, id) => ({ estado: resource === 'messages' ? messages.find(m => m.id === id)?.estado || 'nuevo' : 'nuevo', responsable: '', notas: '', respuesta: '', revision: 1, historial: [] });
@@ -51,7 +53,7 @@ const server = http.createServer(async (req, res) => {
           if (req.method === 'GET') {
             gets.push(keyOf(resource, id)); if (sim.getMode === 'error') return json({ message: 'Internal server error ER_SECRET' }, 500);
             const snapshot = JSON.parse(JSON.stringify(current(resource, id))); const delay = sim.nextGetDelay; sim.nextGetDelay = 0; if (delay) await sleep(delay); // la copia se toma al recibir la petición: si tarda, llega "vieja"
-            return json({ ok: true, item: snapshot }); }
+            return json({ ok: true, item: withTransitions(snapshot) }); }
           const data = await body(); const cur = current(resource, id);
           if (m[4] === 'correo') { writes.push({ method: 'POST', route: sub, data }); return data.revision !== cur.revision ? json({ message: 'La respuesta cambió. Recarga el caso antes de enviarla.' }, 409) : json({ ok: true, mensaje: 'Respuesta enviada por correo.' }); }
           if (req.method === 'PUT') {
@@ -62,7 +64,7 @@ const server = http.createServer(async (req, res) => {
             if (data.revision !== cur.revision) return reply({ message: 'El seguimiento cambió en otra sesión. Recarga el caso.' }, 409);
             attention[keyOf(resource, id)] = { ...cur, estado: data.estado, responsable: data.responsable, notas: data.notas, respuesta: data.respuesta, revision: cur.revision + 1, historial: [...cur.historial, { accion: 'Seguimiento actualizado: ' + data.estado, usuario: 1, fecha: new Date().toISOString() }] };
             if (resource === 'messages') messages.find(x => x.id === id).estado = data.estado === 'archivado' ? 'atendido' : data.estado; entry.applied = true;
-            return reply({ ok: true, item: attention[keyOf(resource, id)] }); }
+            return reply({ ok: true, item: withTransitions(attention[keyOf(resource, id)]) }); }
           return json({ ok: true, mensaje: 'Notificación enviada.' });
         }
         if (sub === 'messages') {
@@ -104,6 +106,7 @@ const SET = "(el, v) => { const proto = el.tagName === 'TEXTAREA' ? HTMLTextArea
 function newestMtime(dir) { let n = 0; for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); n = Math.max(n, e.isDirectory() ? newestMtime(f) : fs.statSync(f).mtimeMs); } return n; }
 
 async function main() {
+  ({ allowedTransitions } = await import(require('node:url').pathToFileURL(path.resolve(__dirname, '../../backend/src/attention/attention-rules.ts'))));
   if (!fs.existsSync(path.join(root, 'index.html'))) throw new Error('Falta dist/: ejecuta "npm run build".');
   if (newestMtime(path.resolve(__dirname, '../src')) > fs.statSync(path.join(root, 'index.html')).mtimeMs) throw new Error('dist/ está desactualizado respecto a src/: ejecuta "npm run build" antes del smoke.');
   if (!fs.existsSync(edge)) throw new Error('Configura SMOKE_BROWSER con una instalación de Edge/Chromium.');

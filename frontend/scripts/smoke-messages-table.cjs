@@ -10,6 +10,8 @@ const TOKEN = 'e30.' + Buffer.from(JSON.stringify({ id: 1 })).toString('base64ur
 
 // ---------- API simulada ----------
 const sim = { mode: 'ok' }; const writes = [];
+let allowedTransitions;
+const withTransitions = item => ({ ...item, transiciones_permitidas: allowedTransitions(item.estado) });
 const messages = Array.from({ length: 25 }, (_, i) => { const id = 25 - i; return { id, nombre: 'Persona ' + id, email: 'p' + id + '@example.test', telefono: '987654' + String(id).padStart(3, '0'), asunto: 'Asunto ' + id, mensaje: 'Mensaje ' + id, estado: id % 5 === 0 ? 'en_proceso' : 'nuevo', createdAt: '2026-01-' + String(id).padStart(2, '0') + 'T10:00:00.000Z' }; });
 // Textos con caracteres especiales para la seguridad del CSV
 Object.assign(messages.find(m => m.id === 24), { nombre: '=HYPERLINK("http://x.test","clic")' });
@@ -35,7 +37,7 @@ const server = http.createServer(async (req, res) => {
       if (route.startsWith('/api/admin/')) {
         if (token !== TOKEN) return json({ message: 'Unauthorized' }, 401);
         const sub = route.slice('/api/admin/'.length); let m;
-        if (req.method !== 'GET') { const data = await body(); writes.push({ method: req.method, route: sub, data }); if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/)) && req.method === 'PUT') { const cur = attention[m[1]] || { estado: 'nuevo', responsable: '', notas: 'nota previa', respuesta: '', revision: 1, historial: [] }; attention[m[1]] = { ...cur, ...data, revision: cur.revision + 1 }; return json({ ok: true, item: attention[m[1]] }); } return json({ ok: true, item: { id: 99, ...data } }); }
+        if (req.method !== 'GET') { const data = await body(); writes.push({ method: req.method, route: sub, data }); if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/)) && req.method === 'PUT') { const cur = attention[m[1]] || { estado: 'nuevo', responsable: '', notas: 'nota previa', respuesta: '', revision: 1, historial: [] }; attention[m[1]] = { ...cur, ...data, revision: cur.revision + 1 }; return json({ ok: true, item: withTransitions(attention[m[1]]) }); } return json({ ok: true, item: { id: 99, ...data } }); }
         if (sub === 'messages') {
           if (sim.mode === 'error') return json({ message: 'Internal server error ER_SECRET' }, 503);
           if (sim.mode === 'broken') return json({ ok: true, items: [], pagination: { total: 0, page: 1, limit: 8, pages: 0 } }); // formato inesperado: paginado pero sin "messages"
@@ -44,7 +46,7 @@ const server = http.createServer(async (req, res) => {
           return json({ ok: true, messages: rows.slice((page - 1) * limit, page * limit), pagination: { total: rows.length, page, limit, pages: Math.ceil(rows.length / limit) }, metrics: Object.fromEntries(['nuevo','en_proceso','atendido','archivado'].map(s=>[s,effectiveMessages().filter(m=>m.estado===s).length])) });
         }
         if ((m = sub.match(/^messages\/(\d+)$/))) return json({ ok: true, message: effectiveMessages().find(x => x.id === +m[1]) });
-        if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/))) return json({ ok: true, item: attention[m[1]] || { estado: messages.find(x => x.id === +m[1])?.estado || 'nuevo', responsable: '', notas: 'nota previa', respuesta: '', revision: 1, historial: [] } });
+        if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/))) return json({ ok: true, item: withTransitions(attention[m[1]] || { estado: messages.find(x => x.id === +m[1])?.estado || 'nuevo', responsable: '', notas: 'nota previa', respuesta: '', revision: 1, historial: [] }) });
         if (sub === 'cursos') return json({ ok: true, items: cursos, pagination: { total: cursos.length, pages: 1 } });
         if ((m = sub.match(/^cursos\/(\d+)$/))) return json({ ok: true, item: cursos.find(x => x.id === +m[1]) });
         return json({ ok: true, items: [], messages: [], pagination: { page: 1, total: 0, pages: 1 }, metrics: {} });
@@ -78,6 +80,7 @@ function parseCsv(text) { // lector mínimo: comillas dobles, comas, saltos dent
 }
 
 async function main() {
+  ({ allowedTransitions } = await import(require('node:url').pathToFileURL(path.resolve(__dirname, '../../backend/src/attention/attention-rules.ts'))));
   if (!fs.existsSync(path.join(root, 'index.html'))) throw new Error('Falta dist/: ejecuta "npm run build".');
   if (newestMtime(path.resolve(__dirname, '../src')) > fs.statSync(path.join(root, 'index.html')).mtimeMs) throw new Error('dist/ está desactualizado respecto a src/: ejecuta "npm run build" antes del smoke.');
   if (!fs.existsSync(edge)) throw new Error('Configura SMOKE_BROWSER con una instalación de Edge/Chromium.');

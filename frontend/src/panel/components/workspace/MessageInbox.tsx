@@ -19,6 +19,7 @@ import { notify } from '../../services/notify';
 import { usePanelAccess } from '../../context/usePanelAccess';
 import { PANEL_ACTIONS } from '../../context/panelAccess';
 import { PanelReadOnlyNotice } from '../PanelAccessNotice';
+import { transitionsOf, TRANSITIONS_UNAVAILABLE, type AttentionContract } from '../../services/attentionTransitions';
 
 const EXPORT_PAGE_TIMEOUT_MS = 15_000;
 
@@ -61,6 +62,8 @@ export default function MessageInbox() {
   const [savePending, setSavePending] = useState(false), [saveUncertain, setSaveUncertain] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [followUp, setFollowUp] = useState<{ id: number; item: AttentionContract } | null>(null);
+  const availableTransitions = followUp && selected && followUp.id === selected.id ? transitionsOf(followUp.item) : null;
   const lock = useRef(false);
   // D6.4 · lista → detalle en móvil: el detalle recibe el foco al abrirse y la fila de origen lo recupera al volver. En escritorio el foco no se mueve.
   const mobile = useMobileViewport();
@@ -134,10 +137,12 @@ export default function MessageInbox() {
   const applyState = async (state: string) => {
     if (!selected || !token || lock.current) return;
     if (!canEditFollowUp) { setActionError('Tu cuenta no tiene permiso para realizar esta acción.'); return; }
+    if (!availableTransitions?.includes(state) || savePending || saveUncertain) { setActionError('No se pudo verificar que ese cambio de estado esté autorizado. Revisa el seguimiento antes de continuar.'); return; }
     lock.current = true; setBusy(true); setActionError('');
     try {
       const path='seguimiento/messages/'+selected.id;
-      const {item}=await panelRequest<{item:{estado:string;revision:number;responsable:string;notas:string;respuesta:string}}>(path,token);
+      const {item}=await panelRequest<{item:AttentionContract & {revision:number;responsable:string;notas:string;respuesta:string}}>(path,token);
+      setFollowUp({ id: selected.id, item });
       // El PUT reemplaza los cuatro campos con los valores que el servidor tiene AHORA (responsable, notas y respuesta no se tocan) y solo se acepta con su
       // revisión. Antes se comprueba que el estado siga siendo el que la persona veía: si otro administrador lo cambió, no se sobrescribe a ciegas.
       const current = item.estado;
@@ -146,8 +151,10 @@ export default function MessageInbox() {
         setActionError('Otro administrador cambió el estado de esta consulta a «' + label(current) + '». No se aplicó tu cambio; revisa el seguimiento y vuelve a elegir.');
         return;
       }
-      await panelRequest(path,token,'PUT',{estado:state,revision:item.revision,responsable:item.responsable,notas:item.notas,respuesta:item.respuesta});
-      detail.patch({ estado: state }); // el detalle abierto refleja el estado nuevo aunque ya no cumpla el filtro del listado
+      if (!transitionsOf(item)?.includes(state)) { setActionError('El servidor ya no autoriza ese cambio de estado. No se aplicó tu cambio; revisa el seguimiento.'); setEditorEpoch(value => value + 1); return; }
+      const result = await panelRequest<{item:AttentionContract}>(path,token,'PUT',{estado:state,revision:item.revision,responsable:item.responsable,notas:item.notas,respuesta:item.respuesta});
+      setFollowUp({ id: selected.id, item: result.item });
+      detail.patch({ estado: result.item.estado }); // el detalle abierto refleja el estado nuevo aunque ya no cumpla el filtro del listado
       notify.success('Consulta de ' + selected.nombre + ': ' + label(state) + '.'); setRevision(value => value + 1); setEditorEpoch(value => value + 1);
     } catch (err) {
       if (err instanceof PanelApiError && err.status === 409) { // el seguimiento cambió entre la lectura y el guardado: no se reintenta solo
@@ -198,8 +205,8 @@ export default function MessageInbox() {
           <div className="hw-message-text">{String(selected.mensaje)}</div>
           <div className="hp-actions">{email && <a className="hp-btn" href={'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent('Re: ' + selected.asunto)}><PanelIcon name="mail" />Abrir correo</a>}{phone.length >= 6 && <a className="hp-btn" href={'tel:' + phone}>Llamar</a>}</div>
           {canQuote && <Link className="hp-btn" to={'/admin/dashboard?section=cotizaciones&contacto='+selected.id} state={{ from: location.pathname + location.search }} aria-disabled={savePending || undefined} onClick={event => { if (savePending) event.preventDefault(); }}>Preparar cotización</Link>}<p className="hw-caption">El correo se abre en tu aplicación. El estado de la consulta se actualiza por separado.</p>
-          {canReadFollowUp && <AttentionEditor key={selected.id} syncKey={editorEpoch} resource="messages" id={selected.id} canEdit={canEditFollowUp} canSend={canSendFollowUp} onPendingChange={setSavePending} onUncertainChange={setSaveUncertain} onSaved={(item)=>{detail.patch({ estado: item.estado });notify.success('Seguimiento guardado.');setRevision(v=>v+1)}} />}{canEditFollowUp && <div className="hw-next-action"><strong>Siguiente paso</strong><p>Actualiza el estado según la atención realizada.</p><div className="hp-actions">
-            {metrics.filter(([state]) => state !== selected.estado).map(([state]) => <button className={'hp-btn' + (state === 'atendido' ? ' hp-btn-primary' : '')} key={state} disabled={busy || savePending || saveUncertain} onClick={() => void changeState(state)}>{busy ? 'Guardando…' : selected.estado === 'archivado' ? 'Reabrir: ' + label(state) : state === 'archivado' ? 'Archivar consulta' : state === 'nuevo' ? 'Volver a pendiente' : state === 'en_proceso' ? 'Iniciar atención' : 'Marcar atendido'}</button>)}
+          {canReadFollowUp && <AttentionEditor key={selected.id} syncKey={editorEpoch} resource="messages" id={selected.id} canEdit={canEditFollowUp} canSend={canSendFollowUp} onContract={(id, item) => setFollowUp({ id, item })} onPendingChange={setSavePending} onUncertainChange={setSaveUncertain} onSaved={(item)=>{detail.patch({ estado: item.estado });notify.success('Seguimiento guardado.');setRevision(v=>v+1)}} />}{canEditFollowUp && <div className="hw-next-action"><strong>Siguiente paso</strong><p>Actualiza el estado según la atención realizada.</p>{availableTransitions === null && <p role="status" className="hp-form-hint">{TRANSITIONS_UNAVAILABLE}</p>}<div className="hp-actions">
+            {(availableTransitions ?? []).map(state => <button className={'hp-btn' + (state === 'atendido' ? ' hp-btn-primary' : '')} key={state} disabled={busy || savePending || saveUncertain} onClick={() => void changeState(state)}>{busy ? 'Guardando…' : followUp?.item.estado === 'archivado' ? 'Reabrir: ' + label(state) : state === 'archivado' ? 'Archivar consulta' : state === 'nuevo' ? 'Volver a pendiente' : state === 'en_proceso' ? 'Iniciar atención' : 'Marcar atendido'}</button>)}
           </div></div>}
           {canDelete && <div className="hw-record-actions"><strong>Acciones del registro</strong><p>Archivar mantiene la consulta y su historial. Eliminar es definitivo y el sistema puede impedirlo.</p>
             <button className="hp-btn hp-btn-quiet" disabled={busy || savePending || saveUncertain} onClick={() => setDeleting(true)}><PanelIcon name="trash" size={15} />Eliminar consulta…</button></div>}
