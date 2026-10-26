@@ -1,10 +1,11 @@
 // Restauración explícita en una base AISLADA: `npm run db:restore -- --file=<respaldo.sql.gz> --target=horus_restore_<nombre> --yes`.
 // Nunca restaura sobre la base configurada ni sobre datos existentes: el destino debe llamarse horus_restore_*, no existir o estar vacío.
 // `--verify-only` comprueba la firma SHA-256 y el contenido del archivo sin conectarse a MySQL. El script no ejecuta DROP.
+// Tras cargar, comprueba recuentos (manifiesto) e integridad referencial; si algo falla termina con código 1 y «RESTAURACIÓN FALLIDA».
 const { createReadStream, existsSync, readFileSync } = require('node:fs');
 const { createGunzip } = require('node:zlib');
 const { resolve } = require('node:path');
-const { BACKUP_MAGIC, isAllowedStatement, validateManifest, validateRestoreTarget, sha256File, parseArgs } = require('./backup-lib.cjs');
+const { BACKUP_MAGIC, restoreDatabaseDefaults, isAllowedStatement, validateManifest, validateRestoreTarget, referentialIntegrity, sha256File, parseArgs } = require('./backup-lib.cjs');
 
 class UserError extends Error {}
 const fail = message => { throw new UserError(message); };
@@ -69,11 +70,18 @@ async function main() {
   try {
     // Solo se quita NO_BACKSLASH_ESCAPES (el respaldo escapa con barra invertida); el resto de modos estrictos se conserva.
     await db.query("SET SESSION sql_mode = REPLACE(@@SESSION.sql_mode, 'NO_BACKSLASH_ESCAPES', '')");
+    // Charset y colación de la base original (manifiesto validado: solo [a-z0-9_]); una copia anterior usa el valor histórico. Nunca se sustituyen en silencio.
+    const defaults = restoreDatabaseDefaults(manifest);
+    const [[supported]] = await db.query('SELECT COUNT(*) AS n FROM information_schema.COLLATIONS WHERE COLLATION_NAME = ? AND CHARACTER_SET_NAME = ?', [defaults.collation, defaults.charset]);
+    if (!Number(supported.n)) fail('El servidor de destino no admite la colación «' + defaults.collation + '» (juego «' + defaults.charset + '») registrada en el respaldo. No se creó ni se escribió nada; usa un servidor compatible.');
+    console.log(defaults.recorded ? 'Colación de la base original: ' + defaults.collation + ' (' + defaults.charset + ').' : 'Aviso: el respaldo no registra la colación de la base (copia anterior); se usa ' + defaults.collation + ' (' + defaults.charset + ').');
     const [[exists]] = await db.query('SELECT COUNT(*) AS n FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?', [target]);
     if (Number(exists.n)) {
       const [[tables]] = await db.query('SELECT COUNT(*) AS n FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?', [target]);
       if (Number(tables.n)) fail('La base «' + target + '» ya tiene tablas. Usa un destino nuevo o vacío; este script no borra datos.');
-    } else await db.query('CREATE DATABASE `' + target + '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+      const [[current]] = await db.query('SELECT DEFAULT_COLLATION_NAME AS collation FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?', [target]);
+      if (current.collation !== defaults.collation) console.log('Aviso: la base vacía «' + target + '» ya existe con la colación ' + current.collation + ' y no se modifica; las tablas del respaldo conservan la suya.');
+    } else await db.query('CREATE DATABASE `' + target + '` CHARACTER SET ' + defaults.charset + ' COLLATE ' + defaults.collation);
     await db.query('USE `' + target + '`');
     let done = 0;
     for await (const statement of statementsOf(file)) { await db.query(statement.replace(/;$/, '')); done++; }
@@ -85,6 +93,15 @@ async function main() {
       }
       console.log('Recuentos verificados en ' + manifest.tables.length + ' tablas.');
     }
+    // Recuentos correctos no implican relaciones correctas, y SET FOREIGN_KEY_CHECKS=1 no revisa lo ya insertado: se comprueba cada clave
+    // foránea declarada (con o sin manifiesto). Si falla, el destino se deja tal cual para revisarlo (no se borra) y el origen no se toca.
+    const integrity = await referentialIntegrity(db, target);
+    if (integrity.problems.length) {
+      fail('RESTAURACIÓN FALLIDA: integridad referencial rota en «' + target + '».\n' + integrity.problems.map(problem => '  - ' + problem.relation + ': ' + problem.reason).join('\n') +
+        '\nLa base «' + target + '» queda incompleta y NO debe usarse; no se borró nada. Revísala y elimínala manualmente (DROP DATABASE `' + target + '`).');
+    }
+    const composite = integrity.checked.filter(key => key.columns.length > 1).length;
+    console.log('Integridad referencial verificada: ' + integrity.checked.length + ' claves foráneas (' + composite + ' compuestas), sin filas huérfanas: ' + integrity.checked.map(key => key.name).join(', ') + '.');
     console.log('La base «' + target + '» queda aparte de la configurada. Elimínala manualmente cuando termines de revisarla.');
   } finally { await db.end().catch(() => {}); }
 }

@@ -9,6 +9,7 @@ import { AccountsService } from '../src/admin/auth/accounts.service';
 import { JwtStrategy } from '../src/admin/auth/jwt.strategy';
 import { BCRYPT_COST, DUMMY_PASSWORD_HASH } from '../src/admin/auth/password-security';
 import { PublicRateLimitGuard } from '../src/common/public-rate-limit.guard';
+import { memoryBuckets } from './fixtures/rate-limit-memory';
 
 // Todo es ficticio: persistencia en memoria, correo falso y secretos de prueba. Se ejecuta con test/isolate-env.cjs (npm test).
 const SECRET = 'secreto-ficticio-de-pruebas-0123456789abcdef';
@@ -70,7 +71,7 @@ test('login always runs bcrypt and answers the same way for unknown, inactive an
     assert.deepEqual(failures[1], failures[0]); assert.deepEqual(failures[2], failures[0]);
     assert.equal(spy.calls.compare.length, 3); assert.equal(spy.calls.salts, 0, 'no se generan hashes por petición');
     const ok = await service.login({ email: 'persona@example.test', password: PASSWORD });
-    assert.equal(ok.ok, true); assert.ok(ok.token); assert.deepEqual(ok.user, { id: 1, nombre: 'Persona Ficticia', email: 'persona@example.test' });
+    assert.equal(ok.ok, true); assert.ok(ok.token); assert.deepEqual(ok.user, { id: 1, nombre: 'Persona Ficticia', email: 'persona@example.test', rol: null, permisos: [] }); // cuenta sin rol (E3.4.1)
     assert.equal(spy.calls.salts, 0);
   } finally { spy.restore(); }
 });
@@ -80,7 +81,7 @@ test('jwt: signature, issuer, audience, expiry and session revocation are still 
   const strategy = new JwtStrategy(cfg({ JWT_SECRET: SECRET }), db.client);
   const options = (strategy as any)._verifOpts;
   assert.equal(options.issuer, 'horus-api'); assert.equal(options.audience, 'horus-panel'); assert.equal(options.ignoreExpiration, false);
-  assert.deepEqual(await strategy.validate({ id: 1, email: 'persona@example.test', version: 1 }), { id: 1, nombre: 'Persona Ficticia', email: 'persona@example.test' });
+  assert.deepEqual(await strategy.validate({ id: 1, email: 'persona@example.test', version: 1 }), { id: 1, nombre: 'Persona Ficticia', email: 'persona@example.test', rol: null });
   for (const payload of [{ id: 1, email: 'x', version: 2 }, { id: 2, email: 'x', version: 1 }, { id: 99, email: 'x', version: 1 }, { id: -1, email: 'x' }, { id: 'a' as unknown as number, email: 'x' }]) {
     await assert.rejects(() => strategy.validate(payload), UnauthorizedException);
   }
@@ -188,9 +189,7 @@ test('changing the password still needs the current password and revokes session
 
 // ---- Límites de solicitudes ----
 function limiter() {
-  const buckets = new Map<string, number>();
-  const tx = { $executeRaw: async (_strings: TemplateStringsArray, id: string) => { buckets.set(id, (buckets.get(id) ?? 0) + 1); }, rateLimitBucket: { findUniqueOrThrow: async ({ where }: any) => ({ count: buckets.get(where.id) }) } };
-  const prisma = { $transaction: async (run: any) => run(tx), rateLimitBucket: { deleteMany: async () => ({ count: 0 }) } } as any;
+  const { buckets, prisma } = memoryBuckets();
   const guard = new PublicRateLimitGuard(prisma);
   const call = (path: string, ip = '203.0.113.1', method = 'POST') => guard.canActivate({ switchToHttp: () => ({ getRequest: () => ({ method, path, ip, socket: { remoteAddress: ip } }) }) } as any);
   return { call, buckets };

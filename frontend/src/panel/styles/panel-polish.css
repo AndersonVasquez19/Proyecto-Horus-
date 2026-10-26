@@ -1,5 +1,47 @@
 /* Ajustes de consistencia del panel (auditoría): se importa al final para ganar a las reglas base. Solo presentación. */
 
+/* Diálogos compartidos: conservar el scroll nativo y permitir pies de varias filas. */
+.hp-dialog { max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; }
+.hp-dialog > header > div { min-width: 0; overflow-wrap: anywhere; }
+.hp-dialog > header > .hp-icon-btn { flex-shrink: 0; min-width: 44px; min-height: 44px; }
+.hp-dialog-footer { flex-wrap: wrap; }
+.hp-dialog-footer > .hp-btn { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.hp-dialog-footer > .hp-footer-error { flex-basis: 100%; }
+
+/* Piloto Estudiantes: identidad navy/dorado sin alterar las demás secciones. */
+.hp-dialog.hs-student-dialog { --ink: #172c48; --muted: #52647a; --line: #e2e7ed; background: #fff; }
+.hs-student-dialog[open], .hs-student-dialog form { display: flex; flex-direction: column; min-height: 0; }
+.hs-student-dialog form { flex: 1; }
+.hs-student-dialog > header, .hs-student-dialog .hp-dialog-footer { flex-shrink: 0; }
+.hs-student-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding-bottom: 4px; }
+.hp-dialog.hs-student-dialog > header { background: #f8fafc; border-top: 4px solid #b79342; gap: 16px; }
+.hp-dialog.hs-student-dialog > header .hp-kicker { color: #785b1f; }
+.hs-student-dialog h2 { color: var(--ink); line-height: 1.35; }
+.hs-form-intro { padding: 20px 28px 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+.hs-student-dialog .hp-form-grid { align-items: start; gap: 24px 20px; }
+.hp-input-field .hp-field-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: var(--ink, #172c48); }
+.hp-field-status { color: var(--muted, #52647a); font-size: 11px; font-weight: 400; }
+.hp-form-grid .hp-input-field input { border-color: #8593a5; border-radius: 9px; }
+.hp-form-grid .hp-field-help { color: var(--muted, #52647a); line-height: 1.6; }
+.hp-form-grid .hp-field-error { color: #9d3028; font-weight: 600; line-height: 1.6; }
+.hp-form-grid .hp-input-field input[aria-invalid=true] { border-color: #b84236; background: #fff8f7; }
+.hp-input-field input[readonly] { background: #f5f7fa; }
+.hp-dialog.hs-student-dialog .hp-btn-primary { background: var(--ink); border-color: var(--ink); }
+.hp-dialog.hs-student-dialog .hp-btn-primary:hover:not(:disabled) { background: #102d4f; border-color: #102d4f; }
+.hp-dialog.hs-student-dialog :focus-visible { outline-color: #9a7420; }
+.hp-form-summary { margin: 20px 28px 0; padding: 16px; border: 1px solid #c65b4e; border-left: 4px solid #b84236; border-radius: 10px; background: #fff8f7; color: #852c24; font-size: 13px; line-height: 1.6; }
+.hp-form-summary h3 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.hp-form-summary ul { list-style: none; padding: 0; margin: 8px 0 0; }
+.hp-form-summary button { display: block; min-height: 44px; padding: 6px 0; text-align: left; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 760px) {
+  .hs-form-intro { padding-inline: 20px; }
+  .hp-form-summary { margin-inline: 20px; }
+  .hs-student-dialog .hs-conflict { padding-inline: 20px; }
+}
+@media (max-width: 480px) {
+  .hp-dialog-footer > .hp-btn { flex: 1 1 160px; min-height: 46px; }
+}
+
 /* Resumen: el hero ocupa menos para que los indicadores y el gráfico queden más arriba. */
 .hp-hero{min-height:200px;padding:28px 36px;margin-bottom:20px}
 .hp-hero h2{font-size:34px;margin:10px 0}
@@ -105,3 +147,24 @@
 @media(prefers-reduced-motion:reduce){.hp-chart g:hover>rect{opacity:1}}
 
 .hp-form .hp-form-grid{gap:0 20px}
+
+/* Roles y usuarios: diálogo de cambio de rol y tabla de cuentas */
+.hp-role-form{display:grid;gap:16px;padding:24px 28px 0}
+.hp-role-form>.hp-dialog-footer{margin:0 -28px}
+.hp-role-target{display:grid;gap:3px;margin:0;color:#64768b;font-size:13px}
+.hp-role-target strong{color:#263d59;font-size:15px}
+.hp-role-form fieldset{display:grid;gap:8px;margin:0;padding:0;border:0;min-width:0}
+.hp-role-form legend{margin-bottom:8px;color:#263d59;font-size:13px;font-weight:600}
+.hp-role-option{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:1px solid #dee5ef;border-radius:10px;background:#fff;cursor:pointer}
+.hp-role-option input{margin-top:3px;accent-color:#193950}
+.hp-role-option span{display:grid;gap:3px;min-width:0}
+.hp-role-option strong{color:#263d59;font-size:14px}
+.hp-role-option small{color:#64768b;font-size:12px;line-height:1.5}
+.hp-role-option.is-selected{border-color:#52758e;background:#f6f9fc}
+.hp-role-option:focus-within{box-shadow:0 0 0 3px #315f9a24}
+.hp-accounts-table .hp-row-actions{flex-wrap:wrap}
+@media(max-width:760px){
+  .hp-role-form{padding:20px 20px 0}
+  .hp-role-form>.hp-dialog-footer{margin:0 -20px}
+  .hp-role-form>.hp-dialog-footer .hp-btn{flex:1 1 140px}
+}

@@ -1,16 +1,19 @@
 import { createValidationPipe } from './common/validation';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { trustedProxies } from './common/trusted-proxies';
+import { proxyTrustWarning, trustedProxies } from './common/trusted-proxies';
 import { adminDocsAuthenticator, configureHttpSecurity, setupSwagger } from './common/security';
 import { PrismaService } from './database/prisma.service';
 import { Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { listenHost } from './deployment.config';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.set('trust proxy', trustedProxies(process.env.TRUSTED_PROXY_CIDRS));
+  app.set('trust proxy', trustedProxies(process.env.TRUSTED_PROXY_CIDRS, process.env.TRUSTED_PROXY_HOPS));
+  const proxyWarning = proxyTrustWarning(process.env);
+  if (proxyWarning) logger.warn(proxyWarning);
   app.enableShutdownHooks();
 
   // Prefijo global /api para mantener compatibilidad total con el frontend
@@ -26,7 +29,9 @@ async function bootstrap() {
   const swagger = setupSwagger(app, process.env, adminDocsAuthenticator(app.get(PrismaService)));
 
   const port = Number(process.env.PORT) || 3000;
-  await app.listen(port);
+  const host = listenHost(process.env);
+  if (host) await app.listen(port, host);
+  else await app.listen(port);
 
   logger.log(`🚀 Servidor NestJS corriendo en: http://localhost:${port}/api`);
   if (swagger === 'open') logger.log(`📚 Documentación Swagger interactiva en: http://localhost:${port}/api/docs`);

@@ -14,7 +14,7 @@ function options() {
     database: process.env.DB_NAME, user: process.env.DB_USER, password: process.env.DB_PASS,
     connectTimeout: 10000,
     ...(process.env.DB_SSL === 'true' ? {
-      ssl: { rejectUnauthorized: true, ...(process.env.DB_SSL_CA ? { ca: process.env.DB_SSL_CA.replace(/\\n/g, '\n') } : {}) },
+      ssl: { rejectUnauthorized: true, verifyIdentity: true, ...(process.env.DB_SSL_CA ? { ca: process.env.DB_SSL_CA.replace(/\\n/g, '\n') } : {}) },
     } : {}),
   };
 }
@@ -30,4 +30,5 @@ function connect(extra = {}) {
 function prisma() {
   return new PrismaClient({ adapter: new PrismaMariaDb({ ...options(), cachingRsaPublicKey: rsaPublicKey(process.env.DB_RSA_PUBLIC_KEY), connectionLimit: 1, timezone: '+00:00' }) });
 }
-module.exports = { connect, prisma };
+// `options` se exporta (sin cambiar connect ni prisma) para que un script resuelva la configuración una sola vez y conecte con esos mismos valores.
+module.exports = { connect, prisma, options };

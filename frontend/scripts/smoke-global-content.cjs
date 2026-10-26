@@ -1,5 +1,5 @@
 // Comprueba sesiones de navegador aisladas; los datos HTTP son fixtures, nunca la base real.
-const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), os = require('node:os')
+const http = require('node:http'), fs = require('node:fs'), path = require('node:path')
 const assert = require('node:assert/strict'), { spawn } = require('node:child_process')
 const ts = require('typescript')
 const root = path.resolve(__dirname, '../dist')
@@ -100,10 +100,11 @@ async function main() {
   await new Promise(resolve => reserve.listen(0, '127.0.0.1', resolve))
   const port = reserve.address().port
   await new Promise(resolve => reserve.close(resolve))
-  const tmp = fs.realpathSync(os.tmpdir()), profile = fs.mkdtempSync(path.join(tmp, 'horus-global-ui-')), pages = []
-  let child, browserConnection
+  const profile = require('./smoke-cleanup.cjs').createProfile('horus-global-ui-'), pages = []
+  let child, browserConnection, cleanup
   try {
-    child = spawn(browser, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' })
+    child = spawn(browser, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { detached: process.platform !== 'win32', windowsHide: true, stdio: 'ignore' })
+    cleanup = require('./smoke-cleanup.cjs')(child, profile, server)
     let version
     for (let i = 0; i < 100 && !version; i++) { await sleep(100); try { version = await fetch('http://127.0.0.1:' + port + '/json/version').then(r => r.json()) } catch {} }
     assert.ok(version?.webSocketDebuggerUrl)
@@ -129,50 +130,39 @@ async function main() {
       await fill(page, '.admin-auth__form', { email, password: 'Fixture-password-123!' })
       await page.evaluate('document.querySelector(".admin-auth__form").requestSubmit()')
       await page.wait('location.pathname==="/admin/dashboard"')
-      await navigate(page, '/admin/dashboard?section=convenios'); await page.wait('!!document.querySelector(".hp-convenios")')
+      await navigate(page, '/admin/dashboard?section=convenios'); await page.wait('!!document.querySelector("[data-panel-editorial-retired]")')
     }
     const first = await newPage(false)
     await login(first, 'a@example.com')
-    await first.evaluate('document.querySelector(".hp-heading button").click()')
-    await first.wait('!!document.querySelector(".hp-convenio-form")')
-    await fill(first, '.hp-convenio-form', { nombre: 'Convenio creado por A', descripcion_corta: 'Descripción global de prueba', orden: '1' })
-    await first.evaluate('(()=>{const input=document.querySelector(".hp-convenio-form input[type=file]"),files=new DataTransfer();files.items.add(new File([Uint8Array.from(atob("' + png.toString('base64') + '"),c=>c.charCodeAt(0))],"logo.png",{type:"image/png"}));input.files=files.files;input.dispatchEvent(new Event("change",{bubbles:true}));})()')
-    await first.wait('document.querySelector("[name=logo_url]").value.startsWith("/api/uploads/") && !document.querySelector(".hp-convenio-dialog button[type=submit]").disabled')
-    await first.evaluate('document.querySelector("[name=visible]").click();document.querySelector(".hp-convenio-form").requestSubmit()')
-    await first.wait('document.querySelector(".hp-convenio-feedback")?.textContent.includes("guardado")')
-    assert.equal(convenio.logo_url, image, 'El guardado no incluye el hostname del navegador')
     const second = await newPage(false)
     await login(second, 'b@example.com')
-    await second.wait('document.querySelector(".hp-convenios tbody")?.textContent.includes("Convenio creado por A")')
-    assert.equal(await second.evaluate('localStorage.getItem("horus-public-content-change")'), null, 'El administrador nuevo no recibió marcadores del otro navegador')
-    assert.ok(requests.some(r => r.route === '/api/admin/convenios' && r.user === 2), 'El admin B consulta el servidor')
-    await second.evaluate('document.querySelector(".hp-convenios tbody button").click()')
-    await second.wait('!!document.querySelector(".hp-convenio-form")')
-    await fill(second, '.hp-convenio-form', { nombre: 'Convenio editado por B' })
-    await second.evaluate('document.querySelector(".hp-convenio-form").requestSubmit()')
-    await second.wait('document.querySelector(".hp-convenio-feedback")?.textContent.includes("guardado")')
-    assert.equal(convenio.id, 1); assert.equal(convenio.nombre, 'Convenio editado por B')
-    console.log('Panel: dos sesiones aisladas, mismo registro, consulta inicial al backend y edición por otro administrador: OK.')
-    // Simula un enlace guardado previamente desde el equipo local.
-    convenio.logo_url = 'http://localhost:5173' + image
+    for (const page of [first, second]) {
+      assert.equal(await page.evaluate('!!document.querySelector("main form, .hp-convenios")'), false)
+      assert.equal(await page.evaluate('document.querySelector("main").textContent.includes("se retiró del panel")'), true)
+    }
+    assert.equal(requests.some(r => r.route.startsWith('/api/admin/convenios')), false, 'Sin solicitudes al gestor editorial desde ninguna sesión')
+    convenio = { id: 1, nombre: 'Convenio conservado', descripcion_corta: 'Descripción pública de prueba', descripcion_completa: '', informacion_adicional: '', sigla: 'CP', logo_url: null, orden: 1, visible: true, fotos: [] }
+    console.log('Panel: dos sesiones aisladas sin gestores ni solicitudes editoriales: OK.')
+    // El visitante lee el contenido institucional versionado (src/institutional): ninguna petición editorial a la API.
+    const editorial = /^\/api\/(cursos|servicios|galeria|convenios|preguntas-frecuentes|settings)(\/|\?|$)/
+    const before = requests.filter(r => editorial.test(r.route)).length
     const visitor = await newPage(true)
     await navigate(visitor, '/')
-    await visitor.wait('document.querySelector(".home-conv-card")?.textContent.includes("Convenio editado por B")')
-    await visitor.evaluate('document.querySelector(".home-conv-card").scrollIntoView()')
-    await visitor.wait('document.querySelector(".home-conv-card img")?.naturalWidth > 0')
-    assert.equal(await visitor.evaluate('document.querySelector(".home-conv-card img").getAttribute("src")'), image)
+    await visitor.wait('document.querySelector("[data-agreement-toggle]")?.textContent.includes("Colegio Regional de Licenciados")')
+    await visitor.evaluate('document.querySelector("[data-agreement-toggle]").scrollIntoView()')
+    await visitor.wait('document.querySelector("[data-agreement-toggle] img")?.naturalWidth > 0')
+    assert.match(await visitor.evaluate('document.querySelector("[data-agreement-toggle] img").getAttribute("src")'), /^\/contenido\/[a-f0-9-]{36}\.(jpg|png|webp)$/)
     assert.equal(await visitor.evaluate('!!document.querySelector("[role=alert]")'), false)
-    for (const [route, text] of [['/educacion/cursos', 'Curso global de prueba'], ['/tecnologias/cableado-estructurado', 'Servicio global de prueba'], ['/galeria', 'Foto global de prueba'], ['/preguntas-frecuentes', 'Pregunta global de prueba']]) {
+    for (const [route, text] of [['/educacion/capacitaciones', 'Capacitaciones Empresariales'], ['/tecnologias/cableado-estructurado', 'Cableado Básico'], ['/galeria', 'Nuestro trabajo'], ['/preguntas-frecuentes', 'Preguntas']]) {
       await navigate(visitor, route); await visitor.wait('document.body.innerText.includes(' + JSON.stringify(text) + ')')
       assert.equal(await visitor.evaluate('!!document.querySelector("[role=alert]")'), false, route)
     }
+    assert.equal(requests.filter(r => editorial.test(r.route)).length, before, 'El visitante no pide contenido editorial a la API')
     for (const page of pages) assert.deepEqual(page.errors, [], 'Sin errores JavaScript en el flujo')
     console.log('Visitante: Home, cursos, servicios, galería y FAQ sin sesión, con storage y BroadcastChannel bloqueados: OK.')
   } finally {
-    if (browserConnection) { await Promise.race([browserConnection.send('Browser.close').catch(() => {}), sleep(1000)]); browserConnection.socket.close() }
-    pages.forEach(page => page.socket.close()); child?.kill(); await new Promise(resolve => server.close(resolve)); await sleep(500)
-    if (path.dirname(profile) !== tmp || !path.basename(profile).startsWith('horus-global-ui-')) throw new Error('Perfil fuera del directorio temporal')
-    for (let i = 0; i < 8; i++) { try { fs.rmSync(profile, { recursive: true, force: true }); break } catch { if (i === 7) console.log('Perfil temporal todavía en uso.'); else await sleep(250) } }
+    if (browserConnection) browserConnection.socket.close()
+    pages.forEach(page => page.socket.close()); cleanup?.()
   }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; server.close() })

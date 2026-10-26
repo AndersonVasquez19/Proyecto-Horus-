@@ -23,12 +23,13 @@ Para una base remota **vacía**, desde backend y con sus variables configuradas 
 npm ci
 npm run db:init
 npm run db:migrate
-npm run admin:create
+npm run admin:assign-role -- --listar
+npm run admin:create -- --destino=<host>:<puerto>/<base> --servidor=<server_uuid> --operador=<identificador> --motivo=<texto>
 ```
 
 `db:init` compila y crea las tablas sin datos de ejemplo; rechaza bases que ya contienen tablas. No usa force ni alter. No es una migración de un esquema existente. Si falla parcialmente, revisar el esquema antes de continuar.
 
-Para una base existente, aplicar solo las migraciones pertinentes. El comando `admin:create` necesita la variable temporal `ADMIN_INITIAL_PASSWORD` y pide nombre y correo. No poner la contraseña en argumentos ni subirla al repositorio.
+Para una base existente, aplicar solo las migraciones pertinentes. El comando `admin:create` necesita la variable temporal `ADMIN_INITIAL_PASSWORD`, confirmar el destino configurado (`--destino`) y la identidad del servidor conectado (`--servidor`, el `server_uuid` que muestra `admin:assign-role -- --listar` en solo lectura; compruébelo con la identidad conocida del servidor) y declarar operador y motivo (quedan en `admin_auditoria`); pide nombre y correo y crea la cuenta sin rol. No poner la contraseña en argumentos ni subirla al repositorio.
 
 Los scripts de base admiten `DB_SSL=true` y `DB_SSL_CA`. No se inicializa ni migra la base automáticamente durante builds o peticiones.
 

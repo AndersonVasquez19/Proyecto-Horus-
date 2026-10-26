@@ -16,12 +16,24 @@ import MessageDeleteDialog from './MessageDeleteDialog';
 import PanelIcon from '../PanelIcon';
 import { useMobileViewport } from '../../hooks/useMobileViewport';
 import { notify } from '../../services/notify';
+import { usePanelAccess } from '../../context/usePanelAccess';
+import { PANEL_ACTIONS } from '../../context/panelAccess';
+import { PanelReadOnlyNotice } from '../PanelAccessNotice';
+import { transitionsOf, TRANSITIONS_UNAVAILABLE, type AttentionContract } from '../../services/attentionTransitions';
 
 const EXPORT_PAGE_TIMEOUT_MS = 15_000;
 
 export default function MessageInbox() {
   const { token } = useAdminAuth();
   const [params, setParams] = useSearchParams(); const location = useLocation();
+  // Operaciones según los permisos de la sesión (E3.4.3, fase 2): registro manual (también ?crear=1), cambios de estado y seguimiento,
+  // envíos, eliminación y el enlace para preparar una cotización (exige poder abrir Cotizaciones y crear).
+  const access = usePanelAccess();
+  const canCreate = access.can(PANEL_ACTIONS.crearMensaje), canDelete = access.can(PANEL_ACTIONS.eliminarMensaje);
+  const canExport = access.can(PANEL_ACTIONS.exportarMensajes);
+  const canReadFollowUp = access.can(PANEL_ACTIONS.leerSeguimiento), canEditFollowUp = canReadFollowUp && access.can(PANEL_ACTIONS.editarSeguimiento);
+  const canSendFollowUp = access.can(PANEL_ACTIONS.enviarSeguimiento);
+  const canQuote = access.canOpen('cotizaciones') && access.can(PANEL_ACTIONS.crearCotizacion);
   const [revision, setRevision] = useState(0);
   const [search, setSearch] = useState('');
   const [channel, setChannel] = useState('');
@@ -40,7 +52,7 @@ export default function MessageInbox() {
   // Vista del listado: ambas comparten datos, filtros, selección y detalle. Solo cambia cómo se dibuja la lista; el detalle (y el borrador del editor)
   // ocupa siempre el mismo lugar del árbol, así que alternar la vista no lo desmonta. Es estado local: cambiar la URL con un borrador abierto avisaría sin necesidad.
   // Alias heredados: `vista=tabla` (la antigua tabla de mensajes) y `listado=tabla` abren la vista Tabla de entrada. Aquí solo llegan las URL de MENSAJES
-  // (AdminDashboard dirige el resto de secciones a ResourceManager), así que `vista=` de cursos, servicios, etc. no se ve afectado. No hay redirección:
+  // (AdminDashboard monta cada sección por separado; los gestores editoriales se retiraron del panel). No hay redirección:
   // los parámetros (`id`, `estado`, `crear`…) se conservan tal cual y el historial no cambia.
   const [view, setView] = useState<'bandeja' | 'tabla'>(() => params.get('listado') === 'tabla' || params.get('vista') === 'tabla' ? 'tabla' : 'bandeja');
   const [deleting, setDeleting] = useState(false);
@@ -50,6 +62,8 @@ export default function MessageInbox() {
   const [savePending, setSavePending] = useState(false), [saveUncertain, setSaveUncertain] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [followUp, setFollowUp] = useState<{ id: number; item: AttentionContract } | null>(null);
+  const availableTransitions = followUp && selected && followUp.id === selected.id ? transitionsOf(followUp.item) : null;
   const lock = useRef(false);
   // D6.4 · lista → detalle en móvil: el detalle recibe el foco al abrirse y la fila de origen lo recupera al volver. En escritorio el foco no se mueve.
   const mobile = useMobileViewport();
@@ -62,7 +76,8 @@ export default function MessageInbox() {
   // Registro manual. Se abre con el botón o con la URL heredada ?crear=1; el diálogo es modal, así que el detalle y el borrador de seguimiento
   // quedan montados debajo, intactos. Al cerrarlo solo se retira `crear` de la URL (sin añadir una entrada de historial).
   const [creatingLocal, setCreatingLocal] = useState(false);
-  const creating = creatingLocal || params.get('crear') === '1';
+  const creating = canCreate && (creatingLocal || params.get('crear') === '1');
+  const createDenied = !canCreate && params.get('crear') === '1';
   const closeCreate = () => {
     setCreatingLocal(false);
     if (params.has('crear')) { const next = new URLSearchParams(params); next.delete('crear'); setParams(next, { replace: true }); }
@@ -81,22 +96,25 @@ export default function MessageInbox() {
   };
   // Exportación de los resultados filtrados: páginas en serie con el endpoint paginado; nada se descarga si alguna página falla o los datos cambian.
   const latestToken = useLatest(token);
+  const latestCanExport = useLatest(canExport);
   const exportController = useRef<AbortController | null>(null);
   const [exporting, setExporting] = useState(false), [exportNote, setExportNote] = useState(''), [exportError, setExportError] = useState('');
   useEffect(() => () => exportController.current?.abort(), []);
+  useEffect(() => { if (!canExport) exportController.current?.abort(); }, [canExport]);
   const exportResults = async () => {
-    if (exporting || !token) return;
+    if (!latestCanExport.current || !token || latestToken.current !== token || exportController.current) return;
     const startToken = token, controller = new AbortController(); exportController.current = controller;
     const filters = { search: search.trim(), status, channel }; // foto de los filtros al pulsar: cambiarlos después no mezcla resultados
     setExporting(true); setExportError(''); setExportNote('Preparando la exportación…');
     try {
       const rows = await fetchAllPages<Row>(async page => {
-        if (latestToken.current !== startToken) throw new ExportError('aborted', 'La sesión cambió durante la exportación. No se descargó ningún archivo.');
+        if (latestToken.current !== startToken || !latestCanExport.current) throw new ExportError('aborted', 'La sesión o sus permisos cambiaron durante la exportación. No se descargó ningún archivo.');
         const query = new URLSearchParams({ page: String(page), limit: String(EXPORT_PAGE_SIZE), ...(filters.search ? { search: filters.search } : {}), ...(filters.status ? { estado: filters.status } : {}), ...(filters.channel ? { channel: filters.channel } : {}) });
         const data = await panelRequest<CollectionResponse>('messages?' + query, startToken, 'GET', undefined, AbortSignal.any([controller.signal, AbortSignal.timeout(EXPORT_PAGE_TIMEOUT_MS)]));
         return { rows: recordsOf<Row>('messages', data), total: data.pagination?.total ?? NaN, pages: data.pagination?.pages ?? NaN };
       }, { signal: controller.signal, onProgress: (done, pages) => setExportNote('Exportando… página ' + done + ' de ' + pages) });
       if (controller.signal.aborted) throw new ExportError('aborted', 'Exportación cancelada. No se descargó ningún archivo.');
+      if (latestToken.current !== startToken || !latestCanExport.current) throw new ExportError('aborted', 'La sesión o sus permisos cambiaron durante la exportación. No se descargó ningún archivo.');
       const csv = buildCsv([...MESSAGE_EXPORT_COLUMNS], toExportRows(rows)); // misma protección D1 contra fórmulas (=, +, -, @)
       const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
       const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'consultas-' + new Date().toLocaleDateString('en-CA') + '.csv'; anchor.click();
@@ -118,10 +136,13 @@ export default function MessageInbox() {
   const changeState = (state: string) => confirmLeave(() => void applyState(state));
   const applyState = async (state: string) => {
     if (!selected || !token || lock.current) return;
+    if (!canEditFollowUp) { setActionError('Tu cuenta no tiene permiso para realizar esta acción.'); return; }
+    if (!availableTransitions?.includes(state) || savePending || saveUncertain) { setActionError('No se pudo verificar que ese cambio de estado esté autorizado. Revisa el seguimiento antes de continuar.'); return; }
     lock.current = true; setBusy(true); setActionError('');
     try {
       const path='seguimiento/messages/'+selected.id;
-      const {item}=await panelRequest<{item:{estado:string;revision:number;responsable:string;notas:string;respuesta:string}}>(path,token);
+      const {item}=await panelRequest<{item:AttentionContract & {revision:number;responsable:string;notas:string;respuesta:string}}>(path,token);
+      setFollowUp({ id: selected.id, item });
       // El PUT reemplaza los cuatro campos con los valores que el servidor tiene AHORA (responsable, notas y respuesta no se tocan) y solo se acepta con su
       // revisión. Antes se comprueba que el estado siga siendo el que la persona veía: si otro administrador lo cambió, no se sobrescribe a ciegas.
       const current = item.estado;
@@ -130,8 +151,10 @@ export default function MessageInbox() {
         setActionError('Otro administrador cambió el estado de esta consulta a «' + label(current) + '». No se aplicó tu cambio; revisa el seguimiento y vuelve a elegir.');
         return;
       }
-      await panelRequest(path,token,'PUT',{estado:state,revision:item.revision,responsable:item.responsable,notas:item.notas,respuesta:item.respuesta});
-      detail.patch({ estado: state }); // el detalle abierto refleja el estado nuevo aunque ya no cumpla el filtro del listado
+      if (!transitionsOf(item)?.includes(state)) { setActionError('El servidor ya no autoriza ese cambio de estado. No se aplicó tu cambio; revisa el seguimiento.'); setEditorEpoch(value => value + 1); return; }
+      const result = await panelRequest<{item:AttentionContract}>(path,token,'PUT',{estado:state,revision:item.revision,responsable:item.responsable,notas:item.notas,respuesta:item.respuesta});
+      setFollowUp({ id: selected.id, item: result.item });
+      detail.patch({ estado: result.item.estado }); // el detalle abierto refleja el estado nuevo aunque ya no cumpla el filtro del listado
       notify.success('Consulta de ' + selected.nombre + ': ' + label(state) + '.'); setRevision(value => value + 1); setEditorEpoch(value => value + 1);
     } catch (err) {
       if (err instanceof PanelApiError && err.status === 409) { // el seguimiento cambió entre la lectura y el guardado: no se reintenta solo
@@ -146,9 +169,10 @@ export default function MessageInbox() {
   const phone = selected ? String(selected.telefono || '').replace(/[^+\d]/g, '') : '';
   return <>
     <div className="hp-heading"><div><p className="hp-kicker">ATENCIÓN AL CLIENTE</p><h1>Centro de consultas</h1><p>Lee, clasifica y continúa la atención de cada persona.</p></div><div className="hp-actions">
-      <button className="hp-btn" onClick={() => setCreatingLocal(true)} disabled={busy}><PanelIcon name="plus" />Registro manual</button>
+      {canCreate && <button className="hp-btn" onClick={() => setCreatingLocal(true)} disabled={busy}><PanelIcon name="plus" />Registro manual</button>}
       <button className="hp-btn" onClick={() => confirmLeave(() => setRevision(value => value + 1))} disabled={loading || busy}><PanelIcon name="refresh" />Actualizar</button></div></div>
     <div className="hw-insights hw-insights-4">{metrics.map(([state, title]) => <button key={state} onClick={() => updateParams('estado', state)} aria-pressed={status === state} disabled={savePending}><span className={'hp-badge hp-state-' + state}>{title}</span><strong>{loading ? '…' : error ? '—' : counts[state]||0}</strong><span>Ver consultas <PanelIcon name="arrow" size={14} /></span></button>)}</div>
+    {createDenied && <PanelReadOnlyNotice>Tu cuenta no puede registrar consultas manualmente. Se muestra la bandeja.</PanelReadOnlyNotice>}
     {!mobile && <p className="hp-sr" role="status">{selected ? 'Consulta #' + selected.id + ' abierta: ' + String(selected.asunto) : ''}</p>}
     {(error || actionError) && <p className="hp-error" role="alert">{error || actionError}</p>}
     {savePending && <p className="hw-caption" role="status">Guardando el seguimiento: no se puede cambiar de consulta, de estado del filtro ni de vista hasta recibir la respuesta.</p>}
@@ -156,7 +180,7 @@ export default function MessageInbox() {
       <div className="hp-card-heading"><div><h2>Bandeja de atención</h2><p role="status">{loading ? 'Cargando…' : error ? 'Datos no disponibles' : total + ' consultas coinciden con tus filtros'}</p></div><div className="hp-actions">
         <div className="hw-tabs" role="group" aria-label="Vista del listado"><button aria-pressed={view === 'bandeja'} disabled={savePending} onClick={() => setView('bandeja')}>Bandeja</button><button aria-pressed={view === 'tabla'} disabled={savePending} onClick={() => setView('tabla')}>Tabla</button></div>
         {exporting && <button className="hp-btn" onClick={() => exportController.current?.abort()}>Cancelar exportación</button>}
-        <button className="hp-btn" onClick={() => void exportResults()} disabled={exporting || loading || !!error || !total}><PanelIcon name="download" />{exporting ? 'Exportando…' : 'Exportar resultados'}</button>
+        {canExport && <button className="hp-btn" onClick={() => void exportResults()} disabled={exporting || loading || !!error || !total}><PanelIcon name="download" />{exporting ? 'Exportando…' : 'Exportar resultados'}</button>}
         </div></div>
       {exportNote && <p className="hp-notice" role="status">{exportNote}</p>}{exportError && <p className="hp-error" role="alert">{exportError}</p>}
       <div className="hp-toolbar"><div className="hp-search"><PanelIcon name="search" /><input aria-label="Buscar consultas" placeholder="Nombre, correo, asunto o mensaje…" value={search} onChange={e => { const value = e.target.value; confirmLeave(() => { setPage(1); setSearch(value); }); }} /></div>
@@ -180,19 +204,19 @@ export default function MessageInbox() {
           <dl className="hw-contact-data"><div><dt>Correo</dt><dd>{String(selected.email)}</dd></div><div><dt>Teléfono</dt><dd>{String(selected.telefono || 'No indicado')}</dd></div></dl>
           <div className="hw-message-text">{String(selected.mensaje)}</div>
           <div className="hp-actions">{email && <a className="hp-btn" href={'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent('Re: ' + selected.asunto)}><PanelIcon name="mail" />Abrir correo</a>}{phone.length >= 6 && <a className="hp-btn" href={'tel:' + phone}>Llamar</a>}</div>
-          <Link className="hp-btn" to={'/admin/dashboard?section=cotizaciones&contacto='+selected.id} state={{ from: location.pathname + location.search }} aria-disabled={savePending || undefined} onClick={event => { if (savePending) event.preventDefault(); }}>Preparar cotización</Link><p className="hw-caption">El correo se abre en tu aplicación. El estado de la consulta se actualiza por separado.</p>
-          <AttentionEditor key={selected.id} syncKey={editorEpoch} resource="messages" id={selected.id} onPendingChange={setSavePending} onUncertainChange={setSaveUncertain} onSaved={(item)=>{detail.patch({ estado: item.estado });notify.success('Seguimiento guardado.');setRevision(v=>v+1)}} /><div className="hw-next-action"><strong>Siguiente paso</strong><p>Actualiza el estado según la atención realizada.</p><div className="hp-actions">
-            {metrics.filter(([state]) => state !== selected.estado).map(([state]) => <button className={'hp-btn' + (state === 'atendido' ? ' hp-btn-primary' : '')} key={state} disabled={busy || savePending || saveUncertain} onClick={() => void changeState(state)}>{busy ? 'Guardando…' : selected.estado === 'archivado' ? 'Reabrir: ' + label(state) : state === 'archivado' ? 'Archivar consulta' : state === 'nuevo' ? 'Volver a pendiente' : state === 'en_proceso' ? 'Iniciar atención' : 'Marcar atendido'}</button>)}
-          </div></div>
-          <div className="hw-record-actions"><strong>Acciones del registro</strong><p>Archivar mantiene la consulta y su historial. Eliminar es definitivo y el sistema puede impedirlo.</p>
-            <button className="hp-btn hp-btn-quiet" disabled={busy || savePending || saveUncertain} onClick={() => setDeleting(true)}><PanelIcon name="trash" size={15} />Eliminar consulta…</button></div>
+          {canQuote && <Link className="hp-btn" to={'/admin/dashboard?section=cotizaciones&contacto='+selected.id} state={{ from: location.pathname + location.search }} aria-disabled={savePending || undefined} onClick={event => { if (savePending) event.preventDefault(); }}>Preparar cotización</Link>}<p className="hw-caption">El correo se abre en tu aplicación. El estado de la consulta se actualiza por separado.</p>
+          {canReadFollowUp && <AttentionEditor key={selected.id} syncKey={editorEpoch} resource="messages" id={selected.id} canEdit={canEditFollowUp} canSend={canSendFollowUp} onContract={(id, item) => setFollowUp({ id, item })} onPendingChange={setSavePending} onUncertainChange={setSaveUncertain} onSaved={(item)=>{detail.patch({ estado: item.estado });notify.success('Seguimiento guardado.');setRevision(v=>v+1)}} />}{canEditFollowUp && <div className="hw-next-action"><strong>Siguiente paso</strong><p>Actualiza el estado según la atención realizada.</p>{availableTransitions === null && <p role="status" className="hp-form-hint">{TRANSITIONS_UNAVAILABLE}</p>}<div className="hp-actions">
+            {(availableTransitions ?? []).map(state => <button className={'hp-btn' + (state === 'atendido' ? ' hp-btn-primary' : '')} key={state} disabled={busy || savePending || saveUncertain} onClick={() => void changeState(state)}>{busy ? 'Guardando…' : followUp?.item.estado === 'archivado' ? 'Reabrir: ' + label(state) : state === 'archivado' ? 'Archivar consulta' : state === 'nuevo' ? 'Volver a pendiente' : state === 'en_proceso' ? 'Iniciar atención' : 'Marcar atendido'}</button>)}
+          </div></div>}
+          {canDelete && <div className="hw-record-actions"><strong>Acciones del registro</strong><p>Archivar mantiene la consulta y su historial. Eliminar es definitivo y el sistema puede impedirlo.</p>
+            <button className="hp-btn hp-btn-quiet" disabled={busy || savePending || saveUncertain} onClick={() => setDeleting(true)}><PanelIcon name="trash" size={15} />Eliminar consulta…</button></div>}
         </> : detail.status === 'loading' ? <div className="hp-empty" role="status"><p>Cargando consulta…</p></div>
           : detail.status === 'missing' ? <div className="hp-empty" role="alert"><PanelIcon name="mail" size={38} /><h3>Esta consulta ya no está disponible</h3><p>Puede haberse eliminado. Elige otra consulta de la lista.</p><button className="hp-btn" onClick={() => updateParams('id', '')}>Cerrar detalle</button></div>
           : detail.status === 'error' ? <div className="hp-empty" role="alert"><PanelIcon name="mail" size={38} /><h3>No pudimos cargar esta consulta</h3><p>Comprueba tu conexión e inténtalo de nuevo. La consulta no se ha eliminado.</p><div className="hp-actions"><button className="hp-btn hp-btn-primary" onClick={detail.retry}>Reintentar</button><button className="hp-btn" onClick={() => updateParams('id', '')}>Cerrar detalle</button></div></div>
           : <div className="hp-empty"><PanelIcon name="mail" size={38} /><h3>Una consulta, toda la información</h3><p>Selecciona una persona para leer su mensaje y continuar la atención.</p></div>}</div>
       </div>
     <footer className="hp-pagination"><button className="hp-btn" disabled={loading||page===1} onClick={()=>confirmLeave(()=>setPage(v=>v-1))}>Anterior</button><span>Página {page}</span><button className="hp-btn" disabled={loading||!!error||page>=pages} onClick={()=>confirmLeave(()=>setPage(v=>v+1))}>Siguiente</button></footer></section>
-    {deleting && selected && <MessageDeleteDialog message={selected} onClose={() => setDeleting(false)} onDeleted={deleted} onArchive={() => { setDeleting(false); changeState('archivado'); }} />}
+    {deleting && selected && canDelete && <MessageDeleteDialog message={selected} onClose={() => setDeleting(false)} onDeleted={deleted} onArchive={canEditFollowUp ? () => { setDeleting(false); changeState('archivado'); } : undefined} />}
     {creating && <MessageCreateDialog onClose={closeCreate} onCreated={created} onUncertain={() => setRevision(value => value + 1)} />}
   </>;
 }

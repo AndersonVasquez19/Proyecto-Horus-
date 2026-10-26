@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { rsaPublicKey } from './database/connection-security';
 import { trustedProxies } from './common/trusted-proxies';
 
@@ -17,11 +18,23 @@ export function corsOrigins(env: Record<string, unknown>): string[] {
   });
 }
 
+// Dirección de escucha. Sin HOST (o vacío) devuelve undefined y la API conserva el comportamiento anterior (listen sin dirección).
+// Solo se admiten IPs literales, nunca nombres: 127.0.0.1 para pruebas locales, 0.0.0.0 dentro del contenedor.
+export function listenHost(env: Record<string, unknown>): string | undefined {
+  if (env.HOST === undefined) return undefined;
+  if (typeof env.HOST !== 'string') throw new Error('HOST debe ser una dirección IP, por ejemplo 127.0.0.1 o 0.0.0.0.');
+  const host = env.HOST.trim();
+  if (!host) return undefined;
+  if (!isIP(host)) throw new Error('HOST debe ser una dirección IP, por ejemplo 127.0.0.1 o 0.0.0.0.');
+  return host;
+}
+
 export function validateDeployment(env: Record<string, unknown>) {
   const hosted = env.VERCEL === '1' || env.NODE_ENV === 'production';
   corsOrigins(env);
+  listenHost(env);
   rsaPublicKey(env.DB_RSA_PUBLIC_KEY);
-  trustedProxies(env.TRUSTED_PROXY_CIDRS);
+  trustedProxies(env.TRUSTED_PROXY_CIDRS, env.TRUSTED_PROXY_HOPS);
   for (const key of ['PORT', 'DB_PORT']) {
     if (env[key] !== undefined && (!/^\d+$/.test(String(env[key])) || Number(env[key]) < 1 || Number(env[key]) > 65535)) {
       throw new Error(key + ' debe ser un puerto entre 1 y 65535.');

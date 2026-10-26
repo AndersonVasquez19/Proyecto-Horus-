@@ -1,7 +1,8 @@
 import { notifyContentChange } from '../../contentUpdates';
 import { API_BASE } from '../../apiBase';
 import { resolveContentImages } from '../../contentImages';
-import { reportExpiredSession } from '../context/sessionEvents';
+import { reportAccessDenied, reportExpiredSession } from '../context/sessionEvents';
+import { ACCESS_DENIED } from '../context/sessionRefresh';
 export const SERVER_FAILURE = 'El servidor no pudo completar la operación. Inténtalo de nuevo en unos minutos.';
 export class PanelApiError extends Error {
   // `body`: cuerpo JSON de la respuesta de error, para que los envíos de correo lean el resultado estructurado (envio, motivo, item).
@@ -17,6 +18,12 @@ export async function panelRequest<T>(path: string, token: string | null, method
   });
   const data = await response.json().catch(() => null);
   if (response.status === 401) reportExpiredSession(token); // con el token de ESTA petición: una sesión nueva no se cierra por un 401 antiguo
+  // 403: la sesión sigue abierta. Mensaje uniforme (sin el texto ni el cuerpo del servidor) y aviso para revalidar los permisos; el 403 de
+  // /admin/me no avisa (lo trata el propio contexto: avisar provocaría otra consulta a /admin/me y así sucesivamente).
+  if (response.status === 403) {
+    if (path !== 'me') reportAccessDenied(token);
+    throw new PanelApiError(ACCESS_DENIED, 403);
+  }
   if (!response.ok || data?.ok === false) {
     const detail = data?.mensaje || data?.message;
     // Un 500 es un fallo interno no controlado («Internal server error»): su texto es técnico y nunca se muestra. Las excepciones deliberadas del

@@ -57,18 +57,16 @@ export default function PoliticasCookies() {
 
       <PolicySection id="cookies-horus">
         <h2 id="cookies-horus-title">4. Qué utiliza este sitio</h2>
-        {/* REVISIÓN-HUMANA [cookies-terceros]: no se puede demostrar desde el código si Google Fonts, Font Awesome o Google Maps establecen cookies; el texto solo afirma las solicitudes externas y que pueden aplicar sus propias tecnologías o políticas. Revisar si sigue siendo cierto cuando cambie el sitio (nuevas integraciones, analítica, etc.). */}
+        {/* REVISIÓN-HUMANA [cookies-terceros]: no se puede demostrar desde el código si Google Maps establece cookies (las fuentes y los iconos ya son locales); el texto solo afirma las solicitudes externas y que pueden aplicar sus propias tecnologías o políticas. Revisar si sigue siendo cierto cuando cambie el sitio (nuevas integraciones, analítica, etc.). */}
         <div className="policy-item">
           <h3>Cookies propias</h3>
           <p>El sitio público no establece cookies propias actualmente. No utilizamos herramientas de analítica ni de publicidad, y no realizamos seguimiento del comportamiento de las personas que lo visitan.</p>
         </div>
         <div className="policy-item">
           <h3>Servicios externos</h3>
-          <p>Para mostrar el sitio, tu navegador realiza solicitudes a los servidores de estos proveedores externos:</p>
+          <p>Las tipografías y los iconos se sirven desde este mismo sitio. El mapa de ubicación solo se carga cuando pulsas «Mostrar mapa»; en ese momento tu navegador realiza solicitudes a los servidores de este proveedor externo:</p>
           <dl className="policy-defs">
             {[
-              { title: 'Google Fonts',         desc: 'Tipografías del sitio, en todas las páginas.' },
-              { title: 'Font Awesome (cdnjs)', desc: 'Iconos del sitio, en todas las páginas.' },
               { title: 'Google Maps',          desc: 'Mapa de ubicación, en las páginas de Inicio y Contactos.' },
             ].map(s => (
               <div key={s.title}>
@@ -77,7 +75,7 @@ export default function PoliticasCookies() {
               </div>
             ))}
           </dl>
-          <p>Estos proveedores pueden aplicar sus propias tecnologías y políticas, que no controlamos.</p>
+          <p>Este proveedor puede aplicar sus propias tecnologías y políticas, que no controlamos.</p>
         </div>
         <div className="policy-item">
           <h3>Enlaces a sitios externos</h3>

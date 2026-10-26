@@ -2,15 +2,22 @@
 // Formato del respaldo (.sql.gz): UNA sentencia por línea, solo CREATE TABLE, INSERT INTO y unos pocos SET. Nunca DROP, GRANT ni USE.
 const { createHash } = require('node:crypto');
 const { createReadStream } = require('node:fs');
-const { escape } = require('mysql2');
+const { escape, escapeId } = require('mysql2');
 
 const BACKUP_MAGIC = '-- horus-backup v1';
 const INSERT_BATCH_ROWS = 200;
 const PAGE_ROWS = 1000;
 // Cuotas temporales: se conserva la estructura pero no los datos (caducan en minutos y no tienen valor de respaldo).
 const EPHEMERAL_TABLES = new Set(['rate_limit_buckets']);
+// Columnas generadas (VIRTUAL/STORED; PERSISTENT en MariaDB): MySQL las calcula y rechaza un valor explícito, así que su definición va en el
+// CREATE TABLE pero no en los INSERT. DEFAULT_GENERATED (p. ej. DEFAULT CURRENT_TIMESTAMP) es una columna normal y sí se copia.
+const GENERATED_COLUMN = /\b(?:VIRTUAL|STORED|PERSISTENT) GENERATED\b/i;
 const FIXED_STATEMENTS = new Set(['SET NAMES utf8mb4;', 'SET FOREIGN_KEY_CHECKS=0;', 'SET UNIQUE_CHECKS=0;', 'SET FOREIGN_KEY_CHECKS=1;', 'SET UNIQUE_CHECKS=1;']);
 const IDENT = /^[A-Za-z0-9_$]+$/;
+// Nombres de charset y colación de MySQL/MariaDB (p. ej. utf8mb4, utf8mb4_0900_ai_ci): minúsculas, números y guion bajo.
+const NAME_PART = /^[a-z0-9_]{1,64}$/;
+// Valores de las copias anteriores, que no registraban la colación.
+const FALLBACK_DATABASE = { charset: 'utf8mb4', collation: 'utf8mb4_unicode_ci' };
 
 const quoteId = name => { if (!IDENT.test(name)) throw new Error('Nombre de tabla o columna no admitido.'); return '`' + name + '`'; };
 
@@ -65,7 +72,18 @@ function validateManifest(manifest, hash) {
     if (!table || !IDENT.test(String(table.name)) || !Number.isInteger(table.dumped) || table.dumped < 0) return 'El manifiesto contiene una tabla no válida.';
   }
   if (manifest.sha256 && hash && manifest.sha256 !== hash) return 'El manifiesto no corresponde a este respaldo (firma distinta).';
+  // `database` es opcional (las copias anteriores no lo tienen), pero si existe debe ser válido: acabará en un CREATE DATABASE.
+  if (manifest.database !== undefined) {
+    const { charset, collation } = manifest.database || {};
+    if (!NAME_PART.test(String(charset)) || !NAME_PART.test(String(collation)) || typeof charset !== 'string' || typeof collation !== 'string' || !collation.startsWith(charset + '_')) return 'El manifiesto contiene un juego de caracteres o una colación no válidos.';
+  }
   return '';
+}
+
+// Charset y colación con los que crear la base restaurada. Sin manifiesto o sin el campo (copia anterior) se usa el valor histórico y se indica.
+function restoreDatabaseDefaults(manifest) {
+  if (manifest && manifest.database) return { ...manifest.database, recorded: true };
+  return { ...FALLBACK_DATABASE, recorded: false };
 }
 
 // Volcado consistente: una transacción de solo lectura con instantánea REPEATABLE READ. No bloquea tablas ni escribe nada en el servidor.
@@ -76,10 +94,16 @@ async function dumpDatabase({ db, write, includeEphemeral = false, now = new Dat
   try {
     const [[version]] = await db.query('SELECT VERSION() AS version');
     manifest.server = String(version.version).split('-')[0];
+    // Valores por defecto de la base (los heredan las tablas que se creen después). Se consultan al servidor, no se deducen de las tablas.
+    const [[defaults]] = await db.query('SELECT DEFAULT_CHARACTER_SET_NAME AS charset, DEFAULT_COLLATION_NAME AS collation FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE()');
+    if (!defaults || !NAME_PART.test(String(defaults.charset)) || !NAME_PART.test(String(defaults.collation))) throw new Error('No se pudo leer el juego de caracteres y la colación de la base.');
+    manifest.database = { charset: String(defaults.charset), collation: String(defaults.collation) };
     await write(BACKUP_MAGIC);
     await write('-- Contiene datos personales y hashes de contraseñas: guárdalo cifrado y fuera del repositorio.');
     for (const statement of ['SET NAMES utf8mb4;', 'SET FOREIGN_KEY_CHECKS=0;', 'SET UNIQUE_CHECKS=0;']) await write(statement);
     const [tables] = await db.query("SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME");
+    const [columnInfo] = await db.query('SELECT TABLE_NAME AS tableName, COLUMN_NAME AS columnName, EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()');
+    const generated = new Set(columnInfo.filter(column => GENERATED_COLUMN.test(String(column.extra ?? ''))).map(column => column.tableName + '.' + column.columnName));
     for (const { name } of tables) {
       const id = quoteId(name);
       const [[ddl]] = await db.query('SHOW CREATE TABLE ' + id);
@@ -93,13 +117,14 @@ async function dumpDatabase({ db, write, includeEphemeral = false, now = new Dat
         for (let offset = 0; ; offset += PAGE_ROWS) {
           const paging = order.length ? ' ORDER BY ' + order.join(',') + ' LIMIT ' + PAGE_ROWS + ' OFFSET ' + offset : '';
           const [rows] = await db.query('SELECT * FROM ' + id + paging);
-          if (rows.length) for (const statement of insertStatements(name, Object.keys(rows[0]), rows)) await write(statement);
+          if (rows.length) for (const statement of insertStatements(name, Object.keys(rows[0]).filter(column => !generated.has(name + '.' + column)), rows)) await write(statement);
           dumped += rows.length;
           if (!order.length || rows.length < PAGE_ROWS) break;
         }
         if (dumped !== expected) throw new Error('El recuento de ' + name + ' cambió durante el volcado (' + dumped + ' de ' + expected + ').');
       }
-      manifest.tables.push({ name, rows: expected, dumped });
+      const recalculated = [...generated].filter(key => key.startsWith(name + '.')).map(key => key.slice(name.length + 1)).sort();
+      manifest.tables.push({ name, rows: expected, dumped, ...(recalculated.length ? { generatedColumns: recalculated } : {}) });
     }
     if (tables.some(table => table.name === 'horus_migrations')) {
       const [applied] = await db.query('SELECT name FROM horus_migrations ORDER BY name');
@@ -108,6 +133,41 @@ async function dumpDatabase({ db, write, includeEphemeral = false, now = new Dat
     await write('SET UNIQUE_CHECKS=1;'); await write('SET FOREIGN_KEY_CHECKS=1;');
     return manifest;
   } finally { await db.query('ROLLBACK').catch(() => {}); }
+}
+
+// Integridad referencial de una base restaurada. El respaldo se carga con FOREIGN_KEY_CHECKS=0, y volver a activarlo NO revisa las filas ya
+// insertadas: un respaldo con firma y recuentos correctos puede traer una convocatoria cuyo curso no existe. Por eso cada clave foránea
+// DECLARADA en la base (leída de information_schema, compuestas incluidas) se comprueba con una consulta explícita sobre los datos.
+// Semántica de InnoDB (MATCH SIMPLE): una fila con alguna columna de la clave a NULL no tiene que existir en la tabla referenciada.
+// Los identificadores salen de los metadatos del servidor y se escapan igualmente con escapeId (comillas inversas duplicadas, sin calificar).
+// Una relación sin clave foránea declarada (p. ej. academico_historial.actor_id) no se comprueba aquí: es una regla de negocio aparte.
+const ident = name => escapeId(String(name), true);
+async function referentialIntegrity(db, schema) {
+  const [rows] = await db.query('SELECT TABLE_NAME AS tableName, CONSTRAINT_NAME AS name, COLUMN_NAME AS columnName, REFERENCED_TABLE_SCHEMA AS refSchema, REFERENCED_TABLE_NAME AS refTable, REFERENCED_COLUMN_NAME AS refColumn FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION', [schema]);
+  const keys = new Map();
+  for (const row of rows) {
+    const id = row.tableName + '.' + row.name;
+    const key = keys.get(id) ?? { table: String(row.tableName), name: String(row.name), columns: [], refSchema: String(row.refSchema), refTable: String(row.refTable), refColumns: [] };
+    key.columns.push(String(row.columnName)); key.refColumns.push(String(row.refColumn));
+    keys.set(id, key);
+  }
+  const [tables] = await db.query("SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'", [schema]);
+  const existing = new Set(tables.map(table => String(table.name)));
+  const checked = [], problems = [];
+  for (const key of keys.values()) {
+    const relation = key.table + '(' + key.columns.join(', ') + ') → ' + key.refTable + '(' + key.refColumns.join(', ') + ') [' + key.name + ']';
+    checked.push({ ...key, relation });
+    // Solo se consulta la propia base restaurada: una referencia a otra base (o a una tabla que no vino en el respaldo) es un fallo, no se sigue.
+    if (key.refSchema !== schema) { problems.push({ ...key, relation, reason: 'referencia otra base de datos' }); continue; }
+    if (!existing.has(key.refTable)) { problems.push({ ...key, relation, reason: 'la tabla referenciada no existe en la copia' }); continue; }
+    const child = ident(schema) + '.' + ident(key.table), parent = ident(schema) + '.' + ident(key.refTable);
+    const notNull = key.columns.map(column => 'c.' + ident(column) + ' IS NOT NULL').join(' AND ');
+    const match = key.columns.map((column, i) => 'p.' + ident(key.refColumns[i]) + ' = c.' + ident(column)).join(' AND ');
+    const [[count]] = await db.query('SELECT COUNT(*) AS n FROM ' + child + ' AS c WHERE ' + notNull + ' AND NOT EXISTS (SELECT 1 FROM ' + parent + ' AS p WHERE ' + match + ')');
+    const orphans = Number(count.n);
+    if (orphans) problems.push({ ...key, relation, orphans, reason: orphans + (orphans === 1 ? ' fila huérfana' : ' filas huérfanas') });
+  }
+  return { checked, problems };
 }
 
 // Destino de una restauración: solo bases aisladas con prefijo horus_restore_, nunca la configurada, y servidor local salvo autorización expresa.
@@ -136,4 +196,4 @@ function parseArgs(argv) {
   return args;
 }
 
-module.exports = { validateManifest, BACKUP_MAGIC, EPHEMERAL_TABLES, sqlValue, insertStatements, singleLine, isAllowedStatement, dumpDatabase, validateRestoreTarget, sha256File, parseArgs };
+module.exports = { GENERATED_COLUMN, restoreDatabaseDefaults, FALLBACK_DATABASE, validateManifest, BACKUP_MAGIC, EPHEMERAL_TABLES, sqlValue, insertStatements, singleLine, isAllowedStatement, dumpDatabase, referentialIntegrity, validateRestoreTarget, sha256File, parseArgs };

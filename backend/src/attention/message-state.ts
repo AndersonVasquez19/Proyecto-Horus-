@@ -1,6 +1,7 @@
 import { Prisma, type Contacto } from '@prisma/client';
 import type { PrismaService } from '../database/prisma.service';
 import type { ListQueryDto } from '../common/list-query.dto';
+import { HORAS_CONSULTA_ANTIGUA } from './attention-rules';
 
 // Una sola identidad lógica, igual que GET/PUT seguimiento. No depende de que un FK histórico esté poblado.
 export const messageJoin = Prisma.sql`FROM contactos m LEFT JOIN attention_records a ON a.recurso = 'messages' AND a.registro_id = m.id`;
@@ -10,10 +11,20 @@ export const messageState = Prisma.sql`COALESCE(a.estado COLLATE utf8mb4_unicode
 export const administrativeState = (fallback: string, attention?: { estado: string } | null) => attention ? attention.estado : fallback;
 type Reader = Pick<PrismaService, '$queryRaw'>;
 
-export function messageWhere(q: ListQueryDto = {}, id?: number) {
+// Filtros propios de la bandeja (admin/messages/dto/query-messages.dto.ts); el resto son los de ListQueryDto.
+// `now` es interno (no lo admite ningún DTO): fija el instante de referencia de «antiguas» para que las lecturas por lotes de una misma
+// exportación usen EL MISMO corte; con Date.now() en cada consulta el conjunto se movía entre lotes y podía repetir o perder filas.
+export type MessageFilters = ListQueryDto & { vista?: string; responsable?: string; antiguas?: string; now?: Date };
+// Fila del listado: la vista completa conserva el contrato histórico; la vista `resumen` omite correo, teléfono y mensaje completo.
+export type MessageRow = Pick<Contacto, 'id' | 'nombre' | 'asunto' | 'estado' | 'createdAt' | 'updatedAt'> & Partial<Pick<Contacto, 'email' | 'telefono' | 'mensaje'>> & { vista_previa?: string; responsable?: string; origen?: string };
+const PREVIEW_LENGTH = 160;
+
+export function messageWhere(q: MessageFilters = {}, id?: number) {
   const clauses: Prisma.Sql[] = [];
   if (id !== undefined) clauses.push(Prisma.sql`m.id = ${id}`);
   if (q.estado) clauses.push(Prisma.sql`${messageState} = ${q.estado}`);
+  if (q.responsable) clauses.push(Prisma.sql`a.responsable = ${q.responsable}`);
+  if (q.antiguas === 'si') clauses.push(Prisma.sql`(${messageState} IN ('nuevo', 'en_proceso') AND m.createdAt < ${new Date((q.now?.getTime() ?? Date.now()) - HORAS_CONSULTA_ANTIGUA * 3_600_000)})`);
   if (q.search) {
     const term = '%' + q.search + '%';
     clauses.push(Prisma.sql`(m.nombre LIKE ${term} OR m.email LIKE ${term} OR m.asunto LIKE ${term} OR m.mensaje LIKE ${term})`);
@@ -23,14 +34,27 @@ export function messageWhere(q: ListQueryDto = {}, id?: number) {
   return clauses.length ? Prisma.sql`WHERE ${Prisma.join(clauses, ' AND ')}` : Prisma.empty;
 }
 
-export function readMessages(db: Reader, q: ListQueryDto = {}, id?: number) {
+export function readMessages(db: Reader, q: MessageFilters = {}, id?: number) {
   const paging = q.page === undefined ? Prisma.empty : Prisma.sql`LIMIT ${q.limit || 20} OFFSET ${(q.page - 1) * (q.limit || 20)}`;
-  return db.$queryRaw<Contacto[]>(Prisma.sql`SELECT m.id, m.nombre, m.email, m.telefono, m.asunto, m.mensaje,
+  // Vista `resumen` (privacidad): solo lo necesario para ordenar el trabajo. Correo, teléfono y mensaje completo quedan para el detalle autorizado.
+  const columns = id === undefined && q.vista === 'resumen'
+    ? Prisma.sql`m.id, m.nombre, m.asunto, SUBSTRING(m.mensaje, 1, ${PREVIEW_LENGTH}) AS vista_previa, m.origen, a.responsable AS responsable,`
+    : Prisma.sql`m.id, m.nombre, m.email, m.telefono, m.asunto, m.mensaje,`;
+  return db.$queryRaw<MessageRow[]>(Prisma.sql`SELECT ${columns}
     ${messageState} AS estado, m.createdAt, m.updatedAt ${messageJoin} ${messageWhere(q,id)}
     ORDER BY m.createdAt DESC, m.id DESC ${paging}`);
 }
 
-export async function countMessages(db: Reader, q: ListQueryDto) {
+// Exportación: solo las columnas del CSV. Nunca el texto del mensaje, notas, respuestas ni historial. Lee un lote del conjunto filtrado
+// con el mismo orden y los mismos filtros que la bandeja; el llamador acota el total antes de recorrerlo.
+export type MessageExportRow = Pick<Contacto, 'id' | 'nombre' | 'email' | 'telefono' | 'asunto' | 'estado' | 'origen'> & { createdAt: Date | string };
+export function readMessageExportBatch(db: Reader, q: MessageFilters, offset: number, take: number) {
+  return db.$queryRaw<MessageExportRow[]>(Prisma.sql`SELECT m.id, m.nombre, m.email, m.telefono, m.asunto, m.origen,
+    ${messageState} AS estado, m.createdAt ${messageJoin} ${messageWhere(q)}
+    ORDER BY m.createdAt DESC, m.id DESC LIMIT ${take} OFFSET ${offset}`);
+}
+
+export async function countMessages(db: Reader, q: MessageFilters) {
   const [row] = await db.$queryRaw<{total: bigint | number}[]>(Prisma.sql`SELECT COUNT(*) AS total ${messageJoin} ${messageWhere(q)}`);
   return Number(row.total);
 }
@@ -45,8 +69,9 @@ export async function messageTotals(db: Reader) {
 }
 
 export function recentMessages(db: Reader) {
-  return db.$queryRaw<Pick<Contacto,'id'|'nombre'|'email'|'asunto'|'estado'|'createdAt'>[]>(Prisma.sql`SELECT
-    m.id, m.nombre, m.email, m.asunto, ${messageState} AS estado, m.createdAt ${messageJoin}
+  // Sin correo ni mensaje: la actividad reciente solo identifica la consulta (el panel no usa el correo aquí).
+  return db.$queryRaw<Pick<Contacto,'id'|'nombre'|'asunto'|'estado'|'createdAt'>[]>(Prisma.sql`SELECT
+    m.id, m.nombre, m.asunto, ${messageState} AS estado, m.createdAt ${messageJoin}
     ORDER BY m.createdAt DESC LIMIT ${5}`);
 }
 

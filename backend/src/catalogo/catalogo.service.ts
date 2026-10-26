@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { isUniqueViolation } from '../database/serialization';
 import { CatalogoQueryDto } from './catalogo.dto';
+import { isDeepStrictEqual } from 'node:util';
 
 export type Recurso = 'cursos' | 'servicios' | 'preguntas-frecuentes';
 // Each route validates its own DTO before reaching this shared CRUD service.
@@ -120,9 +121,21 @@ export class CatalogoService {
       if(next.tipo==='curso'&&(!next.modalidad||!next.duracion))throw new BadRequestException('Un curso necesita modalidad y duración. Completa ambos campos.');
     }
     try {
-      const item = await this.model(recurso).update({ where: { id }, data });
+      const item = recurso === 'cursos'
+        ? await this.prisma.$transaction(async tx => {
+          // Mismo primer bloqueo (curso) que Ediciones/Matrículas/Horarios. No se usa updatedAt como revisión:
+          // MySQL lo guarda con precisión de segundos y dos escrituras podrían compartirlo.
+          await tx.$queryRaw`SELECT id FROM cursos WHERE id = ${id} FOR UPDATE`;
+          const current = await tx.curso.findFirst({ where: { id } });
+          if (!current) throw new NotFoundException({ ok: false, mensaje: 'Contenido no encontrado.' });
+          if (!isDeepStrictEqual(previous, current)) throw new ConflictException({ ok: false, mensaje: 'El contenido cambió durante la actualización. Recarga y revisa los cambios antes de guardar.' });
+          // La fila no puede cambiar entre la validación anterior y esta escritura si coincide con su instantánea.
+          return tx.curso.update({ where: { id }, data });
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted })
+        : await this.model(recurso).update({ where: { id }, data });
       return { ok: true, item };
     } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') throw new ConflictException({ ok: false, mensaje: 'El contenido cambió durante la actualización. Recarga y revisa los cambios antes de guardar.' });
       if (isUniqueViolation(error)) throw new ConflictException({ ok: false, mensaje: await this.slugConflictMessage(recurso, data.slug, id) });
       throw error;
     }
@@ -134,17 +147,18 @@ export class CatalogoService {
     return { ok: true, mensaje: 'Contenido archivado.', item };
   }
 
-  // Services, courses and capacitaciones are removed for good (explicit product decision); FAQs are still archived.
+  // Only services can be physically removed. Courses keep their identity and are archived through PUT.
   async remove(recurso: Recurso, id: number) {
     if (recurso === 'preguntas-frecuentes') throw new BadRequestException('Este contenido solo se puede archivar.');
     await this.detail(recurso, id);
+    if (recurso === 'cursos') throw new ConflictException({ ok: false, mensaje: 'Los cursos y capacitaciones se conservan. Para retirarlos del catálogo público, cambia su estado a «Archivado» desde Editar.' });
     try {
       await this.model(recurso).delete({ where: { id } });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw new NotFoundException({ ok: false, mensaje: 'Contenido no encontrado.' });
       throw error;
     }
-    return { ok: true, mensaje: recurso === 'servicios' ? 'Servicio eliminado definitivamente.' : 'Contenido eliminado definitivamente.' };
+    return { ok: true, mensaje: 'Servicio eliminado definitivamente.' };
   }
 
   async stats() {

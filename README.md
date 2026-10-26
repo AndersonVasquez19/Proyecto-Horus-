@@ -6,16 +6,17 @@ Sitio institucional y panel de Horus Group SRL. Frontend React/TypeScript/Vite; 
 
 - Cursos y capacitaciones separados, búsqueda, modalidad, paginación y detalle con temario.
 - Servicios publicados por categoría, detalle y consultas con el asunto seleccionado.
-- Galería activa y preguntas frecuentes alimentadas desde el panel.
+- Galería activa y preguntas frecuentes publicadas en MySQL (sin gestión desde el panel desde la separación del contenido institucional).
+- Panel centrado en gestión académica (estudiantes, ediciones, matrículas e importación CSV), atención al usuario y cuentas. El contenido institucional lo mantiene el equipo web desde el código; ver [docs/procedimientos/separacion-panel-contenido.md](docs/procedimientos/separacion-panel-contenido.md).
 - Ajustes públicos de contacto y pie de página. Los valores vacíos conservan el contenido institucional existente, pendiente de confirmación de la empresa.
 - Consultas y reclamaciones con responsable, notas, respuesta, historial y revisión para evitar sobrescrituras.
 - Cotizaciones con importes calculados en el backend, borradores, seguimiento de estados, correo e impresión para guardar PDF.
 - Newsletter con consentimiento y enlace firmado de baja.
 - Carga administrativa de imágenes PNG/JPEG/WebP, hasta 5 MB.
-- Login, recuperación/cambio de contraseña, desactivación de cuentas y revocación de sesiones. No hay registro público: el alta de administradores exige una sesión de administrador y el primero se crea con `npm run admin:create`.
+- Login, recuperación/cambio de contraseña, desactivación de cuentas y revocación de sesiones. Registro público en `/admin/register` (`POST /api/admin/signup`): la cuenta nace sin rol, puede iniciar sesión de inmediato y entra en «Mi espacio» (sus datos y su contraseña), sin permisos administrativos. El gerente asigna, cambia o retira roles desde «Roles y usuarios» (o con `npm run admin:assign-role`); el backend sigue autorizando con JWT, AccessGuard y RBAC. El alta hecha por un administrador exige sesión y `cuentas:crear`; el primero se crea con `npm run admin:create`.
 - Chatbot basado en contenido publicado y ajustes públicos conocidos, con IA opcional y cuotas compartidas en MySQL.
 
-Las secciones de cableado, cámaras, soporte, asesoramiento y capacitaciones conservan sus diseños originales con datos editables desde el panel. La galería utiliza fotos activas en sus franjas animadas y filtros. Guardar contenido actualiza una web abierta en otra pestaña del mismo navegador; otros visitantes ven los cambios en su siguiente consulta.
+Las secciones de cableado, cámaras, soporte, asesoramiento y capacitaciones conservan sus diseños originales con los datos publicados en MySQL; el panel ya no los edita. La galería utiliza fotos activas en sus franjas animadas y filtros. Guardar contenido actualiza una web abierta en otra pestaña del mismo navegador; otros visitantes ven los cambios en su siguiente consulta.
 
 Market no forma parte de este proyecto: la ruta antigua /market redirige al inicio y no hay compras, pagos ni inscripciones automáticas. La biblioteca de contenido es interna al panel.
 
@@ -29,7 +30,7 @@ La migración `20261002-complete-institutional` añade acceso de cuentas, consen
 
 La migración `20261002-original-design` añade los campos de presentación de servicios y programas, y un identificador estable para recuperar contenido sin sobrescribir ediciones. Los programas de capacitación pueden dejar modalidad y duración pendientes; los cursos siguen exigiendo ambas.
 
-En las secciones **Servicios**, **Cursos y capacitaciones** y **Galería** del panel, **Recuperar contenido original** muestra una vista previa y permite publicar o guardar sin publicar. Solo importa contenido que existía en la revisión `fb2880b`; conserva registros existentes, ediciones y estados, incluidos archivados. No modifica los ajustes institucionales. En MySQL local de desarrollo, `npm run content:restore` es la alternativa explícita, después del build y las migraciones. No se ejecuta al arrancar ni al consultar la web.
+El panel ya no ofrece **Recuperar contenido original** (se retiraron sus secciones editoriales); el endpoint autenticado se conserva. La recuperación solo importa contenido que existía en la revisión `fb2880b`; conserva registros existentes, ediciones y estados, incluidos archivados. No modifica los ajustes institucionales. En MySQL local de desarrollo, `npm run content:restore` es la alternativa explícita, después del build y las migraciones. No se ejecuta al arrancar ni al consultar la web.
 
 Configurar el correo con `MAIL_PROVIDER` (`resend` o `gmail`) según `backend/MAIL.md`. En producción, montar un volumen persistente y configurar `UPLOAD_DIR`. Sin almacenamiento persistente configurado, la carga de imágenes en producción responde con un error explícito.
 
@@ -39,7 +40,7 @@ Desde `backend/`: `npm run start:dev`. API en `http://localhost:3000/api`; Swagg
 
 Desde `frontend/`: `npm ci` y `npm run dev`. Vite redirige `/api` al backend. `VITE_API_BASE_URL` permite utilizar otra URL de API.
 
-El panel está en `/admin/dashboard`. El acceso es por `/admin/login` (`/admin/register` redirige allí). Todos los administradores conservan los permisos del panel.
+El panel está en `/admin/dashboard`. El acceso es por `/admin/login`; `/admin/register` es el registro público: la cuenta creada inicia sesión y usa «Mi espacio», pero no obtiene funciones administrativas sin un rol asignado. Cada cuenta con rol ve las secciones y operaciones de su rol.
 
 ## Verificación
 

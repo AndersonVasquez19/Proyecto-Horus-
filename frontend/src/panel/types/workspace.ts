@@ -22,7 +22,7 @@ const states = ['borrador', 'publicado', 'archivado'];
 const visualFields:Field[]=[{key:'color',label:'Color de la tarjeta',type:'select',options:['indigo','coral','verde','violeta','oscuro'],required:true},{key:'icono',label:'Icono',type:'select',options:['','heart','legal','finance','technology','education','business','network','camera','bell','cloud','mobile','tools','software','emergency','star','users','target','handshake']},{key:'orden',label:'Orden en la web',type:'number',min:0,max:1000000}];
 const state: Field = { key: 'estado', label: 'Estado', type: 'select', options: states, required: true };
 export const resources: Record<string, Resource> = {
-  cursos: { label: 'Cursos y capacitaciones', singular: 'curso', endpoint: 'cursos', icon: 'book', catalog: true, hardDelete: true, title: 'titulo',
+  cursos: { label: 'Cursos y capacitaciones', singular: 'curso', endpoint: 'cursos', icon: 'book', catalog: true, title: 'titulo',
     description: 'Organiza tu oferta educativa, sus temarios y fechas de inicio.', states,
     fields: [title, slug, description, { key: 'tipo', label: 'Tipo', type: 'select', options: ['curso', 'capacitacion'], required: true },
       { key: 'modalidad', label: 'Modalidad', type: 'select', options: ['', 'presencial', 'virtual', 'hibrida'], required: true, courseOnly:true },
@@ -152,7 +152,9 @@ export function fieldsFor(resource: Resource, scope: PanelScope | undefined, for
 export const fixedFieldKeys = (scope?: PanelScope) => Object.entries(scope?.filters ?? {}).filter(([, value]) => !value.includes(',')).map(([name]) => name);
 
 export const removeVerb = (resource: Resource) => resource.hardDelete || !resource.catalog ? 'Eliminar' : 'Archivar';
-export const canRemove = (resource: Resource, row: Row) => !!resource.hardDelete || !resource.catalog || row.estado !== 'archivado';
+// Course conservation is a resource rule, independent of the account's permissions or access mode.
+export const supportsRemove = (resource: Resource) => resource.endpoint !== 'cursos';
+export const canRemove = (resource: Resource, row: Row) => supportsRemove(resource) && (!!resource.hardDelete || !resource.catalog || row.estado !== 'archivado');
 export const slugify = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 180);
 export const label = (value: unknown) => labels[String(value)] || String(value ?? '').replace(/_/g, ' ');
 export const rowState = (row: Row) => row.activo !== undefined ? row.activo ? 'activo' : 'inactivo' : String(row.estado || 'nuevo');

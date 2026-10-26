@@ -7,8 +7,9 @@ import { useUnsavedChanges } from '../unsaved/unsavedContext';
 import { useLatest } from '../hooks/useLatest';
 import { mailResultFromFailure, mailResultFromSuccess, type MailResult } from '../services/mailOutcome';
 import { ATTENTION_FIELDS, FIELD_LABELS, isOlderThan, reconcile, valuesOf, type AttentionField, type AttentionValues } from '../services/attentionMerge';
+import { canKeepOrTransition, transitionsOf, TRANSITIONS_UNAVAILABLE, type AttentionContract } from '../services/attentionTransitions';
 type SendInfo = { estado: string; fecha: string; intento: string } | null;
-type Attention = AttentionValues & { revision: number; historial: { accion: string; usuario: number; fecha: string }[]; envios?: { respuesta: SendInfo; constancia: SendInfo } };
+type Attention = AttentionValues & AttentionContract & { revision: number; historial: { accion: string; usuario: number; fecha: string }[]; envios?: { respuesta: SendInfo; constancia: SendInfo } };
 type MailAction = 'send' | 'receipt';
 const MAIL_TIMEOUT_MS = 25_000; // más que el límite del proveedor en el servidor: cortar antes no prueba que el correo no salió
 const SEND_STATE: Record<string, string> = { iniciado: 'envío iniciado, sin resultado', aceptado: 'aceptado por el proveedor (no confirma la entrega)', fallido: 'no se pudo enviar', incierto: 'no se pudo confirmar si salió' };
@@ -26,7 +27,8 @@ const stateText = (value: string) => value.replace('_', ' ');
 // Nunca se adopta una revisión nueva sin comparar qué cambió (ver services/attentionMerge.ts): un campo cambiado por ambas partes con valores distintos
 // es un conflicto y exige elegir; el guardado siempre usa la revisión de la última versión comparada, así que el servidor sigue rechazando (409) cualquier
 // cambio ajeno posterior en vez de pisarlo.
-export default function AttentionEditor({ resource, id, onSaved, onPendingChange, onUncertainChange, syncKey = 0 }: { resource: 'messages'; id: number; onSaved?: (item: { estado: string }, changed?: boolean) => void; onPendingChange?: (pending: boolean) => void; onUncertainChange?: (uncertain: boolean) => void; syncKey?: number }) {
+// canEdit / canSend (E3.4.3, fase 2): sin editar, el seguimiento se muestra en modo consulta; sin enviar, no se ofrecen los correos.
+export default function AttentionEditor({ resource, id, onSaved, onContract, onPendingChange, onUncertainChange, syncKey = 0, canEdit = true, canSend = true }: { resource: 'messages'; id: number; onSaved?: (item: { estado: string }, changed?: boolean) => void; onContract?: (id: number, item: AttentionContract) => void; onPendingChange?: (pending: boolean) => void; onUncertainChange?: (uncertain: boolean) => void; syncKey?: number; canEdit?: boolean; canSend?: boolean }) {
   const { token } = useAdminAuth(); const latestToken = useLatest(token);
   const conflictId = useId();
   const [reload, setReload] = useState(0);
@@ -43,6 +45,8 @@ export default function AttentionEditor({ resource, id, onSaved, onPendingChange
   const notifyPending = useCallback((value: boolean) => pendingCallback.current?.(value), [pendingCallback]);
   const notifyUncertain = useCallback((value: boolean) => uncertainCallback.current?.(value), [uncertainCallback]);
   const baseRef = useLatest(base), formRef = useLatest(form);
+  const contractCallback = useLatest(onContract);
+  useEffect(() => { if (base) contractCallback.current?.(id, base); }, [base, id, contractCallback]);
   const lock = useRef(false); // un solo envío a la vez, incluso con dobles clics
   const lifetime = useRef({ active: false });
   const sequence = useRef(0), comparison = useRef<AbortController | null>(null), synced = useRef(syncKey);
@@ -121,6 +125,8 @@ export default function AttentionEditor({ resource, id, onSaved, onPendingChange
   const save = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!form || !base || lock.current || blocked) return;
+    if (!canEdit) { setActionError('Tu cuenta no tiene permiso para realizar esta acción.'); return; }
+    if (!canKeepOrTransition(base, form.estado)) { setActionError('El estado elegido no está autorizado por la última respuesta del servidor. Tu borrador se conserva; revisa el estado antes de guardar.'); return; }
     // La tabla heredada reutiliza revisión y fusión D3. Revisar sin editar no crea seguimiento ni reabre casos.
     const instance = lifetime.current, controller = new AbortController();
     let timedOut = false;
@@ -174,6 +180,7 @@ export default function AttentionEditor({ resource, id, onSaved, onPendingChange
   // Tras cualquier desenlace se compara en segundo plano con el servidor: la revisión y el historial cambiaron al registrar el intento.
   const runMail = async (action: MailAction, confirmed = false) => {
     if (!base || lock.current) return;
+    if (!canSend) { setActionError('Tu cuenta no tiene permiso para realizar esta acción.'); return; }
     const instance = lifetime.current, controller = new AbortController(), startedPath = path;
     const timer = window.setTimeout(() => controller.abort(), MAIL_TIMEOUT_MS);
     lock.current = true; setBusy(true); setActionError(''); setNotice(''); setMail(null);
@@ -208,8 +215,15 @@ export default function AttentionEditor({ resource, id, onSaved, onPendingChange
           <div className="hp-actions"><button type="button" className="hp-btn" onClick={() => resolve(key, 'mine')}>Conservar mi versión</button><button type="button" className="hp-btn" onClick={() => resolve(key, 'theirs')}>Usar la del servidor</button></div>
         </div>)}
       </section>}
-      <fieldset disabled={busy}>
-        <label>Estado<select value={form.estado} {...flagged('estado')} onChange={e => setForm({ ...form, estado: e.target.value })}>{['nuevo', 'en_proceso', 'atendido', 'archivado'].map(v => <option key={v} value={v}>{stateText(v)}</option>)}</select></label>
+      {!canEdit && <p className="hp-form-hint" data-panel-readonly>Modo consulta: tu cuenta puede ver el seguimiento, pero no modificarlo.</p>}
+      <fieldset disabled={busy || !canEdit}>
+        <label>Estado<select value={form.estado} {...flagged('estado')}
+          aria-describedby={[flagged('estado')['aria-describedby'], transitionsOf(base) === null ? conflictId + '-transitions' : null].filter(Boolean).join(' ') || undefined}
+          onChange={e => { if (canKeepOrTransition(base, e.target.value)) setForm({ ...form, estado: e.target.value }); }}>
+          {[base.estado, ...(transitionsOf(base) ?? [])].map(v => <option key={v} value={v}>{stateText(v)}</option>)}
+          {!canKeepOrTransition(base, form.estado) && <option value={form.estado} disabled>{stateText(form.estado)} (borrador: no autorizado)</option>}
+        </select></label>
+        {transitionsOf(base) === null && <p id={conflictId + '-transitions'} role="status" className="hp-form-hint">{TRANSITIONS_UNAVAILABLE}</p>}
         <><label>Responsable<input value={form.responsable} maxLength={100} {...flagged('responsable')} onChange={e => setForm({ ...form, responsable: e.target.value })} /></label>
         <label>Notas internas<textarea value={form.notas} maxLength={10000} {...flagged('notas')} onChange={e => setForm({ ...form, notas: e.target.value })} /></label>
         <label>Respuesta al cliente<textarea value={form.respuesta} maxLength={10000} {...flagged('respuesta')} onChange={e => setForm({ ...form, respuesta: e.target.value })} /></label></>
@@ -228,12 +242,12 @@ export default function AttentionEditor({ resource, id, onSaved, onPendingChange
         {mail.needsConfirm && <div className="hp-actions"><button type="button" className="hp-btn hp-btn-primary" disabled={busy} onClick={() => void runMail(mail.action, true)}>Enviar de todos modos</button>
           <button type="button" ref={noSendButton} className="hp-btn" disabled={busy} onClick={dismissMail}>No enviar</button></div>}
       </div>}
-      <div className="hp-actions"><button type="button" ref={receiptButton} className="hp-btn" disabled={busy || !!doubt} onClick={() => void receipt()}>Reenviar constancia / notificación</button>
-        <button ref={saveButton} className="hp-btn hp-btn-primary" disabled={busy || blocked} aria-describedby={blocked ? conflictId + '-why' : undefined}>Guardar seguimiento</button>
-        <button type="button" ref={sendButton} className="hp-btn" disabled={busy || !!doubt || !base.respuesta} onClick={() => void send()}>Enviar respuesta guardada</button></div>
+      {(canEdit || canSend) && <div className="hp-actions">{canSend && <button type="button" ref={receiptButton} className="hp-btn" disabled={busy || !!doubt} onClick={() => void receipt()}>Reenviar constancia / notificación</button>}
+        {canEdit && <button ref={saveButton} className="hp-btn hp-btn-primary" disabled={busy || blocked} aria-describedby={blocked ? conflictId + '-why' : undefined}>Guardar seguimiento</button>}
+        {canSend && <button type="button" ref={sendButton} className="hp-btn" disabled={busy || !!doubt || !base.respuesta} onClick={() => void send()}>Enviar respuesta guardada</button>}</div>}
       {blocked && <p id={conflictId + '-why'} className="hp-form-hint">{doubt ? 'Comprueba el estado del servidor para poder guardar de nuevo.' : comparing ? 'Comparando con la versión del servidor…' : conflicts.length ? 'Elige una versión en cada conflicto para poder guardar.' : 'Reintenta la comparación para poder guardar.'}</p>}
       {dirty && <p className="hp-form-hint">Tienes cambios sin guardar. El correo enviaría la última respuesta guardada, no lo que ves ahora.</p>}
-      <><p>El correo envía la última respuesta guardada. Conserva tus cambios antes de enviarla.</p>
+      <>{canSend && <p>El correo envía la última respuesta guardada. Conserva tus cambios antes de enviarla.</p>}
       {(['respuesta', 'constancia'] as const).map(kind => base.envios?.[kind] && <p key={kind} className="hp-form-hint" data-mail-state={kind}>{kind === 'respuesta' ? 'Último envío de la respuesta' : 'Última constancia a la persona'}: {SEND_STATE[base.envios[kind].estado] ?? base.envios[kind].estado} · {new Date(base.envios[kind].fecha).toLocaleString('es-PE')}</p>)}
       <h4>Historial</h4>{base.historial.length ? <ul>{base.historial.map((h, i) => <li key={i}>{new Date(h.fecha).toLocaleString('es-PE')} · {h.accion} · Administrador #{h.usuario}</li>)}</ul> : <p>Aún no hay cambios de seguimiento.</p>}</>
     </form>}</section>;

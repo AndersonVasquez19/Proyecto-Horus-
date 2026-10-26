@@ -1,6 +1,6 @@
 // Concurrencia en el seguimiento (D3) con API simulada: nada real (ni datos, ni sesiones, ni correo). Edge por DevTools.
 // El navegador es el administrador A; el endpoint /__remote edita el mismo seguimiento como administrador B.
-const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), os = require('node:os'), { spawn } = require('node:child_process');
+const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), { spawn } = require('node:child_process');
 const root = path.resolve(__dirname, '../dist');
 const edge = process.env.SMOKE_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -11,6 +11,8 @@ const TOKEN = 'e30.' + Buffer.from(JSON.stringify({ id: 1 })).toString('base64ur
 const sim = { putMode: 'ok', getMode: 'ok', nextGetDelay: 0 };
 const writes = [], gets = [];
 const heldPuts = new Map();
+let allowedTransitions;
+const withTransitions = item => ({ ...item, transiciones_permitidas: allowedTransitions(item.estado) });
 const releasePuts = () => { sim.holdPut = 0; for (const release of heldPuts.values()) release(); heldPuts.clear(); };
 let messages = [], reclamaciones = [], attention = {};
 const fresh = (resource, id) => ({ estado: resource === 'messages' ? messages.find(m => m.id === id)?.estado || 'nuevo' : 'nuevo', responsable: '', notas: '', respuesta: '', revision: 1, historial: [] });
@@ -51,7 +53,7 @@ const server = http.createServer(async (req, res) => {
           if (req.method === 'GET') {
             gets.push(keyOf(resource, id)); if (sim.getMode === 'error') return json({ message: 'Internal server error ER_SECRET' }, 500);
             const snapshot = JSON.parse(JSON.stringify(current(resource, id))); const delay = sim.nextGetDelay; sim.nextGetDelay = 0; if (delay) await sleep(delay); // la copia se toma al recibir la petición: si tarda, llega "vieja"
-            return json({ ok: true, item: snapshot }); }
+            return json({ ok: true, item: withTransitions(snapshot) }); }
           const data = await body(); const cur = current(resource, id);
           if (m[4] === 'correo') { writes.push({ method: 'POST', route: sub, data }); return data.revision !== cur.revision ? json({ message: 'La respuesta cambió. Recarga el caso antes de enviarla.' }, 409) : json({ ok: true, mensaje: 'Respuesta enviada por correo.' }); }
           if (req.method === 'PUT') {
@@ -62,7 +64,7 @@ const server = http.createServer(async (req, res) => {
             if (data.revision !== cur.revision) return reply({ message: 'El seguimiento cambió en otra sesión. Recarga el caso.' }, 409);
             attention[keyOf(resource, id)] = { ...cur, estado: data.estado, responsable: data.responsable, notas: data.notas, respuesta: data.respuesta, revision: cur.revision + 1, historial: [...cur.historial, { accion: 'Seguimiento actualizado: ' + data.estado, usuario: 1, fecha: new Date().toISOString() }] };
             if (resource === 'messages') messages.find(x => x.id === id).estado = data.estado === 'archivado' ? 'atendido' : data.estado; entry.applied = true;
-            return reply({ ok: true, item: attention[keyOf(resource, id)] }); }
+            return reply({ ok: true, item: withTransitions(attention[keyOf(resource, id)]) }); }
           return json({ ok: true, mensaje: 'Notificación enviada.' });
         }
         if (sub === 'messages') {
@@ -75,7 +77,8 @@ const server = http.createServer(async (req, res) => {
         if ((m = sub.match(/^messages\/(\d+)$/))) return json({ ok: true, message: effectiveMessages().find(x => x.id === +m[1]) });
         if (sub === 'stats') {
           const all = effectiveMessages(), count = s => all.filter(m=>m.estado===s).length;
-          return json({ok:true,stats:{mensajes:{total:all.length,nuevos:count('nuevo'),enProceso:count('en_proceso'),atendidos:count('atendido'),archivados:count('archivado')},reclamaciones:{total:reclamaciones.length},contenido:{total:0},catalogo:{}},actividadReciente:{mensajes:all,reclamaciones:[]}});
+          // Contrato de GET /admin/stats?vista=operativa (Resumen académico y de atención).
+          return json({ok:true,stats:{academico:{estudiantes:0,edicionesActivas:0,matriculasRegistradas:0,matriculasVigentes:0},mensajes:{total:all.length,nuevos:count('nuevo'),enProceso:count('en_proceso'),atendidos:count('atendido'),archivados:count('archivado'),pendientes:count('nuevo')+count('en_proceso')}},actividadReciente:{mensajes:all.map(x=>({id:x.id,nombre:x.nombre,asunto:x.asunto,estado:x.estado,createdAt:x.createdAt}))}});
         }
         if (sub === 'reclamaciones') return json({ ok: true, reclamaciones, pagination: { total: reclamaciones.length, page: 1, limit: 10, pages: 1 }, metrics: { reclamo: reclamaciones.length, queja: 0 } });
         return json({ ok: true, items: [], messages: [], pagination: { page: 1, total: 0, pages: 1 }, metrics: {} });
@@ -101,18 +104,17 @@ function connect(url) {
 }
 const SET = "(el, v) => { const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v); el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })) }";
 function newestMtime(dir) { let n = 0; for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); n = Math.max(n, e.isDirectory() ? newestMtime(f) : fs.statSync(f).mtimeMs); } return n; }
-// En Windows child.kill() solo cierra el proceso raíz de Edge y dejaba docenas de procesos huérfanos: se cierra el árbol completo.
-function killBrowser(child) { try { if (process.platform === 'win32') require('node:child_process').spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }); else child.kill(); } catch { /* ya cerrado */ } }
 
 async function main() {
+  ({ allowedTransitions } = await import(require('node:url').pathToFileURL(path.resolve(__dirname, '../../backend/src/attention/attention-rules.ts'))));
   if (!fs.existsSync(path.join(root, 'index.html'))) throw new Error('Falta dist/: ejecuta "npm run build".');
   if (newestMtime(path.resolve(__dirname, '../src')) > fs.statSync(path.join(root, 'index.html')).mtimeMs) throw new Error('dist/ está desactualizado respecto a src/: ejecuta "npm run build" antes del smoke.');
   if (!fs.existsSync(edge)) throw new Error('Configura SMOKE_BROWSER con una instalación de Edge/Chromium.');
   await new Promise(r => server.listen(0, '127.0.0.1', r)); const origin = 'http://127.0.0.1:' + server.address().port;
   const probe = http.createServer(); await new Promise(r => probe.listen(0, '127.0.0.1', r)); const port = probe.address().port; await new Promise(r => probe.close(r));
-  const profile = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'horus-conflict-'));
-  const child = spawn(edge, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
-  const cleanup = require('./smoke-cleanup.cjs')(child,profile,server,killBrowser);
+  const profile = require('./smoke-cleanup.cjs').createProfile('horus-conflict-');
+  const child = spawn(edge, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { detached: process.platform !== 'win32', windowsHide: true, stdio: 'ignore' });
+  const cleanup = require('./smoke-cleanup.cjs')(child,profile,server);
   let version; for (let i = 0; i < 100 && !version; i++) { await sleep(100); try { version = await fetch('http://127.0.0.1:' + port + '/json/version').then(r => r.json()); } catch { /* arrancando */ } }
   const bc = connect(version.webSocketDebuggerUrl); await bc.ready;
   const jsErrors = [], blocked = [], pages = []; let fails = 0;

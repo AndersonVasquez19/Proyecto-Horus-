@@ -1,14 +1,12 @@
-import { useEffect, useId, useState } from 'react'
+import { Fragment, useEffect, useId, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import useSocialLinks from '../hooks/useSocialLinks'
-import useReducedMotion from '../hooks/useReducedMotion'
 
 import photoMain     from '../assets/images/somos/marco 2.png'
 import photoMarco    from '../assets/images/somos/marco 2.png'
 import photoMilagros from '../assets/images/somos/milagros.jpeg'
 import photoMonica   from '../assets/images/somos/monica.jpeg'
-import photoCarlos   from '../assets/images/somos/persona2.png'
 import photoAna      from '../assets/images/somos/Persona4.jpeg'
 import photologo3 from '../assets/images/somos/logo 3.jpeg'
 import stickerHorus  from '../assets/images/somos/sticker.png'
@@ -29,23 +27,23 @@ const TITLE = '¿Quiénes Somos?'
 
 const VALUES = ['Puntualidad', 'Calidad', 'Superación', 'Empatía', 'Confianza', 'Vocación', 'Trabajo en equipo']
 
-// The title types itself from the opening "¿" to the closing "?". The full text always occupies
-// its final space (hidden remainder) so nothing shifts, and assistive technology reads it whole.
-function TypedTitle({ id, text }: { id: string; text: string }) {
-  const reducedMotion = useReducedMotion()
-  const [count, setCount] = useState(0)
-  const shown = reducedMotion ? text.length : count
-  useEffect(() => {
-    if (reducedMotion || count >= text.length) return
-    const timer = window.setTimeout(() => setCount(value => value + 1), count === 0 ? 450 : 75)
-    return () => window.clearTimeout(timer)
-  }, [count, reducedMotion, text])
+// Keep words together and reserve the full title while CSS animates each letter.
+function AnimatedTitle({ id, text }: { id: string; text: string }) {
+  let letterIndex = 0
   return (
     <h1 id={id} className="ns-hero-title" aria-label={text}>
       <span aria-hidden="true">
-        <span>{text.slice(0, shown)}</span>
-        <span className={'ns-caret' + (shown >= text.length ? ' is-done' : '')} />
-        <span className="ns-typed-rest">{text.slice(shown)}</span>
+        {text.split(' ').map((word, wordIndex) => (
+          <Fragment key={wordIndex}>
+            {wordIndex > 0 && ' '}
+            <span className="ns-title-word">
+              {[...word].map((letter, index) => (
+                <span className="ns-title-letter" key={index}
+                  style={{ '--letter-index': letterIndex++ } as CSSProperties}>{letter}</span>
+              ))}
+            </span>
+          </Fragment>
+        ))}
       </span>
     </h1>
   )
@@ -66,9 +64,6 @@ function TeamCard({ img, name, role, bio, frame, open, onToggle }: Member & { op
         {social.facebook && <a href={social.facebook} target="_blank" rel="noreferrer" aria-label={'Facebook de Horus Group (' + name + ')'}>
           <i className="fab fa-facebook-f" aria-hidden="true" />
         </a>}
-        <a href={social.whatsapp} target="_blank" rel="noreferrer" aria-label={'WhatsApp de Horus Group (' + name + ')'}>
-          <i className="fab fa-whatsapp" aria-hidden="true" />
-        </a>
         {social.instagram && <a href={social.instagram} target="_blank" rel="noreferrer" aria-label={'Instagram de Horus Group (' + name + ')'}>
           <i className="fab fa-instagram" aria-hidden="true" />
         </a>}
@@ -89,7 +84,6 @@ export default function QuienesSomos() {
 
   const members: Member[] = [
     { img: photoMarco,    name: 'Marco Alvarez',     role: 'Gerente General',             frame: { x: .42, y: .49, zoom: 2.6 }, bio: 'Profesional de Economía de la Universidad Nacional de Cajamarca. Experiencia en manejo de personal, trabajo en equipo. Docente en institutos de educación superior en los cursos de sociedad y economía, proyectos de investigación, taller de competencias profesionales entre otros.' },
-    { img: photoCarlos,   name: 'Humberto Camacho',  role: 'Administrativo',              bio: 'Responsable de la organización interna y coordinación operativa de la empresa.' },
     { img: photoMonica,   name: 'Mónica Monzón',     role: 'Coordinadora Institucional',  bio: 'Profesional de Enfermería por la Universidad Nacional de Cajamarca. Maestra en Ciencias con mención en Salud Ocupacional y Ambiental por la Universidad Privada Antenor Orrego - Trujillo. Actualmente labora en el Hospital Regional Docente de Cajamarca en la unidad de cuidados intensivos (UCI).' },
     { img: photoAna,      name: 'Karen Távara',      role: 'Asesora Legal',               bio: 'Profesional en Derecho por la Universidad Privada Antonio Guillermo Urrelo. Con sólida experiencia en el ejercicio legal y en la docencia. Ha desempeñado funciones como abogada en diversas instituciones públicas.' },
     { img: photoMilagros, name: 'Milagros Villegas', role: 'Secretaria',                  bio: 'Profesional de enfermería técnica, con experiencia en ventas y trato al cliente entre otros.' },
@@ -100,7 +94,7 @@ export default function QuienesSomos() {
       <section className="ns-hero" aria-labelledby="ns-hero-heading">
         <div className="container ns-hero-inner">
           <span className="ns-hero-pill">Horus Group SRL</span>
-          <TypedTitle id="ns-hero-heading" text={TITLE} />
+          <AnimatedTitle id="ns-hero-heading" text={TITLE} />
           <p className="ns-hero-sub">Conoce a la empresa y a las personas que están detrás de Horus Group.</p>
           <div className="ns-sticker-wrap">
             <img className="ns-sticker" src={stickerHorus} alt="Logo de Horus Group SRL" width="530" height="470" />
@@ -169,34 +163,6 @@ export default function QuienesSomos() {
               </ul>
               <div className="ns-mvv-art"><img src={artValores} alt="" loading="lazy" /></div>
             </article>
-          </div>
-        </div>
-      </section>
-
-      <section className="ns-beliefs">
-        <div className="container">
-          <div className="ns-beliefs-header fade-up">
-            <span className="ns-chip">Lo que creemos</span>
-            <h2>Esto es lo que<br />creemos</h2>
-          </div>
-          <div className="ns-beliefs-list">
-            {[
-              { n:'01', icon:'fa-medal',          color:'#4F46E5', bg:'#EEF2FF', title:'Creemos en la excelencia sin excusas',         desc:'Cada proyecto, cada capacitación, cada instalación técnica debe ser lo mejor que podemos dar. No hay términos medios cuando se trata de la confianza de nuestros clientes.' },
-              { n:'02', icon:'fa-handshake',       color:'#FF6B47', bg:'#FFF1EE', title:'Creemos que la confianza se gana con hechos',   desc:'No prometemos lo que no podemos cumplir. Somos transparentes, puntuales y honestos. Si decimos que lo hacemos, lo hacemos.' },
-              { n:'03', icon:'fa-graduation-cap',  color:'#059669', bg:'#ECFDF5', title:'Creemos en el poder de la educación local',    desc:'Cajamarca tiene profesionales brillantes que merecen formación de primer nivel. Por eso trabajamos con los mejores colegios profesionales de la región.' },
-              { n:'04', icon:'fa-lightbulb',       color:'#7C3AED', bg:'#F5F3FF', title:'Creemos que la tecnología debe ser accesible', desc:'Las soluciones tecnológicas de calidad no son solo para las grandes empresas. Trabajamos para que cualquier negocio o institución en Cajamarca pueda acceder a ellas.' },
-            ].map(b => (
-              <div key={b.n} className="ns-belief fade-up">
-                <div className="ns-belief-num">{b.n}</div>
-                <div className="ns-belief-content">
-                  <h3>{b.title}</h3>
-                  <p>{b.desc}</p>
-                </div>
-                <div className="ns-belief-icon" style={{ color: b.color, background: b.bg }}>
-                  <i className={`fas ${b.icon}`} />
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </section>

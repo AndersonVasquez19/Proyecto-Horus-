@@ -1,6 +1,6 @@
 // Centro de atención (D6.1) con API simulada: registro manual dentro de la bandeja, ?crear=1 heredado y exportación CSV paginada.
 // Nada real: ni datos, ni sesiones, ni correo. Edge por DevTools; las peticiones a otros orígenes se bloquean antes de enviarse.
-const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), os = require('node:os'), { spawn } = require('node:child_process');
+const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), { spawn } = require('node:child_process');
 const root = path.resolve(__dirname, '../dist');
 const edge = process.env.SMOKE_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -105,8 +105,6 @@ function connect(url) {
   return { socket, ready, send, evaluate };
 }
 function newestMtime(dir) { let n = 0; for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); n = Math.max(n, e.isDirectory() ? newestMtime(f) : fs.statSync(f).mtimeMs); } return n; }
-// En Windows child.kill() solo cierra el proceso raíz de Edge: se cierra el árbol completo.
-function killBrowser(child) { try { if (process.platform === 'win32') require('node:child_process').spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }); else child.kill(); } catch { /* ya cerrado */ } }
 
 async function main() {
   if (!fs.existsSync(path.join(root, 'index.html'))) throw new Error('Falta dist/: ejecuta "npm run build".');
@@ -114,9 +112,9 @@ async function main() {
   if (!fs.existsSync(edge)) throw new Error('Configura SMOKE_BROWSER con una instalación de Edge/Chromium.');
   await new Promise(r => server.listen(0, '127.0.0.1', r)); const origin = 'http://127.0.0.1:' + server.address().port;
   const probe = http.createServer(); await new Promise(r => probe.listen(0, '127.0.0.1', r)); const port = probe.address().port; await new Promise(r => probe.close(r));
-  const profile = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'horus-center-'));
-  const child = spawn(edge, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
-  const cleanup = require('./smoke-cleanup.cjs')(child, profile, server, killBrowser);
+  const profile = require('./smoke-cleanup.cjs').createProfile('horus-center-');
+  const child = spawn(edge, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { detached: process.platform !== 'win32', windowsHide: true, stdio: 'ignore' });
+  const cleanup = require('./smoke-cleanup.cjs')(child, profile, server);
   let version; for (let i = 0; i < 100 && !version; i++) { await sleep(100); try { version = await fetch('http://127.0.0.1:' + port + '/json/version').then(r => r.json()); } catch { /* arrancando */ } }
   const bc = connect(version.webSocketDebuggerUrl); await bc.ready;
   const jsErrors = [], blocked = []; let fails = 0, page;
@@ -249,11 +247,12 @@ async function main() {
       const wrong = Object.entries({ inbox: true, legacy: false, dialog: false, detail: '', ...expected }).filter(([key, value]) => got[key] !== value);
       ck(wrong.length === 0 && got.url === route, '10. ' + route + ' abre la bandeja moderna (' + (expected.table ? 'vista Tabla' : 'vista Bandeja') + (expected.dialog ? ', con el registro manual' : '') + ') y conserva la URL', { got, wrong });
     }
-    // Regla de alcance: vista= en otras secciones sigue siendo de ResourceManager
-    await session('/admin/dashboard?section=cursos&seccion=cursos&vista=tabla'); await page.wait('document.querySelector(".hp-heading h1")', 'cursos');
-    ck(await page.evaluate('!document.querySelector(".hw-inbox") && [...document.querySelectorAll(".hw-tabs button")].some(b => b.textContent.trim() === "Tabla" && b.getAttribute("aria-pressed") === "true")'), '10. vista=tabla en cursos sigue siendo de ResourceManager (alias acotado a mensajes)');
-    await session('/admin/dashboard?section=servicios&vista=tabla'); await page.wait('document.querySelector(".hp-heading h1")', 'servicios');
-    ck(await page.evaluate('!document.querySelector(".hw-inbox") && document.querySelector(".hp-heading h1").innerText !== "Centro de consultas"'), '10. vista=tabla en servicios no abre la bandeja de mensajes');
+    // Regla de alcance: vista= en otras secciones no abre la bandeja. Cursos y servicios ya no se gestionan en el panel: su dirección
+    // antigua muestra el aviso de gestión retirada (separación del contenido institucional).
+    await session('/admin/dashboard?section=cursos&seccion=cursos&vista=tabla'); await page.wait('document.querySelector("[data-panel-editorial-retired]")', 'cursos');
+    ck(await page.evaluate('!document.querySelector(".hw-inbox")'), '10. vista=tabla en cursos no abre la bandeja (alias acotado a mensajes)');
+    await session('/admin/dashboard?section=servicios&vista=tabla'); await page.wait('document.querySelector("[data-panel-editorial-retired]")', 'servicios');
+    ck(await page.evaluate('!document.querySelector(".hw-inbox") && document.querySelector("h1").innerText !== "Centro de consultas"'), '10. vista=tabla en servicios no abre la bandeja de mensajes');
     // Atrás/Adelante con el alias: se conserva la URL de entrada y la vista; seleccionar añade una sola entrada
     const entry = '/admin/dashboard?section=mensajes&vista=tabla';
     await session(entry); await page.wait('document.querySelector(".hw-inbox-table tbody tr")', 'tabla'); const startHistory = await page.evaluate('history.length');

@@ -1,6 +1,6 @@
 // Protección de cambios sin guardar en el panel, con API simulada (nada real: ni datos, ni sesiones, ni correo). Edge por DevTools.
 // Comprueba que ninguna escritura llega a un servidor real: todas las peticiones van al servidor local de esta prueba.
-const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), os = require('node:os'), { spawn } = require('node:child_process');
+const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), { spawn } = require('node:child_process');
 const root = path.resolve(__dirname, '../dist'), browser = process.env.SMOKE_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const KEY = 'horus-admin-token';
@@ -14,6 +14,8 @@ const accounts = { 1: { id: 1, nombre: 'Ana Administradora', email: 'ana@example
 const known = new Set(Object.values(TOK));
 const sim = { meMode: 'ok', writeMode: 'ok', expired: new Set() };
 const writes = [], me = [];
+let allowedTransitions;
+const withTransitions = item => ({ ...item, transiciones_permitidas: allowedTransitions(item.estado) });
 const messages = [1, 2, 3].map(id => ({ id, nombre: 'Persona ' + id, email: 'p' + id + '@example.test', telefono: '987654321', asunto: 'Asunto ' + id, mensaje: 'Mensaje ' + id, estado: 'nuevo', createdAt: '2026-01-0' + id + 'T10:00:00.000Z' }));
 const attention = Object.fromEntries(messages.map(m => [m.id, { estado: 'nuevo', responsable: '', notas: '', respuesta: '', revision: 1, historial: [] }]));
 const settings = [{ clave: 'empresa_nombre', valor: 'Horus Group', descripcion: 'Nombre de la empresa', grupo: 'general' }, { clave: 'email_contacto', valor: 'info@example.test', descripcion: 'Correo de contacto', grupo: 'general' }];
@@ -49,7 +51,7 @@ const server = http.createServer(async (req, res) => {
           if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/)) && req.method === 'PUT') {
             const current = attention[m[1]]; if (data.revision !== current.revision) return json({ message: 'La respuesta cambió. Recarga el caso.' }, 409);
             attention[m[1]] = { ...current, ...data, revision: current.revision + 1 }; messages.find(x => x.id === +m[1]).estado = data.estado;
-            return json({ ok: true, item: attention[m[1]] });
+            return json({ ok: true, item: withTransitions(attention[m[1]]) });
           }
           if (sub === 'settings') { for (const [clave, valor] of Object.entries(data.ajustes || {})) { const s = settings.find(x => x.clave === clave); if (s) s.valor = valor; } return json({ ok: true }); }
           if (sub === 'cotizaciones') return json({ ok: true, item: { id: 1 } });
@@ -64,7 +66,7 @@ const server = http.createServer(async (req, res) => {
           const rows = messages.filter(x => !search || x.nombre.toLowerCase().includes(search));
           return json({ ok: true, messages: rows, pagination: { total: rows.length, pages: 1 }, metrics: { nuevo: rows.filter(x => x.estado === 'nuevo').length, en_proceso: 0, atendido: 0 } });
         }
-        if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/))) return json({ ok: true, item: attention[m[1]] });
+        if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/))) return json({ ok: true, item: withTransitions(attention[m[1]]) });
         if (sub === 'settings') return json({ ok: true, settings });
         if (sub === 'cotizaciones') return json({ ok: true, items: [], pagination: { total: 0, pages: 0 } });
         if ((m = sub.match(/^messages\/(\d+)$/))) return json({ ok: true, message: messages.find(x => x.id === +m[1]) });
@@ -102,9 +104,8 @@ function newestMtime(dir) {
   }
   return newest;
 }
-// En Windows child.kill() solo cierra el proceso raíz de Edge y dejaba docenas de procesos huérfanos: se cierra el árbol completo.
-function killBrowser(child) { try { if (process.platform === 'win32') require('node:child_process').spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }); else child.kill(); } catch { /* ya cerrado */ } }
 async function main() {
+  ({ allowedTransitions } = await import(require('node:url').pathToFileURL(path.resolve(__dirname, '../../backend/src/attention/attention-rules.ts'))));
   // El smoke sirve dist/: si el código fuente es más reciente, probaría una versión antigua. (npm run smoke:unsaved compila antes, en local y sin red.)
   if (!fs.existsSync(path.join(root, 'index.html'))) throw new Error('Falta dist/: ejecuta "npm run build".');
   const builtAt = fs.statSync(path.join(root, 'index.html')).mtimeMs, changedAt = Math.max(newestMtime(path.resolve(__dirname, '../src')), fs.statSync(path.resolve(__dirname, '../index.html')).mtimeMs);
@@ -112,9 +113,9 @@ async function main() {
   if (!fs.existsSync(browser)) throw new Error('Configura SMOKE_BROWSER con una instalación de Edge/Chromium.');
   await new Promise(r => server.listen(0, '127.0.0.1', r)); const origin = 'http://127.0.0.1:' + server.address().port;
   const probe = http.createServer(); await new Promise(r => probe.listen(0, '127.0.0.1', r)); const port = probe.address().port; await new Promise(r => probe.close(r));
-  const profile = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'horus-unsaved-'));
-  const child = spawn(browser, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
-  const cleanup = require('./smoke-cleanup.cjs')(child,profile,server,killBrowser);
+  const profile = require('./smoke-cleanup.cjs').createProfile('horus-unsaved-');
+  const child = spawn(browser, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { detached: process.platform !== 'win32', windowsHide: true, stdio: 'ignore' });
+  const cleanup = require('./smoke-cleanup.cjs')(child,profile,server);
   let version; for (let i = 0; i < 100 && !version; i++) { await sleep(100); try { version = await fetch('http://127.0.0.1:' + port + '/json/version').then(r => r.json()); } catch { /* arrancando */ } }
   const bc = connect(version.webSocketDebuggerUrl); await bc.ready;
   const jsErrors = [], blocked = []; const pages = []; let fails = 0;
@@ -264,35 +265,20 @@ async function main() {
     await p.evaluate("document.querySelector('dialog.hp-dialog[open] form').requestSubmit(); 1"); await p.wait('document.querySelector("dialog.hp-dialog[open] [data-quote-uncertain=confirming]")', 'confirmación tras el resultado incierto'); await p.clickText('dialog.hp-dialog[open] .hp-btn', 'Guardar de todos modos'); await sleep(900);
     ck(!(await p.evaluate('!!document.querySelector("dialog.hp-dialog[open]")')) && !(await p.dialog()), 'guardado correcto: el formulario se cierra sin pedir confirmación', await state()); await p.close(); }
   await clean();
-  { const p = await withSession(TOK.A1, '/admin/dashboard?section=ajustes');
-    await p.wait('document.querySelector(".hp-settings-card input")', 'ajustes de empresa'); await p.clickText('.hp-nav-item', 'Mensajes'); await sleep(500);
-    ck(!(await p.dialog()) && (await p.path()).includes('/admin/messages'), 'configuración sin cambios: navegar no avisa', await p.path());
-    await p.evaluate('history.back(); 1'); await p.wait('document.querySelector(".hp-settings-card input")', 'volver a ajustes');
-    await p.type('.hp-settings-card input', 0, 'Empresa editada'); await p.clickText('.hp-nav-item', 'Mensajes'); await p.wait('document.querySelector("dialog.hp-unsaved-dialog[open]")', 'aviso en configuración');
-    ck(/información de la empresa/.test((await p.dialog()).text), 'configuración con cambios: el menú avisa'); await p.evaluate('document.querySelector("dialog.hp-unsaved-dialog[open] button").click(); 1'); await sleep(200);
-    await p.clickText('.hp-heading .hp-btn', 'Recargar'); await p.wait('document.querySelector("dialog.hp-unsaved-dialog[open]")', 'aviso al recargar');
-    ck(true, '«Recargar» la configuración con cambios avisa'); await p.evaluate('document.querySelector("dialog.hp-unsaved-dialog[open] button").click(); 1'); await sleep(200);
-    await p.clickText('.hp-settings-save .hp-btn', 'Guardar configuración'); await p.wait('document.body.innerText.includes("se guardó correctamente")', 'guardado'); await sleep(200);
-    await p.clickText('.hp-nav-item', 'Mensajes'); await sleep(500);
-    ck(!(await p.dialog()) && (await p.path()).includes('/admin/messages') && (await state()).writes.length === 1, 'tras guardar la configuración ya no avisa', await state()); await p.close(); }
-  await clean();
-  { const p = await withSession(TOK.A1, '/admin/dashboard?section=cursos&seccion=cursos');
-    await p.wait('document.querySelector("button[aria-label^=\\"Ver Curso\\"], .hp-card [aria-label*=\\"Curso 1\\"]")', 'lista de cursos', 12000);
-    const openEdit = async () => { await p.evaluate("[...document.querySelectorAll('button')].find(b => /^Editar Curso 1/.test(b.getAttribute('aria-label') || '') || (b.textContent.includes('Editar') && b.closest('article, tr, li')?.innerText.includes('Curso 1')))?.click(); 1"); await p.wait('document.querySelector("dialog.hp-dialog[open] form")', 'editor de curso'); };
-    await openEdit(); await p.clickText('dialog.hp-dialog[open] .hp-btn', 'Cancelar'); await sleep(300);
-    ck(!(await p.evaluate('!!document.querySelector("dialog.hp-dialog[open]")')) && !(await p.dialog()), 'curso sin cambios: Cancelar cierra sin avisar');
-    await openEdit(); await p.type('dialog.hp-dialog[open] input', 0, 'Título editado'); await p.clickText('dialog.hp-dialog[open] .hp-btn', 'Cancelar'); await p.wait('document.querySelector("dialog.hp-unsaved-dialog[open]")', 'aviso en curso');
-    ck(true, 'curso con cambios: Cancelar avisa'); await p.evaluate('document.querySelector("dialog.hp-unsaved-dialog[open] button").click(); 1'); await sleep(250);
-    ck((await p.evaluate('document.querySelector("dialog.hp-dialog[open] input").value')) === 'Título editado', 'Seguir editando conserva el texto del curso'); await p.close(); }
-  await clean();
-  { const p = await withSession(TOK.A1, '/admin/dashboard?section=convenios');
-    await p.wait('document.querySelector(".hp-convenios .hp-heading .hp-btn-primary")', 'convenios'); await p.clickText('.hp-convenios .hp-heading .hp-btn', 'Nuevo convenio'); await p.wait('document.querySelector("dialog.hp-convenio-dialog[open] form")', 'editor de convenio');
-    await p.clickText('dialog.hp-convenio-dialog[open] .hp-btn', 'Cerrar'); await sleep(300);
-    ck(!(await p.evaluate('!!document.querySelector("dialog.hp-convenio-dialog[open]")')) && !(await p.dialog()), 'convenio sin cambios: Cerrar no avisa');
-    await p.clickText('.hp-convenios .hp-heading .hp-btn', 'Nuevo convenio'); await p.wait('document.querySelector("dialog.hp-convenio-dialog[open] form")', 'editor de convenio');
-    await p.type('dialog.hp-convenio-dialog[open] input[name=nombre]', 0, 'Convenio nuevo'); await p.clickText('dialog.hp-convenio-dialog[open] .hp-btn', 'Cerrar'); await p.wait('document.querySelector("dialog.hp-unsaved-dialog[open]")', 'aviso en convenio');
-    ck(true, 'convenio con cambios: Cerrar avisa'); await p.evaluate('document.querySelector("dialog.hp-unsaved-dialog[open] .hp-btn-danger").click(); 1'); await sleep(300);
-    ck(!(await p.evaluate('!!document.querySelector("dialog.hp-convenio-dialog[open]")')), 'Descartar cierra el editor de convenio'); await p.close(); }
+  // Información de empresa, el editor de cursos y el de convenios se retiraron del panel (separación del contenido institucional).
+  // La protección se comprueba ahora en «Mi cuenta»; los editores académicos (Cancelar → aviso → Seguir editando/Descartar) la cubren
+  // en smoke-estudiantes, smoke-ediciones y smoke-matriculas.
+  { const PWD = '.hp-password-card input';
+    const p = await withSession(TOK.A1, '/admin/dashboard?section=configuracion');
+    await p.wait('document.querySelector("' + PWD + '")', 'Mi cuenta'); await p.clickText('.hp-nav-item', 'Mensajes'); await sleep(500);
+    ck(!(await p.dialog()) && (await p.path()).includes('/admin/messages'), 'Mi cuenta sin cambios: navegar no avisa', await p.path());
+    await p.evaluate('history.back(); 1'); await p.wait('document.querySelector("' + PWD + '")', 'volver a Mi cuenta');
+    await p.type(PWD, 0, 'Clave-ficticia-1'); await p.clickText('.hp-nav-item', 'Mensajes'); await p.wait('document.querySelector("dialog.hp-unsaved-dialog[open]")', 'aviso en Mi cuenta');
+    ck(/cambio de contraseña/.test((await p.dialog()).text), 'Mi cuenta con una contraseña escrita: el menú avisa'); await p.evaluate('document.querySelector("dialog.hp-unsaved-dialog[open] button").click(); 1'); await sleep(200);
+    ck((await p.evaluate('document.querySelector("' + PWD + '").value')) === 'Clave-ficticia-1' && (await p.path()).includes('section=configuracion'), 'Seguir editando conserva lo escrito y la sección');
+    await p.clickText('.hp-nav-item', 'Mensajes'); await p.wait('document.querySelector("dialog.hp-unsaved-dialog[open]")', 'aviso de nuevo');
+    await p.evaluate('document.querySelector("dialog.hp-unsaved-dialog[open] .hp-btn-danger").click(); 1'); await p.wait('location.pathname === "/admin/messages"', 'descartar y navegar');
+    ck(!/Clave-ficticia/.test(await storageText(p)) && (await state()).writes.length === 0, 'Descartar navega sin guardar la contraseña en el almacenamiento ni enviar nada', await state()); await p.close(); }
 
   // ===== 3. Sesión =====
   console.log('\n== SESIÓN CADUCADA, MISMA CUENTA Y OTRA CUENTA');
@@ -395,10 +381,10 @@ async function main() {
     ck(!(await p.dialog()) && !/NOTA-SENSIBLE/.test(await storageText(p)), 'un 401 real al guardar cierra la sesión sin que el aviso lo bloquee y sin dejar el borrador en el almacenamiento'); await p.close(); }
   await clean();
   { // Misma URL: no hay nada que avisar
-    const p = await withSession(TOK.A1, '/admin/dashboard?section=ajustes'); await p.wait('document.querySelector(".hp-settings-card input")', 'ajustes');
-    await p.type('.hp-settings-card input', 0, 'Empresa editada'); await sleep(150);
-    await p.clickText('.hp-nav-item', 'Información de empresa'); await sleep(400);
-    ck(!(await p.dialog()) && (await p.evaluate('document.querySelector(".hp-settings-card input").value')) === 'Empresa editada', 'ir exactamente a la misma URL (la sección en la que ya estás) no avisa ni toca lo escrito'); await p.close(); }
+    const p = await withSession(TOK.A1, '/admin/dashboard?section=configuracion'); await p.wait('document.querySelector(".hp-password-card input")', 'Mi cuenta');
+    await p.type('.hp-password-card input', 0, 'Clave-ficticia-1'); await sleep(150);
+    await p.clickText('.hp-nav-item', 'Mi cuenta'); await sleep(400);
+    ck(!(await p.dialog()) && (await p.evaluate('document.querySelector(".hp-password-card input").value')) === 'Clave-ficticia-1', 'ir exactamente a la misma URL (la sección en la que ya estás) no avisa ni toca lo escrito'); await p.close(); }
   const fillQuote = page => page.evaluate("(() => { const set = " + SET + "; const f = document.querySelector('dialog.hp-dialog[open] form'); [...f.querySelectorAll('input[required]')].filter(x => (x.type === 'text' || x.type === 'email') && !x.value).forEach(x => set(x, x.type === 'email' ? 'cliente@example.test' : 'Texto de prueba')); return 1 })()");
   await clean();
   { // P3: guardar una cotización abierta desde una URL con "contacto"

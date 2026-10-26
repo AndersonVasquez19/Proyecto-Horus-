@@ -7,7 +7,7 @@ import CourseFacts from '../../components/edu/CourseFacts'
 import { consultPath, courseName, detailPath, kindLabel } from '../../components/edu/courseText'
 import ServiceFeatures from '../../components/tech/ServiceFeatures'
 import ServiceMedia from '../../components/tech/ServiceMedia'
-import { usePublicResource } from '../../hooks/usePublicResource'
+import { useInstitutionalResource as usePublicResource } from '../../institutional/useInstitutionalResource'
 import type { CursoPublico } from '../../types/public'
 
 // Detail of one published course or capacitación. Served at /educacion/cursos/:id and /educacion/capacitaciones/:id;

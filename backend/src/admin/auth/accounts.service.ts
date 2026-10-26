@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
@@ -9,6 +9,10 @@ import { corsOrigins } from '../../deployment.config';
 import { ChangePasswordDto, ResetPasswordDto } from './dto/account.dto';
 import { BCRYPT_COST } from './password-security';
 import { RecoveryThrottle } from './recovery-throttle';
+import { SELF_ROLE_MESSAGE, STALE_ROLE_MESSAGE, activeCount, activeGerentes, assertInvariants, planRoleChange, planStatusChange, toAccountState } from './account-rules';
+import { AdminRole, isAdminRole } from '../../permissions/roles';
+import { ACCOUNTS_BUSY_MESSAGE, isLockConflict, isLockNowait } from './account-locks';
+import { setTimeout as sleep } from 'node:timers/promises';
 @Injectable()
 export class AccountsService implements OnModuleDestroy {
  private readonly logger=new Logger(AccountsService.name);
@@ -66,15 +70,58 @@ export class AccountsService implements OnModuleDestroy {
  if(result.count!==1)throw new ConflictException('La cuenta cambió. Inicia sesión nuevamente.');
  return {ok:true,mensaje:'Contraseña actualizada. Las sesiones anteriores fueron revocadas.'};
  }
- async list(){return {ok:true,users:await this.prisma.adminUser.findMany({select:{id:true,nombre:true,email:true,activo:true,createdAt:true},orderBy:{nombre:'asc'}})};}
+ // Solo campos de identificación y acceso (nunca contraseña, session_version ni datos de recuperación). Un rol desconocido se informa como null.
+ async list(){const users=await this.prisma.adminUser.findMany({select:{id:true,nombre:true,email:true,activo:true,rol:true,createdAt:true},orderBy:{nombre:'asc'}});return {ok:true,users:users.map(u=>({...u,rol:isAdminRole(u.rol)?u.rol:null}))};}
+ // Activar o desactivar (reglas en account-rules.ts: M-1 último gerente, M-2 el rol queda en NULL). Todas las filas se bloquean en orden de id,
+ // igual que admin:assign-role, así el panel y el script nunca deciden con datos que el otro está cambiando. El cambio, la revocación de
+ // sesiones y su registro de auditoría se confirman juntos o no se confirma nada.
+ // O-1: el bloqueo no espera (NOWAIT). Si otra transacción retiene las filas, se reintenta con una transacción nueva tras cada pausa de
+ // LOCK_RETRY_DELAYS_MS (unos 1,5 s en total) y después se responde 409 sin cambios. Es seguro repetir: el bloqueo es la primera sentencia,
+ // así que nada se escribió. Solo se traducen los conflictos de bloqueo (account-locks.ts); cualquier otro error sigue igual.
+ static readonly LOCK_RETRY_DELAYS_MS:readonly number[]=[50,100,200,400,800];
  async status(id:number,activo:boolean,actor:number){
  if(id===actor&&!activo)throw new ConflictException('No puedes desactivar tu propia cuenta.');
+ return this.withLockRetry(()=>this.applyStatus(id,activo,actor),'el cambio de estado');
+ }
+ // Cambio de rol desde el panel (reglas en account-rules.ts: planRoleChange). Mismo esquema que status: todas las filas bloqueadas en orden de
+ // id con NOWAIT (igual que admin:assign-role, que también bloquea todas las filas), cambio + revocación de sesiones + auditoría juntos.
+ async role(id:number,rol:AdminRole|null,expected:AdminRole|null,actor:number){
+ if(id===actor)throw new ConflictException(SELF_ROLE_MESSAGE);
+ return this.withLockRetry(()=>this.applyRole(id,rol,expected,actor),'el cambio de rol');
+ }
+ private async withLockRetry<T>(run:()=>Promise<T>,what:string):Promise<T>{
+ const delays=AccountsService.LOCK_RETRY_DELAYS_MS;
+ for(let attempt=0;;attempt++){
+ try{return await run();}
+ catch(error){
+ if(isLockNowait(error)&&attempt<delays.length){await sleep(delays[attempt]);continue;}
+ if(isLockConflict(error)){this.logger.warn('Cuentas bloqueadas por otra operación: se rechaza '+what+' sin aplicarlo.');throw new ConflictException(ACCOUNTS_BUSY_MESSAGE);}
+ throw error;
+ }
+ }
+ }
+ private applyRole(id:number,rol:AdminRole|null,expected:AdminRole|null,actor:number){
  return this.prisma.$transaction(async tx=>{
- await tx.$queryRaw`SELECT id FROM admin_users ORDER BY id FOR UPDATE`;
- const user=await tx.adminUser.findUnique({where:{id}});if(!user)throw new NotFoundException('Cuenta no encontrada.');
- if(!activo&&user.activo&&await tx.adminUser.count({where:{activo:true}})<=1)throw new ConflictException('Debe quedar al menos un administrador activo.');
- await tx.adminUser.update({where:{id},data:{activo,session_version:{increment:1}}});
- return {ok:true,mensaje:activo?'Cuenta activada.':'Cuenta desactivada y sesiones revocadas.'};
+ const rows=await tx.$queryRaw<{id:unknown;activo:unknown;rol:unknown}[]>`SELECT id, activo, rol FROM admin_users ORDER BY id FOR UPDATE NOWAIT`;
+ const accounts=rows.map(toAccountState),plan=planRoleChange(accounts,id,rol,expected,actor);
+ if(!plan.changed)return {ok:true,mensaje:plan.mensaje,user:{id,rol}};
+ const result=await tx.adminUser.updateMany({where:{id,activo:true,rol:plan.before.rol},data:{rol,session_version:{increment:1}}});
+ if(result.count!==1)throw new ConflictException(STALE_ROLE_MESSAGE);
+ assertInvariants({activos:activeCount(accounts),gerentes:activeGerentes(accounts)},{activos:await tx.adminUser.count({where:{activo:true}}),gerentes:await tx.adminUser.count({where:{activo:true,rol:'GERENTE_GENERAL'}})});
+ await tx.adminAuditoria.create({data:{origen:'panel',actor_id:actor,cuenta_id:id,operacion:plan.operacion,rol_anterior:plan.before.rol,rol_nuevo:rol,activo_anterior:true,activo_nuevo:true,resultado:'aplicado'}});
+ return {ok:true,mensaje:plan.mensaje,user:{id,rol}};
+ });
+ }
+ private applyStatus(id:number,activo:boolean,actor:number){
+ return this.prisma.$transaction(async tx=>{
+ const rows=await tx.$queryRaw<{id:unknown;activo:unknown;rol:unknown}[]>`SELECT id, activo, rol FROM admin_users ORDER BY id FOR UPDATE NOWAIT`;
+ const accounts=rows.map(toAccountState),plan=planStatusChange(accounts,id,activo,actor);
+ if(!plan.changed)return {ok:true,mensaje:plan.mensaje};
+ const result=await tx.adminUser.updateMany({where:{id,activo:plan.before.activo},data:{activo,rol:null,session_version:{increment:1}}});
+ if(result.count!==1)throw new ConflictException('La cuenta cambió durante la operación. Vuelve a intentarlo.');
+ assertInvariants({activos:activeCount(accounts),gerentes:activeGerentes(accounts)},{activos:await tx.adminUser.count({where:{activo:true}}),gerentes:await tx.adminUser.count({where:{activo:true,rol:'GERENTE_GENERAL'}})});
+ await tx.adminAuditoria.create({data:{origen:'panel',actor_id:actor,cuenta_id:id,operacion:plan.operacion,rol_anterior:plan.before.rol,rol_nuevo:null,activo_anterior:plan.before.activo,activo_nuevo:activo,resultado:'aplicado'}});
+ return {ok:true,mensaje:plan.mensaje};
  });
  }
 }

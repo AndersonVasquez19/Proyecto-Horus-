@@ -20,6 +20,7 @@ const NAV_ITEMS = [
       { label: 'Asesoramiento',  to: '/educacion/asesoramiento',  icon: 'fa-user-tie' },
       { label: 'Capacitaciones', to: '/educacion/capacitaciones', icon: 'fa-chalkboard-teacher' },
       { label: 'Cursos',         to: '/educacion/cursos',         icon: 'fa-book-open' },
+      { label: 'Preinscripción', to: '/preinscripcion',           icon: 'fa-clipboard-list' },
     ],
   },
   { label: 'Galería',  to: '/galeria' },

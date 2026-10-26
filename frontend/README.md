@@ -10,11 +10,11 @@ Vite utiliza el proxy local de `/api`. Para otra API, configurar `VITE_API_BASE_
 
 ## Panel
 
-Login en `/admin/login` y recuperación en `/admin/forgot-password`. No hay registro público: `/admin/register` redirige al login. La sesión se valida contra `/api/admin/me`: un error de conexión ofrece reintento sin borrar el token; un HTTP 401 cierra la sesión.
+Login en `/admin/login` y recuperación en `/admin/forgot-password`. `/admin/register` es el registro público (enlace «Crear cuenta» en el login): la cuenta nace sin rol y, al iniciar sesión, ve «Cuenta pendiente de autorización» hasta que la gerencia le asigne uno. La sesión se valida contra `/api/admin/me`: un error de conexión ofrece reintento sin borrar el token; un HTTP 401 cierra la sesión.
 
-Desde el panel se gestionan contenido, consultas, reclamaciones, cotizaciones, suscripciones, ajustes y cuentas. Las cargas se cancelan al cambiar de vista y las listas usan paginación en el servidor.
+Desde el panel se gestionan estudiantes, ediciones, matrículas, la importación académica CSV, mensajes y su seguimiento, cotizaciones, consultas del chatbot, roles y la propia cuenta. Las cargas se cancelan al cambiar de vista y las listas usan paginación en el servidor.
 
-Las secciones **Servicios**, **Cursos y capacitaciones** y **Galería** incluyen **Recuperar contenido original**. Después de importar, editar y publicar los registros desde esas mismas secciones: cableado usa pestañas; cámaras y soporte, sus ilustraciones y tarjetas; asesoramiento, tipos y beneficios; capacitaciones, programas con área y certificación. La galería recupera franjas animadas, categorías y ampliación de fotos. Los registros archivados o inactivos permanecen ocultos.
+El contenido institucional (servicios, cursos y capacitaciones públicos, galería, FAQ, convenios e información de empresa) ya no se administra desde el panel: sus direcciones antiguas muestran un aviso y no consultan la API. La web pública lee ese contenido de `src/institutional/catalog.ts` (versionado en código, con imágenes en `public/contenido`, `public/galeria` y `public/site-original`), por lo que se ve sin backend ni base de datos ([guía](../docs/procedimientos/separacion-panel-contenido.md)). Para cambiarlo, edita `catalog.ts` y compila. Solo formularios y chatbot siguen usando la API. Los registros de prueba no se publican.
 
 El guardado comunica cambios a otras pestañas del mismo navegador para volver a consultar la API. Otros navegadores reciben los cambios al cargar o actualizar la sección.
 

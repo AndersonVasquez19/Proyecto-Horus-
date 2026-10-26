@@ -1,4 +1,4 @@
-import type { AdminItem, AdminMessage, AdminUser } from '../types';
+import type { AdminItem, AdminMessage } from '../types';
 import { PanelApiError, panelRequest } from './panelApi';
 
 import { API_BASE as PUBLIC_API_BASE } from '../../apiBase';
@@ -17,19 +17,30 @@ export async function loginAdmin(payload: { email: string; password: string }, s
     body: JSON.stringify(payload),
     signal,
   });
-  const data = await response.json().catch(() => null) as { ok?: boolean; token?: string; user?: AdminUser } | null;
+  // `user` y `acceso` llegan sin validar: el contexto de sesión los interpreta con parseSession (contexto/sessionAccess.ts).
+  const data = await response.json().catch(() => null) as { ok?: boolean; token?: string; user?: unknown; acceso?: unknown } | null;
   // El texto del servidor no se propaga: la pantalla elige el mensaje según el código HTTP.
   if (!response.ok || !data || data.ok === false) throw new PanelApiError('Inicio de sesión rechazado.', response.ok ? 500 : response.status);
   if (!data.token) throw new PanelApiError('Respuesta de inicio de sesión incompleta.', 500);
-  return data as { ok: boolean; token: string; user?: AdminUser };
+  return data as { ok: boolean; token: string; user?: unknown; acceso?: unknown };
 }
 
-export async function registerAdmin(payload: { nombre: string; email: string; password: string }) {
-  return panelRequest<{ ok: boolean; mensaje?: string }>('register', null, 'POST', payload);
+// Registro público (sin sesión). La cuenta nace sin rol en el backend; el cliente solo envía estos campos. Como en el login, el texto del
+// servidor no se propaga: la pantalla elige el mensaje según el código HTTP (authError('register', …)).
+export async function signupAccount(payload: { nombre: string; email: string; password: string; website?: string }, signal?: AbortSignal) {
+  const response = await fetch(`${API_BASE}/signup`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload),
+    signal,
+  });
+  const data = await response.json().catch(() => null) as { ok?: boolean } | null;
+  if (!response.ok || !data || data.ok !== true) throw new PanelApiError('Registro rechazado.', response.status);
+  return data as { ok: true };
 }
 
 export async function getCurrentAdmin(token: string, signal?: AbortSignal) {
-  return panelRequest<{ ok: boolean; user?: AdminUser; mensaje?: string }>('me', token, 'GET', undefined, signal);
+  return panelRequest<{ ok: boolean; user?: unknown; acceso?: unknown; mensaje?: string }>('me', token, 'GET', undefined, signal);
 }
 
 export async function getAdminItems(token: string) {

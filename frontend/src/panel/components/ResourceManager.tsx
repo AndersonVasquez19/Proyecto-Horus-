@@ -6,7 +6,7 @@ import ResourceCards from './workspace/ResourceCards';
 import CourseAgenda from './workspace/CourseAgenda';
 import ResourcePreview from './workspace/ResourcePreview';
 import { panelRequest, errorMessage } from '../services/panelApi';
-import { type Field, type PanelScope, type Resource, type Row, adviceKind, canRemove, fieldsFor, fixedFieldKeys, label, removeVerb, rowState, slugify } from '../types/workspace';
+import { type Field, type PanelScope, type Resource, type Row, adviceKind, canRemove, fieldsFor, fixedFieldKeys, label, removeVerb, rowState, slugify, supportsRemove } from '../types/workspace';
 import PanelIcon from './PanelIcon';
 import ImageUpload from './ImageUpload';
 import OriginalContentImport from './OriginalContentImport';
@@ -14,15 +14,30 @@ import PanelDialog from './PanelDialog';
 import { buildCsv } from '../services/listRecords';
 import { notify } from '../services/notify';
 import { useUnsavedChanges } from './../unsaved/unsavedContext';
+import { usePanelAccess } from '../context/usePanelAccess';
+import { PANEL_ACTIONS, RESOURCE_WRITE } from '../context/panelAccess';
+import { PanelReadOnlyNotice } from './PanelAccessNotice';
+
+const NO_PERMISSION = 'Tu cuenta no tiene permiso para realizar esta acción.';
 
 type ListResponse = { items?: Row[]; pagination?: { total: number; pages: number } };
 // A scope limits the list to one section of the Education or Services menu and keeps new records inside it.
 type Props = { resource: Resource; autoCreate?: boolean; scope?: PanelScope };
 type Editor = { session: number; row?: Row; view?: boolean };
-export default function ResourceManager({ resource: r, autoCreate, scope }: Props) {
+export default function ResourceManager({ resource: r, autoCreate: askedCreate, scope }: Props) {
   const singular = scope?.singular ?? r.singular;
   const { token } = useAdminAuth();
   const [params] = useSearchParams();
+  // Operaciones que ofrece la sección según los permisos de la sesión (E3.4.3, fase 2). Sin editar, los registros se abren en modo consulta;
+  // ?crear=1 sin permiso de crear no abre el formulario.
+  const access = usePanelAccess();
+  const ops = RESOURCE_WRITE[r.endpoint];
+  const canCreate = !!ops && access.can(ops.crear), canEdit = !!ops && access.can(ops.editar), canDelete = supportsRemove(r) && !!ops && access.can(ops.eliminar);
+  const canArchive = !ops?.archivar || access.can(ops.archivar);
+  const canUpload = access.can(PANEL_ACTIONS.subirImagen);
+  const canRestore = access.can(PANEL_ACTIONS.leerContenidoOriginal) && access.can(PANEL_ACTIONS.restaurarContenidoOriginal);
+  const createDenied = !!askedCreate && !canCreate;
+  const autoCreate = !!askedCreate && canCreate;
   const visual = ['cursos', 'servicios', 'galeria', 'preguntas-frecuentes'].includes(r.endpoint);
   const [view, setView] = useState(params.get('vista') === 'agenda' && r.endpoint === 'cursos' ? 'agenda' : params.get('vista') === 'tabla' ? 'table' : visual ? 'cards' : 'table');
   const [preview, setPreview] = useState(false);
@@ -99,7 +114,7 @@ export default function ResourceManager({ resource: r, autoCreate, scope }: Prop
     return () => controller.abort();
   }, [token, r, page, query, status, reload, scope, setLoading, setError]);
 
-  const openNew = () => { if (actionLock.current) return; const initial = defaults(); setSlugEdited(false); setForm(initial); setBaseline(JSON.stringify(initial)); setFormError(''); replaceEditor({}); };
+  const openNew = () => { if (actionLock.current || !canCreate) return; const initial = defaults(); setSlugEdited(false); setForm(initial); setBaseline(JSON.stringify(initial)); setFormError(''); replaceEditor({}); };
   // Page (8 per page) where a record lands with the list order, so a new record is never left on a hidden page.
   const locate = async (id: number) => {
     try {
@@ -110,8 +125,9 @@ export default function ResourceManager({ resource: r, autoCreate, scope }: Prop
       return index < 0 ? 1 : Math.floor(index / pageSize) + 1;
     } catch { return 1; }
   };
-  const openRow = async (row: Row, view = false) => {
+  const openRow = async (row: Row, asked = false) => {
     if (!token || actionLock.current) return;
+    const view = asked || !canEdit; // sin permiso de editar, el registro se abre en modo consulta (también desde la agenda)
     actionLock.current = true; setBusy(true); setError('');
     try {
       // Gallery only exposes a public detail route, so admin uses its list data.
@@ -126,7 +142,7 @@ export default function ResourceManager({ resource: r, autoCreate, scope }: Prop
     finally { actionLock.current = false; if (mounted.current) setBusy(false); }
   };
   const duplicate = async (row: Row, copiedAt: number) => {
-    if (!token || actionLock.current) return;
+    if (!token || actionLock.current || !canCreate) return;
     actionLock.current = true; setBusy(true); setError('');
     try {
       const data = await panelRequest<{ item: Row }>(r.endpoint + '/' + row.id, token);
@@ -141,6 +157,9 @@ export default function ResourceManager({ resource: r, autoCreate, scope }: Prop
   const save = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!token || actionLock.current) return;
+    // Ninguna escritura sin el permiso de su operación, tampoco con Enter. Guardar con estado «archivado» exige además archivar
+    // (el backend lo comprueba sobre el cuerpo, aunque el registro ya estuviera archivado).
+    if (!(editor?.row ? canEdit : canCreate)) { setFormError(NO_PERMISSION); return; }
     actionLock.current = true; setBusy(true); setFormError('');
     try {
       const payload: Record<string, unknown> = {};
@@ -176,6 +195,7 @@ export default function ResourceManager({ resource: r, autoCreate, scope }: Prop
       }
       // Category / course type fixed by the section: set on creation, never touched when editing.
       if (!editor?.row) for (const key of fixedFieldKeys(scope)) if (!(key in payload) && form[key]) payload[key] = form[key];
+      if (payload.estado === 'archivado' && !canArchive) throw new Error('Tu cuenta no puede guardar registros archivados: cambia el estado antes de guardar.');
       const saved = await panelRequest<{ item?: Row }>(r.endpoint + (editor?.row ? '/' + editor.row.id : ''), token, editor?.row ? 'PUT' : 'POST', payload);
       if (!editor?.row && r.catalog) created = saved.item;
       replaceEditor(null);
@@ -191,6 +211,7 @@ export default function ResourceManager({ resource: r, autoCreate, scope }: Prop
   };
   const remove = async () => {
     if (!token || !pendingDelete || actionLock.current) return;
+    if (!canDelete || !canRemove(r, pendingDelete)) { setFormError(NO_PERMISSION); return; }
     actionLock.current = true; setBusy(true); setFormError('');
     try {
       await panelRequest(r.endpoint + '/' + pendingDelete.id, token, 'DELETE');
@@ -209,7 +230,9 @@ export default function ResourceManager({ resource: r, autoCreate, scope }: Prop
   };
   const renderField = (field: Field) => {
       // New records stay in the section they are created from; editing may only move them within the same group.
-      const allowed = !editor?.row ? scope?.filters[field.key]?.split(',') : scope?.choices?.[field.key];
+      let allowed = !editor?.row ? scope?.filters[field.key]?.split(',') : scope?.choices?.[field.key];
+      // Sin permiso de archivar no se ofrece «archivado» (salvo que el registro ya lo esté, para mostrar su valor).
+      if (field.key === 'estado' && !canArchive && editor?.row?.estado !== 'archivado') allowed = (allowed ?? field.options ?? []).filter(option => option !== 'archivado');
       const common = { id: 'field-' + field.key, value: form[field.key] || '', required: field.required&&(!field.courseOnly||form.tipo!=='capacitacion'),
         onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
           const value = event.target.value;
@@ -221,15 +244,17 @@ export default function ResourceManager({ resource: r, autoCreate, scope }: Prop
           field.type === 'select' ? <select {...common}>{(allowed ? field.options?.filter(o => allowed.includes(o)) : field.options)?.map(o => <option key={o} value={o}>{o === '' && field.key === 'icono' ? 'Sin icono' : label(o)}</option>)}</select> :
           <input {...common} type={field.key==='imagen_url'?'text':field.type || 'text'} minLength={field.type === 'number' ? undefined : field.min} maxLength={field.type === 'number' ? undefined : field.max} min={field.type === 'number' ? field.min : undefined} max={field.type === 'number' ? field.max : undefined}
             />}
-        {field.key === 'imagen_url' && <ImageUpload onUploaded={url => setForm(prev => ({ ...prev, imagen_url: url }))} />}
+        {field.key === 'imagen_url' && canUpload && <ImageUpload onUploaded={url => setForm(prev => ({ ...prev, imagen_url: url }))} />}
         {field.hint && <small className="hp-field-hint">{field.hint}</small>}
         {field.key === 'slug' && <small>Minúsculas y guiones. <button type="button" className="hp-text-btn" onClick={() => setForm(prev => ({ ...prev, slug: slugify(prev.titulo || '') }))}>Generar desde el título</button></small>}
       </label>;
   };
   return <>
     <div className="hp-heading"><div><p className="hp-kicker">{scope?.kicker ?? 'ESPACIO DE TRABAJO'}</p><h1>{scope?.label ?? r.label}</h1><p>{scope?.description ?? r.description}</p></div>
-      <button className="hp-btn hp-btn-primary" onClick={openNew} disabled={busy}><PanelIcon name="plus" />Crear {singular}</button></div>
-    {['servicios','cursos','galeria'].includes(r.endpoint)&&scope?.filters.tipo!=='curso'&&<div className="hp-actions"><OriginalContentImport section={r.endpoint==='cursos'?'capacitaciones':r.endpoint} onRestored={message=>{notify.success(message);setReload(n=>n+1)}}/></div>}
+      {canCreate && <button className="hp-btn hp-btn-primary" onClick={openNew} disabled={busy}><PanelIcon name="plus" />Crear {singular}</button>}</div>
+    {createDenied ? <PanelReadOnlyNotice>Tu cuenta no puede crear registros en esta sección. Se muestra en modo consulta.</PanelReadOnlyNotice>
+      : !canCreate && !canEdit && !canDelete && <PanelReadOnlyNotice>Modo consulta: tu cuenta puede ver esta sección, pero no modificarla.</PanelReadOnlyNotice>}
+    {canRestore&&['servicios','cursos','galeria'].includes(r.endpoint)&&scope?.filters.tipo!=='curso'&&<div className="hp-actions"><OriginalContentImport section={r.endpoint==='cursos'?'capacitaciones':r.endpoint} onRestored={message=>{notify.success(message);setReload(n=>n+1)}}/></div>}
     <section className="hp-card">
       <div className="hp-card-heading"><div><h2>{r.endpoint === 'galeria' ? 'Biblioteca visual' : r.endpoint === 'cursos' ? 'Oferta y planificación' : r.endpoint === 'servicios' ? 'Portafolio de soluciones' : r.endpoint === 'preguntas-frecuentes' ? 'Centro de respuestas' : 'Todos los registros'} <span className="hp-count">{loading ? '…' : error ? '—' : total}</span></h2><p>{visual ? 'Revisa, prepara y organiza el contenido de esta sección.' : 'Consulta y administra tu información.'}</p></div>
         <div className="hp-actions"><button className="hp-btn" onClick={exportPage} disabled={view === 'agenda' || loading || !!error || !rows.length}><PanelIcon name="download" />Exportar página</button>
@@ -239,7 +264,7 @@ export default function ResourceManager({ resource: r, autoCreate, scope }: Prop
         <button aria-pressed={view === 'table'} onClick={() => setView('table')}>Tabla</button>
         {r.endpoint === 'cursos' && <button aria-pressed={view === 'agenda'} onClick={() => setView('agenda')}>Agenda de cursos</button>}
       </div><span className="hw-caption">{view === 'agenda' ? 'Planifica fechas del catálogo completo' : 'Resultados paginados · 8 por página'}</span></div>}
-      {view === 'agenda' ? <CourseAgenda revision={reload} tipo={scope?.filters.tipo} onOpen={row => void openRow(row)} /> : <>
+      {view === 'agenda' ? <CourseAgenda revision={reload} tipo={scope?.filters.tipo} readOnly={!canEdit} onOpen={row => void openRow(row)} /> : <>
       <form className="hp-toolbar" onSubmit={e => { e.preventDefault(); setPage(1); setQuery(search.trim()); }}>
         <div className="hp-search"><PanelIcon name="search" /><input aria-label="Buscar registros" placeholder="Buscar por nombre o título…" value={search} onChange={e => setSearch(e.target.value)} maxLength={100} /></div>
         <button className="hp-btn" type="submit">Buscar</button>
@@ -247,19 +272,19 @@ export default function ResourceManager({ resource: r, autoCreate, scope }: Prop
       </form>
       {error ? <div className="hp-empty" role="alert"><PanelIcon name="help" size={32} /><h3>No pudimos cargar los registros</h3><p>{error}</p><button className="hp-btn" onClick={() => setReload(n => n + 1)}>Reintentar</button></div> :
         loading ? <div className="hp-empty" role="status"><span className="hp-loading" /><p>Cargando registros…</p></div> :
-        rows.length ? (view === 'cards' ? <ResourceCards resource={r} rows={rows} busy={busy} onOpen={(row, view) => void openRow(row, view)} onDuplicate={(row, copiedAt) => void duplicate(row, copiedAt)} onRemove={row => { setFormError(''); setPendingDelete(row); }} /> : <div className="hp-table-wrap"><table className="hp-table"><thead><tr><th>Contenido</th><th>Categoría / tipo</th><th>Estado</th><th>Actualización</th><th className="hp-align-right">Acciones</th></tr></thead>
+        rows.length ? (view === 'cards' ? <ResourceCards resource={r} rows={rows} busy={busy} allow={{ edit: canEdit, duplicate: canCreate, remove: canDelete }} onOpen={(row, view) => void openRow(row, view)} onDuplicate={(row, copiedAt) => void duplicate(row, copiedAt)} onRemove={row => { setFormError(''); setPendingDelete(row); }} /> : <div className="hp-table-wrap"><table className="hp-table"><thead><tr><th>Contenido</th><th>Categoría / tipo</th><th>Estado</th><th>Actualización</th><th className="hp-align-right">Acciones</th></tr></thead>
           <tbody>{rows.map(row => <tr key={row.id}><td><div className="hp-record"><span className={'hp-record-icon hp-tone-' + r.icon}><PanelIcon name={r.icon} /></span><div><strong>{String(row[r.title])}</strong><small>{String(row.nombre || row.slug || 'Registro #' + row.id)}</small></div></div></td>
             <td>{label(row.categoria || row.tipo || 'General')}</td>
             <td><span className={'hp-badge hp-state-' + rowState(row)}>{label(rowState(row))}</span></td>
             <td>{row.updatedAt || row.createdAt ? new Date(String(row.updatedAt || row.createdAt)).toLocaleDateString('es-PE') : '—'}</td>
             <td><div className="hp-row-actions"><button className="hp-icon-btn" aria-label={'Ver ' + row[r.title]} title="Ver detalle" disabled={busy} onClick={() => void openRow(row, true)}><PanelIcon name="eye" size={17} /></button>
-              <button className="hp-icon-btn" aria-label={'Editar ' + row[r.title]} title="Editar" disabled={busy} onClick={() => void openRow(row)}><PanelIcon name="edit" size={17} /></button>
-              <button className="hp-icon-btn hp-danger" aria-label={removeVerb(r) + ' ' + row[r.title]} title={removeVerb(r)} disabled={busy || !canRemove(r, row)} onClick={() => { setFormError(''); setPendingDelete(row); }}><PanelIcon name="trash" size={17} /></button></div></td></tr>)}</tbody></table></div>) :
-          <div className="hp-empty"><span className="hp-empty-icon"><PanelIcon name={r.icon} size={30} /></span><h3>{query || status ? 'No encontramos coincidencias' : 'Tu próximo proyecto empieza aquí'}</h3><p>{query || status ? 'Prueba con otra búsqueda o cambia el filtro.' : 'Crea tu primer registro. Su información quedará guardada en el sistema.'}</p><button className="hp-btn hp-btn-primary" onClick={openNew}>Crear {singular}<PanelIcon name="plus" /></button></div>}
+              {canEdit && <button className="hp-icon-btn" aria-label={'Editar ' + row[r.title]} title="Editar" disabled={busy} onClick={() => void openRow(row)}><PanelIcon name="edit" size={17} /></button>}
+              {canDelete && <button className="hp-icon-btn hp-danger" aria-label={removeVerb(r) + ' ' + row[r.title]} title={removeVerb(r)} disabled={busy || !canRemove(r, row)} onClick={() => { setFormError(''); setPendingDelete(row); }}><PanelIcon name="trash" size={17} /></button>}</div></td></tr>)}</tbody></table></div>) :
+          <div className="hp-empty"><span className="hp-empty-icon"><PanelIcon name={r.icon} size={30} /></span><h3>{query || status ? 'No encontramos coincidencias' : canCreate ? 'Tu próximo proyecto empieza aquí' : 'Todavía no hay registros'}</h3><p>{query || status ? 'Prueba con otra búsqueda o cambia el filtro.' : canCreate ? 'Crea tu primer registro. Su información quedará guardada en el sistema.' : 'Cuando se publiquen registros en esta sección, aparecerán aquí.'}</p>{canCreate && <button className="hp-btn hp-btn-primary" onClick={openNew}>Crear {singular}<PanelIcon name="plus" /></button>}</div>}
       <footer className="hp-pagination"><span>{error ? 'Sin conexión con los datos' : total + ' registros encontrados'} · {pageSize} por página</span><div><button className="hp-btn" disabled={loading || !!error || page <= 1} onClick={() => setPage(p => p - 1)}>Anterior</button><span>{page} / {Math.max(1, pages)}</span><button className="hp-btn" disabled={loading || !!error || page >= pages} onClick={() => setPage(p => p + 1)}>Siguiente</button></div></footer></>}
     </section>
     {editor && <PanelDialog title={(editor.view ? 'Detalle de ' : editor.row ? 'Editar ' : 'Crear ') + singular} busy={busy} onClose={closeEditor} className={groups ? 'hp-dialog-sticky' : ''}>
-      {editor.view ? <>{visual && <ResourcePreview resource={r} values={editor.row!} />}<dl className="hp-details">{[...main, ...advanced].map(field => <div key={field.key}><dt>{field.label}</dt><dd>{label(editor.row?.[field.key]) || 'Sin especificar'}</dd></div>)}</dl><div className="hp-dialog-footer"><button className="hp-btn hp-btn-primary" onClick={() => replaceEditor({ ...editor, view: false })}>Editar registro<PanelIcon name="edit" /></button></div></> :
+      {editor.view ? <>{visual && <ResourcePreview resource={r} values={editor.row!} />}<dl className="hp-details">{[...main, ...advanced].map(field => <div key={field.key}><dt>{field.label}</dt><dd>{label(editor.row?.[field.key]) || 'Sin especificar'}</dd></div>)}</dl>{canEdit && <div className="hp-dialog-footer"><button className="hp-btn hp-btn-primary" onClick={() => replaceEditor({ ...editor, view: false })}>Editar registro<PanelIcon name="edit" /></button></div>}</> :
       <form onSubmit={save}>
         {visual && <div className="hw-editor-tools"><strong>{editor.row ? 'Edición de contenido' : 'Prepara una nueva publicación'}</strong><button type="button" className="hp-btn" onClick={() => setPreview(value => !value)} aria-expanded={preview}><PanelIcon name="eye" size={16} />{preview ? 'Ocultar vista previa' : 'Vista previa'}</button></div>}
         {visual && preview && <ResourcePreview resource={r} values={form} />}
@@ -272,7 +297,7 @@ export default function ResourceManager({ resource: r, autoCreate, scope }: Prop
       </fieldset>
         <div className="hp-dialog-footer">{formError && <p className="hp-error hp-footer-error" role="alert">{formError}</p>}<button type="button" className="hp-btn" disabled={busy} onClick={closeEditor}>Cancelar</button><button className="hp-btn hp-btn-primary" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}<PanelIcon name="check" /></button></div></form>}
     </PanelDialog>}
-    {pendingDelete && <PanelDialog title={r.hardDelete ? 'Eliminar ' + singular : r.catalog ? 'Archivar registro' : 'Eliminar registro'} busy={busy} onClose={() => setPendingDelete(null)}>
+    {canDelete && pendingDelete && canRemove(r, pendingDelete) && <PanelDialog title={r.hardDelete ? 'Eliminar ' + singular : r.catalog ? 'Archivar registro' : 'Eliminar registro'} busy={busy} onClose={() => setPendingDelete(null)}>
       <div className="hp-confirm"><PanelIcon name="trash" size={34} /><h3>{String(pendingDelete[r.title])}</h3><p>{r.catalog && !r.hardDelete ? 'Dejará de aparecer en las consultas públicas. Podrás publicarlo nuevamente desde Editar.' : 'Se eliminará definitivamente de la base de datos y dejará de aparecer en el sitio. Esta acción no se puede deshacer.'}</p></div>
       {formError && <p className="hp-error" role="alert">{formError}</p>}<div className="hp-dialog-footer"><button className="hp-btn" disabled={busy} onClick={() => setPendingDelete(null)}>Cancelar</button><button className="hp-btn hp-btn-danger" disabled={busy} onClick={() => void remove()}>{busy ? 'Procesando…' : r.catalog && !r.hardDelete ? 'Confirmar archivo' : 'Eliminar definitivamente'}</button></div>
     </PanelDialog>}

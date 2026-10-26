@@ -4,6 +4,8 @@ Responde siempre en español, incluidas las explicaciones, los resúmenes y los 
 
 `AGENTS.md` describe la arquitectura, las tecnologías, los comandos y las convenciones técnicas del repositorio: léelo antes de trabajar y no lo dupliques aquí. Este archivo fija **cómo trabajar**: método, seguridad operativa, pruebas, procesos, Git e informes. Si ambos se contradicen, aplica la regla más restrictiva en seguridad y avisa de la contradicción. Las instrucciones explícitas del usuario tienen prioridad sobre los dos.
 
+Estas reglas generales abarcan todo el proyecto. En `backend-laravel/`, sus `AGENTS.md` y `CLAUDE.md` las complementan: Eloquent es el ORM principal de Laravel; las instrucciones de Prisma/NestJS y React/npm se limitan a sus paquetes. No instales Laravel Boost ni herramientas automáticamente ni modifiques proyectos vecinos fuera del alcance autorizado. Tampoco ejecutes migraciones o cambios de datos sin autorización explícita y destino comprobado; los commits y pushes siguen requiriendo autorización explícita.
+
 ## 1. Comunicación
 
 - Sé claro, concreto y profesional; explica las decisiones que importan y evita mensajes de progreso repetitivos.
@@ -57,7 +59,7 @@ Aplica estas reglas donde corresponda, no a todos los módulos:
 
 ## 7. Dependencias y despliegue
 
-- No añadas bibliotecas sin justificar su necesidad ni actualices versiones en bloque. Respeta Node 22.x y los lockfiles.
+- No añadas bibliotecas sin justificar su necesidad ni actualices versiones en bloque. Respeta Node 22.x en `backend/` y `frontend/`, y los requisitos y lockfiles propios de cada paquete; Laravel usa Composer.
 - No modifiques Docker, Railway, Caddy ni variables de producción fuera del alcance, y no ejecutes despliegues reales sin autorización. Una prueba local no equivale a validar un despliegue.
 - Documenta las variables de entorno necesarias sin incluir secretos.
 
@@ -72,14 +74,17 @@ No ejecutes toda la suite tras cada cambio pequeño, pero tampoco omitas pruebas
 | 3 | Transversal o de seguridad | Suite relevante completa, regresiones de autenticación/navegación/datos y pruebas de navegador |
 | Docs | Solo documentación | Revisar coherencia y `git diff --check`; sin builds ni suites |
 
-Scripts de `frontend/package.json` (comprueba que existan antes de citarlos): `check`, `lint`, `build`, `test:deploy`, `test:errors`, `test:return-path`, `test:list-records`, `test:attention-merge`, `test:mail-outcome`, `test:message-export`, `test:notify`, `smoke:auth`, `smoke:unsaved`, `smoke:messages-table`, `smoke:message-detail`, `smoke:message-center`, `smoke:attention-save`, `smoke:attention-conflicts`, `smoke:mail-attempts`, `smoke:message-responsive`, `smoke:quote-origin`, `smoke:panel-sections`, `smoke:panel-toasts`, `smoke:chatbot`; además `node scripts/smoke-ui.cjs`, `smoke-home.cjs` y `smoke-global-content.cjs`. Orientación según el área:
+Scripts de `frontend/package.json` (comprueba que existan antes de citarlos): `check`, `lint`, `build`, `test:deploy`, `test:errors`, `test:content-source`, `test:return-path`, `test:list-records`, `test:attention-merge`, `test:mail-outcome`, `test:message-export`, `test:notify`, `test:session-access`, `test:panel-access`, `test:my-day`, `smoke:auth`, `smoke:session-access`, `smoke:panel-access`, `smoke:panel-actions`, `smoke:my-day`, `smoke:unsaved`, `smoke:messages-table`, `smoke:message-detail`, `smoke:message-center`, `smoke:attention-save`, `smoke:attention-conflicts`, `smoke:mail-attempts`, `smoke:message-responsive`, `smoke:quote-origin`, `smoke:panel-sections`, `smoke:panel-toasts`, `smoke:chatbot`, `test:signup-form`, `smoke:signup`, `test:account-roles`, `smoke:roles`; además `node scripts/smoke-ui.cjs`, `smoke-home.cjs` y `smoke-global-content.cjs`. Orientación según el área:
 
-- Sesión, login, recuperación, `AdminRoute`/contexto de autenticación: `test:return-path`, `smoke:auth`, `smoke:unsaved`.
+- Sesión, login, recuperación, `AdminRoute`/contexto de autenticación: `test:return-path`, `test:session-access`, `smoke:auth`, `smoke:session-access`, `smoke:unsaved`. Registro público (`/admin/register`, `POST /api/admin/signup`): `test:signup-form`, `smoke:signup` y, en el backend, `npm test` (`test/public-signup.test.ts`). «Roles y usuarios» (`PanelAccounts`, `PUT /api/admin/users/:id/rol`): `test:account-roles`, `test:panel-access`, `smoke:roles`, `smoke:panel-access` y, en el backend, `npm test` (`test/account-roles.test.ts`).
+- Menú del panel, secciones visibles por permisos y enlaces directos (`panelAccess.ts`, `AdminDashboard`): `test:panel-access`, `smoke:panel-access`, `smoke:session-access`, `smoke:panel-sections`. «Mi Día» (`PanelMyDay`, `services/myDay.ts`): `test:my-day`, `smoke:my-day` y los anteriores.
+- Botones, formularios y operaciones por permisos (`RESOURCE_WRITE`, `PANEL_ACTIONS`, `usePanelAccess`): `test:panel-access`, `smoke:panel-actions`, y los smokes de la sección tocada (p. ej. `smoke:message-center`, `smoke:quote-origin`, `smoke:unsaved`).
 - Bandeja de Mensajes, seguimiento, tabla de registros: `test:list-records`, `test:attention-merge`, `smoke:messages-table`, `smoke:message-detail`, `smoke:attention-conflicts`, `smoke:unsaved`.
 - Centro de Atención (responsive, accesibilidad): `smoke:message-responsive`; relación Mensaje ↔ Cotización: `smoke:quote-origin`; secciones del panel, resumen y canales públicos conservados: `smoke:panel-sections`; notificaciones (Sonner): `test:notify` y `smoke:panel-toasts`. Chatbot y consultas sin respuesta: `smoke:chatbot` (y, en el backend, `npm test`).
 - Router, páginas públicas, Home: `smoke-home`, `smoke-ui`, `smoke-global-content`, `test:deploy`.
 - Errores públicos y formularios públicos: `test:errors`, `smoke-ui`.
 - Backend (autenticación, correo, límites de frecuencia): `npm test` y `tsc --noEmit` en `backend/` (comando de `AGENTS.md`); `build` si cambia código compilado.
+- Reportes académicos (`backend/src/reportes/`): `npm test` (`test/reportes.test.ts`) y, con Docker y la imagen local `mysql:8.4`, `npm run build` seguido de `node test/run-academic-isolated.cjs reportes` (contenedor propio y desechable).
 
 Los smokes sirven `frontend/dist`: compila antes (`npm run build`) si cambió el código; los más recientes lo exigen y fallan si `dist` está desactualizado. Los scripts `smoke:*` con prefijo `npm run build &&` ya lo hacen.
 
@@ -99,6 +104,7 @@ Un incidente dejó cientos de procesos de Edge huérfanos que agotaron la memori
 - Ejecuta las pruebas de navegador **en serie**; no lances varias suites pesadas a la vez.
 - Cada prueba usa un perfil temporal propio (`horus-*`) y cierra **todo el árbol** de procesos que creó (en Windows `child.kill()` solo cierra el proceso raíz: usa `taskkill /PID <pid> /T /F`, como `killBrowser` en `scripts/smoke-auth.cjs`; en Linux `kill` del grupo), dentro de un cierre garantizado (`finally`/manejador de salida) y con timeouts razonables para servidores y procesos hijos.
 - Tras una ejecución puedes comprobar sobrantes de **tus** pruebas por el perfil, por ejemplo: `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -match 'user-data-dir=[^ ]*horus-' }`. Cierra solo esos; nunca los navegadores ni aplicaciones del usuario. Borra únicamente los temporales que creaste.
+- La corrección de la limpieza de Edge de los smokes (`scripts/smoke-cleanup.cjs` y `smoke-stop-browser.ps1`) está integrada en `anderson` y publicada en `origin/anderson` (commits `a716336` y `7b6cc2c`), todavía no en `main`. Aun así, en Windows el borrado del perfil puede fallar con `EPERM` unos segundos después de cerrar Edge: el smoke termina con código 1 y deja su perfil `horus-*`. No modifiques las ramas ni los worktrees de esa corrección, ni uses scripts de limpieza amplia; comprueba y borra solo lo que creó tu ejecución.
 - No crees vigilantes ni monitores indefinidos o repetitivos. Si una validación se alarga, diagnostica primero qué proceso sigue activo y comunícalo en lugar de seguir esperando.
 
 ## 11. Git y colaboración

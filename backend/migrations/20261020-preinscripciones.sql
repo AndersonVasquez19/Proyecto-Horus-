@@ -1,0 +1,68 @@
+ALTER TABLE `matriculas` ADD UNIQUE KEY `matriculas_id_relaciones_uq` (`id`, `estudiante_id`, `convocatoria_id`);
+
+CREATE TABLE IF NOT EXISTS `preinscripciones` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `convocatoria_id` INT NOT NULL,
+  `nombres` VARCHAR(120) NOT NULL,
+  `apellidos` VARCHAR(120) NOT NULL,
+  `email` VARCHAR(254) NOT NULL,
+  `telefono` VARCHAR(30) NOT NULL,
+  `canal` ENUM('formulario','chatbot') NOT NULL,
+  `estado` ENUM('recibida','validada','matriculada','desistida','descartada') NOT NULL DEFAULT 'recibida',
+  `vigente_email` VARCHAR(254) GENERATED ALWAYS AS (CASE WHEN `estado` IN ('recibida','validada','matriculada') THEN `email` ELSE NULL END) STORED,
+  `consentimiento_at` DATETIME(3) NOT NULL,
+  `aviso_version` VARCHAR(30) NOT NULL,
+  `estudiante_id` INT NULL,
+  `matricula_id` INT NULL,
+  `convertida_por` INT NULL,
+  `convertida_at` DATETIME(3) NULL,
+  `revision` INT NOT NULL DEFAULT 1,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `preinscripciones_vigente_email_uq` (`convocatoria_id`, `vigente_email`),
+  UNIQUE KEY `preinscripciones_matricula_uq` (`matricula_id`),
+  KEY `preinscripciones_edicion_idx` (`convocatoria_id`, `estado`, `createdAt`),
+  KEY `preinscripciones_email_idx` (`email`),
+  KEY `preinscripciones_estado_idx` (`estado`, `createdAt`),
+  KEY `preinscripciones_matricula_rel_idx` (`matricula_id`, `estudiante_id`, `convocatoria_id`),
+  KEY `preinscripciones_estudiante_idx` (`estudiante_id`),
+  KEY `preinscripciones_convertida_por_idx` (`convertida_por`),
+  CONSTRAINT `preinscripciones_convocatoria_fk` FOREIGN KEY (`convocatoria_id`) REFERENCES `convocatorias` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `preinscripciones_matricula_fk` FOREIGN KEY (`matricula_id`, `estudiante_id`, `convocatoria_id`) REFERENCES `matriculas` (`id`, `estudiante_id`, `convocatoria_id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `preinscripciones_convertida_por_fk` FOREIGN KEY (`convertida_por`) REFERENCES `admin_users` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `preinscripciones_nombres_chk` CHECK (CHAR_LENGTH(TRIM(`nombres`)) > 0 AND CHAR_LENGTH(TRIM(`apellidos`)) > 0),
+  CONSTRAINT `preinscripciones_contacto_chk` CHECK (CHAR_LENGTH(TRIM(`email`)) > 0 AND CHAR_LENGTH(TRIM(`telefono`)) > 0 AND CHAR_LENGTH(TRIM(`aviso_version`)) > 0),
+  CONSTRAINT `preinscripciones_conversion_chk` CHECK ((`estado` = 'matriculada' AND `matricula_id` IS NOT NULL AND `estudiante_id` IS NOT NULL AND `convertida_por` IS NOT NULL AND `convertida_at` IS NOT NULL) OR (`estado` <> 'matriculada' AND `matricula_id` IS NULL AND `estudiante_id` IS NULL AND `convertida_por` IS NULL AND `convertida_at` IS NULL)),
+  CONSTRAINT `preinscripciones_revision_chk` CHECK (`revision` >= 1)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `preinscripciones_historial` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `preinscripcion_id` INT NOT NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `operacion` ENUM('creacion','correccion','validacion','descarte','desistimiento','conversion') NOT NULL,
+  `canal` ENUM('formulario','chatbot') NULL,
+  `actor_id` INT NULL,
+  `actor_rol` ENUM('GERENTE_GENERAL','COORDINADORA_INSTITUCIONAL','SECRETARIA') NULL,
+  `estado_anterior` ENUM('recibida','validada','matriculada','desistida','descartada') NULL,
+  `estado_nuevo` ENUM('recibida','validada','matriculada','desistida','descartada') NULL,
+  `campos` JSON NULL,
+  `revision` INT NOT NULL,
+  `motivo` VARCHAR(300) NULL,
+  PRIMARY KEY (`id`),
+  KEY `preinscripciones_historial_item_idx` (`preinscripcion_id`, `createdAt`),
+  KEY `preinscripciones_historial_actor_idx` (`actor_id`, `createdAt`),
+  CONSTRAINT `preinscripciones_historial_fk` FOREIGN KEY (`preinscripcion_id`) REFERENCES `preinscripciones` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `preinscripciones_historial_origen_chk` CHECK ((`operacion` = 'creacion' AND `canal` IS NOT NULL AND `actor_id` IS NULL) OR (`operacion` <> 'creacion' AND `canal` IS NULL AND `actor_id` IS NOT NULL)),
+  CONSTRAINT `preinscripciones_historial_campos_chk` CHECK (`campos` IS NULL OR JSON_TYPE(`campos`) = 'ARRAY'),
+  CONSTRAINT `preinscripciones_historial_revision_chk` CHECK (`revision` >= 1)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `convocatorias`
+  ADD COLUMN `minimo_apertura` INT NULL,
+  ADD COLUMN `preinscripcion_estado` ENUM('abierta','cerrada') NOT NULL DEFAULT 'cerrada',
+  ADD COLUMN `codigo_publico` CHAR(32) NULL,
+  ADD UNIQUE KEY `convocatorias_codigo_publico_uq` (`codigo_publico`),
+  ADD CONSTRAINT `convocatorias_minimo_chk` CHECK (`minimo_apertura` IS NULL OR `minimo_apertura` >= 1),
+  ADD CONSTRAINT `convocatorias_codigo_chk` CHECK (`codigo_publico` IS NULL OR REGEXP_LIKE(`codigo_publico`, '^[0-9a-f]{32}$', 'c'))

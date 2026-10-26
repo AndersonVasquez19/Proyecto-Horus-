@@ -16,6 +16,7 @@ import SoporteMantenimiento  from './pages/tecnologias/SoporteMantenimiento'
 import Asesoramiento   from './pages/educacion/Asesoramiento'
 import Capacitaciones  from './pages/educacion/Capacitaciones'
 import Cursos          from './pages/educacion/Cursos'
+import Preinscripcion  from './pages/Preinscripcion'
 
 import PoliticasCookies    from './pages/politicas/PoliticasCookies'
 import PoliticasDevolucion from './pages/politicas/PoliticasDevolucion'
@@ -31,6 +32,7 @@ const AdminMessages = lazy(() => import('./panel/pages/AdminMessages'))
 
 import NewsletterUnsubscribe from './pages/NewsletterUnsubscribe'
 const AdminRecovery = lazy(() => import('./panel/pages/AdminRecovery'))
+const AdminRegister = lazy(() => import('./panel/pages/AdminRegister'))
 import CatalogoDetail from './pages/CatalogoDetail'
 import CursoDetail from './pages/educacion/CursoDetail'
 import NotFound from './pages/NotFound'
@@ -66,6 +68,7 @@ function AppRoutes() {
             <Route path="/educacion/asesoramiento"  element={<Asesoramiento />} />
             <Route path="/educacion/capacitaciones" element={<Capacitaciones />} />
             <Route path="/educacion/cursos"         element={<Cursos />} />
+            <Route path="/preinscripcion"           element={<Preinscripcion />} />
 
             <Route path="/politicas/cookies"           element={<PoliticasCookies />} />
             <Route path="/politicas/devolucion"        element={<PoliticasDevolucion />} />
@@ -78,7 +81,7 @@ function AppRoutes() {
           <Route path="/admin/forgot-password" element={<AdminRecovery />} />
           <Route path="/admin/reset-password" element={<AdminRecovery reset />} />
           <Route path="/admin/login" element={<AdminLogin />} />
-          <Route path="/admin/register" element={<Navigate to="/admin/login" replace />} />
+          <Route path="/admin/register" element={<AdminRegister />} />
 
           <Route element={<AdminRoute />}>
             <Route path="/admin/dashboard" element={<AdminDashboard />} />

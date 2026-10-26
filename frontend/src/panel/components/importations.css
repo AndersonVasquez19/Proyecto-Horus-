@@ -1,0 +1,12 @@
+.hi-import { display: grid; gap: 18px; min-width: 0; }
+.hi-import .hp-card { padding: 22px; min-width: 0; }
+.hi-import fieldset { border: 0; padding: 0; margin: 16px 0; min-width: 0; }
+.hi-import label { display: grid; gap: 6px; min-width: 0; }
+.hi-import input, .hi-import select { max-width: 100%; min-width: 0; }
+.hi-import .hi-scroll { overflow-x: auto; max-width: 100%; }
+.hi-import .hs-table td { white-space: normal; overflow-wrap: anywhere; max-width: 360px; }
+.hi-import .hs-table { min-width: 700px; }
+.hi-import details { margin: 16px 0; }
+.hi-import summary { cursor: pointer; }
+.hi-consent { display: flex; gap: 10px; align-items: flex-start; margin: 20px 0; }
+@media (max-width: 600px) { .hi-import .hp-card { padding: 14px; } .hi-import .hp-form-grid { grid-template-columns: 1fr; } }

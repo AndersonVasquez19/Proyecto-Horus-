@@ -2,10 +2,13 @@
 # Los comandos son los de AGENTS.md / los scripts reales de cada package.json. Guía y límites: docs/procedimientos/ci.md
 name: CI
 
+# CI automática SUSPENDIDA TEMPORALMENTE en la rama `anderson` hasta terminar el proyecto (push y pull_request hacia `anderson`).
+# Para reactivarla: añadir `anderson` a `push.branches` y quitar `branches-ignore` de `pull_request`. Ver docs/procedimientos/ci.md.
 on:
   push:
-    branches: [main, anderson]
+    branches: [main]
   pull_request:
+    branches-ignore: [anderson]
   workflow_dispatch:
     inputs:
       smokes:
@@ -72,10 +75,17 @@ jobs:
           npm run test:mail-outcome
           npm run test:message-export
           npm run test:notify
+          npm run test:session-access
+          npm run test:panel-access
+          node --experimental-strip-types --test tests/institutional-content.test.mjs tests/operational-stats.test.mjs
+          npm run test:editions
+          npm run test:enrollments
+          node --experimental-strip-types --test tests/importations.test.mjs
       - run: npm run build
 
   # MySQL efímero del propio runner: se crea y se destruye con el job, con una contraseña de un solo uso que no es un secreto.
   # test:integration crea y elimina solo una base horus_prisma_test_<UUID>, aplica init + migraciones (dos veces), db:check y las pruebas de módulos.
+  # backup-collation.integration.cjs solo usa este servidor (DB_HOST local; exige BACKUP_COLLATION_TEST_DB=true): crea y elimina únicamente horus_collation_src_<hex> y horus_restore_col_<hex>.
   # Se lanza con `docker run` (y no como service) porque necesita argumentos del servidor: mysql_native_password, como en docker-compose.local.yml.
   integration:
     name: Integración (MySQL efímero)
@@ -115,6 +125,86 @@ jobs:
       - run: npm ci
       - name: Integración con MySQL
         run: npm run test:integration
+      # M-3 (H-BACK-01 E3.2): procesos reales de admin:create y admin:assign-role. La prueba solo actúa si el server_uuid de su conexión
+      # coincide con el leído aquí DENTRO del contenedor de este job (docker exec, otra vía), si el servidor es recién creado y no tiene datos.
+      # Crea y elimina únicamente horus_scripts_test_<hex>.
+      - name: Integración de admin:create y admin:assign-role (M-3)
+        run: |
+          ADMIN_SCRIPTS_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ADMIN_SCRIPTS_TEST_SERVER_UUID
+          node --test test/admin-scripts.integration.cjs
+        env:
+          ADMIN_SCRIPTS_TEST_DB: 'true'
+      # H-BACK-01 E3.5 y E3.6 (desde E3.6, AccessGuard está registrada en el AppModule normal y ACCESS_MODE = por_roles). Mismas barreras que M-3, todas antes de
+      # crear nada: activación explícita, DB_HOST de bucle local, server_uuid de la conexión = el leído aquí con docker exec dentro del contenedor
+      # de este job, servidor con Uptime < 1 h y sin tablas en ninguna base ajena a las del sistema. Van en serie y después de M-3 y de
+      # test:integration porque cada una elimina su propia base: si un paso previo dejara tablas, estas pruebas FALLAN (no se debilitan las
+      # barreras). Requieren backend/dist, que compila `npm run test:integration`. Crean y eliminan solo horus_e35_<hex> y horus_e36_<hex>.
+      # Si GitHub cancela el runner de forma forzosa no hay limpieza interna posible: el contenedor y los temporales desaparecen con el runner.
+      - name: Comprobar la identidad del MySQL efímero (E3.5 y E3.6)
+        working-directory: .
+        run: |
+          set -eu
+          test "$(docker inspect -f '{{.Name}}' mysql-ci)" = "/mysql-ci"
+          test "$(docker inspect -f '{{.Config.Image}}' mysql-ci)" = "mysql:8.4"
+          test "$(docker inspect -f '{{.State.Running}}' mysql-ci)" = "true"
+          # Único puerto publicado: 3306 en 127.0.0.1 (nunca en 0.0.0.0).
+          test "$(docker inspect -f '{{range $p, $b := .NetworkSettings.Ports}}{{range $b}}{{.HostIp}}:{{.HostPort}}>{{$p}};{{end}}{{end}}' mysql-ci)" = "127.0.0.1:3306>3306/tcp;"
+          test -f backend/dist/main.js
+          UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          echo "$UUID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          echo "MySQL efímero identificado (mysql-ci, mysql:8.4, solo 127.0.0.1)."
+      - name: Integración de la preparación de cuentas para AccessGuard (E3.5)
+        run: |
+          ACCESS_READINESS_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ACCESS_READINESS_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/admin-access-readiness.integration.cjs
+        env:
+          ACCESS_READINESS_TEST_DB: 'true'
+      - name: Integración de AccessGuard con HTTP real (E3.6, AppModule normal)
+        run: |
+          ACCESS_GUARD_HTTP_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ACCESS_GUARD_HTTP_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/access-guard-http.integration.cjs
+        env:
+          ACCESS_GUARD_HTTP_TEST_DB: 'true'
+      # H-BACK-01 E4.2: estructura académica (instalación, actualización desde E4.1, migración parcial, restricciones y Prisma).
+      # Mismas barreras que E3.5 y E3.6, todas antes de crear nada; va después de ellas porque exige un servidor sin tablas ajenas.
+      # Solo crea y elimina horus_e42_<hex> y horus_restore_e42_<hex> (restauración real con db:restore).
+      - name: Integración de la estructura académica (E4.2)
+        run: |
+          ACADEMICO_SCHEMA_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export ACADEMICO_SCHEMA_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/academico-schema.integration.cjs
+        env:
+          ACADEMICO_SCHEMA_TEST_DB: 'true'
+      - name: Integración de la colación en db:backup y db:restore
+        run: node --test test/backup-collation.integration.cjs
+        env:
+          BACKUP_COLLATION_TEST_DB: 'true'
+      - name: Integración de Ediciones (HTTP, concurrencia y migración aditiva)
+        run: |
+          EDITIONS_TEST_SERVER_UUID="$(docker exec -e MYSQL_PWD="$DB_PASS" mysql-ci mysql -uroot -N -B -e 'SELECT @@server_uuid')"
+          export EDITIONS_TEST_SERVER_UUID
+          node --test -r ./test/isolate-env.cjs test/convocatorias.integration.cjs
+        env:
+          EDITIONS_TEST_DB: 'true'
+      - name: Integración de Matrículas (HTTP, cupos e historial transaccional)
+        run: node test/run-academic-isolated.cjs matriculas
+      - name: Integración de Reportes académicos (HTTP, permisos, CSV/XLSX/PDF y solo lectura)
+        run: node test/run-academic-isolated.cjs reportes
+      # Docentes y ponentes (20261020-docentes): contenedor MySQL 8.4 propio y desechable (horus-fase3-<hex>), con identidad verificada por server_uuid;
+      # el ejecutor lo retira en su bloque finally y devuelve código distinto de 0 si falla cualquier aserción, migración, permiso o restricción.
+      - name: Integración de Docentes y ponentes (HTTP, permisos, asignaciones, sustituciones y migración)
+        run: node test/run-academic-isolated.cjs docentes
+      # Horarios y sesiones (20261020-sesiones-academicas): mismo ejecutor aislado y desechable que Docentes; nunca horus_db ni horus_local.
+      - name: Integración de Horarios y sesiones (HTTP, solapamientos, concurrencia, zona horaria y migración)
+        run: node test/run-academic-isolated.cjs sesiones
+      # Preinscripciones (20261020-preinscripciones): mismo ejecutor aislado y desechable; nunca horus_db ni horus_local.
+      - name: Integración de Preinscripciones (HTTP, canales, mínimo de apertura, conversión a matrícula, concurrencia y migración)
+        run: node test/run-academic-isolated.cjs preinscripciones
+      - name: Integración de importación CSV (HTTP, atomicidad y concurrencia)
+        run: node test/run-importaciones-disposable.cjs importaciones.integration.cjs
       - name: Retirar MySQL
         if: always()
         working-directory: .

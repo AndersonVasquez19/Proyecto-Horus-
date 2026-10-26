@@ -8,6 +8,13 @@ datasource db {
   url = env("DATABASE_URL")
 }
 
+// Roles administrativos (deben coincidir con ADMIN_ROLES de src/permissions/roles.ts; lo comprueba una prueba).
+enum AdminRol {
+  GERENTE_GENERAL
+  COORDINADORA_INSTITUCIONAL
+  SECRETARIA
+}
+
 model AdminUser {
   id Int @id @default(autoincrement())
   nombre String @db.VarChar(100)
@@ -15,9 +22,56 @@ model AdminUser {
   password String @db.VarChar(255)
   activo Boolean @default(true)
   session_version Int @default(1)
+  // NULL = cuenta sin rol asignado. Sin valor predeterminado: ningún rol se concede de forma implícita. Todavía no lo consulta ninguna ruta.
+  rol AdminRol?
   createdAt DateTime @default(now()) @db.DateTime(0)
   updatedAt DateTime @updatedAt @db.DateTime(0)
+  matriculas_confirmadas Matricula[] @relation("MatriculaConfirmadoPor")
+  certificados_emitidos Certificado[] @relation("CertificadoEmitidoPor")
+  certificados_anulados Certificado[] @relation("CertificadoAnuladoPor")
+  importaciones ImportacionAcademica[]
+  preinscripciones_convertidas Preinscripcion[]
   @@map("admin_users")
+}
+
+enum AdminAuditoriaOrigen {
+  panel
+  terminal
+}
+
+enum AdminAuditoriaOperacion {
+  cuenta_creada
+  cuenta_activada
+  cuenta_desactivada
+  rol_asignado
+  rol_retirado
+}
+
+enum AdminAuditoriaResultado {
+  aplicado
+  rechazado
+}
+
+// Registro de solo inserción de los cambios de cuentas y privilegios (M-4). Se escribe en la misma transacción que el cambio.
+// Sin claves foráneas a propósito: el historial no impide ni sigue el borrado de una cuenta. No guarda correos, contraseñas,
+// tokens ni IP: la cuenta se identifica por su id (los id de InnoDB no se reutilizan).
+model AdminAuditoria {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  origen AdminAuditoriaOrigen
+  actor_id Int? // cuenta que hizo el cambio desde el panel; NULL desde la terminal
+  operador String? @db.VarChar(100) // terminal: quién ejecutó el script (declarado)
+  cuenta_id Int
+  operacion AdminAuditoriaOperacion
+  rol_anterior AdminRol?
+  rol_nuevo AdminRol?
+  activo_anterior Boolean?
+  activo_nuevo Boolean?
+  resultado AdminAuditoriaResultado
+  motivo String? @db.VarChar(200)
+  @@index([cuenta_id, createdAt], map: "admin_auditoria_cuenta_idx")
+  @@index([actor_id, createdAt], map: "admin_auditoria_actor_idx")
+  @@map("admin_auditoria")
 }
 
 model AdminItem {
@@ -51,6 +105,7 @@ model Curso {
   estado CursoEstado @default(borrador)
   createdAt DateTime @default(now()) @db.DateTime(0)
   updatedAt DateTime @updatedAt @db.DateTime(0)
+  convocatorias Convocatoria[]
   @@map("cursos")
 }
 
@@ -314,4 +369,436 @@ model ChatbotPreguntaSinRespuesta {
   updatedAt DateTime @updatedAt @db.DateTime(0)
   @@index([updatedAt], map: "chatbot_sin_respuesta_updated_idx")
   @@map("chatbot_preguntas_sin_respuesta")
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Académico (E4.2, migración 20261015-academico-estructura). Solo estructura: todavía no la usa ningún servicio ni ruta.
+// Las reglas CHECK, la columna generada de certificados y las claves foráneas viven en MySQL; Prisma no las valida ni las crea.
+// Nada se borra físicamente: estudiantes y convocatorias se archivan, matrículas y certificados se anulan (relaciones RESTRICT).
+// ---------------------------------------------------------------------------------------------------------------------------
+
+// Documento aceptado (E4.3b, migración 20261016-academico-solo-dni): solo DNI peruano. Registro manual: ningún campo indica
+// verificación externa (sin RENIEC); un formato válido no equivale a una identidad verificada.
+enum DocumentoTipo {
+  DNI
+}
+
+// Documento opcional (se puede registrar y matricular sin él), pero todo o nada: doc_pais, doc_tipo y doc_numero son los tres
+// NULL o los tres completos. Formato en MySQL: país PE, tipo DNI y exactamente 8 dígitos ASCII (CHECK con REGEXP_LIKE y
+// CHAR_LENGTH = 8). El servicio normaliza antes de guardar; VARCHAR conserva los ceros iniciales. Varios estudiantes sin
+// documento son válidos (UNIQUE admite varios NULL). Emitir un certificado exige el DNI completo.
+model Estudiante {
+  id Int @id @default(autoincrement())
+  nombres String @db.VarChar(120)
+  apellidos String @db.VarChar(120)
+  doc_pais String? @db.Char(2)
+  doc_tipo DocumentoTipo?
+  doc_numero String? @db.VarChar(20)
+  email String? @db.VarChar(254) // opcional y sin UNIQUE: varios estudiantes pueden compartir contacto
+  telefono String? @db.VarChar(30) // opcional y sin UNIQUE
+  archivado_at DateTime? @db.DateTime(3) // NULL = activo
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  matriculas Matricula[]
+  @@unique([doc_pais, doc_tipo, doc_numero], map: "estudiantes_documento_uq")
+  @@index([apellidos, nombres], map: "estudiantes_nombre_idx")
+  @@map("estudiantes")
+}
+
+enum ConvocatoriaPreinscripcionEstado {
+  abierta
+  cerrada
+}
+
+// abierta = admite matrículas; cerrada = ya no las admite (terminada o completa); cancelada = no se dictará.
+enum ConvocatoriaEstado {
+  planificada
+  abierta
+  cerrada
+  cancelada
+}
+
+// Edición concreta de un Curso (curso o capacitación). Sus fechas y su estado son propios: no leen ni modifican
+// Curso.fecha_inicio ni Curso.estado. Fechas de calendario (DATE).
+model Convocatoria {
+  id Int @id @default(autoincrement())
+  capacidad Int? // NULL conserva ediciones anteriores cuya capacidad aún no se ha definido.
+  minimo_apertura Int? // Preinscripciones validadas necesarias para confirmar la apertura (20261020-preinscripciones). NULL = edición anterior sin requisito; el alta por API fija 10.
+  preinscripcion_estado ConvocatoriaPreinscripcionEstado @default(cerrada) // ¿Recibe preinscripciones? Lo decide Gerencia o Coordinación; independiente de la apertura académica.
+  codigo_publico String? @unique(map: "convocatorias_codigo_publico_uq") @db.Char(32) // Identificador opaco para el público (NO secuencial). Se genera al crear la edición o al habilitar la recepción.
+  curso_id Int
+  curso Curso @relation(fields: [curso_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "convocatorias_curso_fk")
+  nombre String @db.VarChar(160)
+  fecha_inicio DateTime? @db.Date
+  fecha_fin DateTime? @db.Date
+  estado ConvocatoriaEstado @default(planificada)
+  archivado_at DateTime? @db.DateTime(3) // NULL = no archivada
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  matriculas Matricula[]
+  importaciones ImportacionAcademica[]
+  docentes DocenteAsignacion[]
+  horarios ConvocatoriaHorario[]
+  preinscripciones Preinscripcion[]
+  @@index([curso_id, fecha_inicio], map: "convocatorias_curso_idx")
+  @@index([estado, fecha_inicio], map: "convocatorias_estado_idx")
+  @@map("convocatorias")
+}
+
+enum ImportacionEstado {
+  confirmada
+}
+
+model ImportacionAcademica {
+  id String @id @db.Char(36)
+  archivo_sha256 String @db.Char(64)
+  convocatoria_id Int
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "importaciones_convocatoria_fk")
+  actor_id Int
+  actor AdminUser @relation(fields: [actor_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "importaciones_actor_fk")
+  estado ImportacionEstado @default(confirmada)
+  importados Int
+  omitidos Int
+  rechazados Int
+  estudiantes_nuevos Int
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  @@unique([archivo_sha256, convocatoria_id], map: "importaciones_archivo_destino_uq")
+  @@map("importaciones_academicas")
+}
+
+enum MatriculaEstado {
+  activa
+  anulada
+}
+
+// Confirmación administrativa del cumplimiento (no es una calificación).
+enum MatriculaCumplimiento {
+  pendiente
+  cumplido
+  no_cumplido
+}
+
+// Roles que pueden confirmar el cumplimiento. La SECRETARIA no figura: MySQL rechaza una confirmación con ese rol.
+enum MatriculaConfirmadorRol {
+  GERENTE_GENERAL
+  COORDINADORA_INSTITUCIONAL
+}
+
+// Una matrícula por estudiante y convocatoria (una anulada se reactiva, no se duplica). MySQL exige coherencia: pendiente
+// sin datos de confirmación; cumplido/no_cumplido con confirmado_por, confirmado_rol (gerente o coordinadora) y confirmado_at.
+model Matricula {
+  id Int @id @default(autoincrement())
+  estudiante_id Int
+  estudiante Estudiante @relation(fields: [estudiante_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "matriculas_estudiante_fk")
+  convocatoria_id Int
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "matriculas_convocatoria_fk")
+  estado MatriculaEstado @default(activa)
+  cumplimiento MatriculaCumplimiento @default(pendiente)
+  confirmado_por Int?
+  confirmador AdminUser? @relation("MatriculaConfirmadoPor", fields: [confirmado_por], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "matriculas_confirmado_por_fk")
+  confirmado_rol MatriculaConfirmadorRol? // rol de quien confirmó, en ese momento
+  confirmado_at DateTime? @db.DateTime(3)
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  certificados Certificado[]
+  preinscripciones Preinscripcion[] // MySQL limita a una (UNIQUE sobre preinscripciones.matricula_id)
+  @@unique([id, estudiante_id, convocatoria_id], map: "matriculas_id_relaciones_uq") // 20261020-preinscripciones: clave compuesta que obliga a que la preinscripción convertida apunte a una matrícula de la MISMA edición y del MISMO estudiante
+  @@unique([estudiante_id, convocatoria_id], map: "matriculas_estudiante_convocatoria_uq")
+  @@index([convocatoria_id, estado], map: "matriculas_convocatoria_idx")
+  @@index([confirmado_por], map: "matriculas_confirmado_por_idx")
+  @@map("matriculas")
+}
+
+enum CertificadoEstado {
+  vigente
+  anulado
+}
+
+// Los datos del estudiante, el curso y la convocatoria se copian al emitir y no cambian después (DNI completo obligatorio:
+// sin él no hay certificado). Un anulado se conserva con quién, cuándo y por qué.
+// Un solo vigente por matrícula: MySQL mantiene la columna generada STORED `vigente_matricula_id` (= matricula_id si
+// vigente, NULL si anulado) con UNIQUE `certificados_vigente_uq`. Esa columna NO se declara aquí a propósito: Prisma no
+// admite columnas generadas y nunca debe escribirla. Un segundo vigente falla con P2002 sobre ese índice.
+// Sustitución: el nuevo certificado apunta al anterior con sustituye_a_id; la clave foránea compuesta exige que ambos sean
+// de la MISMA matrícula y el UNIQUE que cada certificado se sustituya una sola vez. MySQL NO comprueba el resto (que el
+// anterior esté anulado antes de emitir el nuevo, motivo, permisos): lo hará el servicio, en una transacción.
+model Certificado {
+  id Int @id @default(autoincrement())
+  matricula_id Int
+  matricula Matricula @relation(fields: [matricula_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "certificados_matricula_fk")
+  codigo_verificacion String @unique(map: "certificados_codigo_uq") @db.VarChar(32) // aleatorio (crypto), 16-32 [A-Z0-9]
+  estado CertificadoEstado @default(vigente)
+  estudiante_nombres String @db.VarChar(120)
+  estudiante_apellidos String @db.VarChar(120)
+  estudiante_doc_pais String @db.Char(2)
+  estudiante_doc_tipo DocumentoTipo
+  estudiante_doc_numero String @db.VarChar(20)
+  curso_titulo String @db.VarChar(160)
+  curso_tipo CursoTipo
+  curso_duracion String? @db.VarChar(120)
+  convocatoria_nombre String @db.VarChar(160)
+  convocatoria_fecha_inicio DateTime? @db.Date
+  convocatoria_fecha_fin DateTime? @db.Date
+  emitido_por Int
+  emisor AdminUser @relation("CertificadoEmitidoPor", fields: [emitido_por], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "certificados_emitido_por_fk")
+  emitido_at DateTime @default(now()) @db.DateTime(3)
+  anulado_por Int?
+  anulador AdminUser? @relation("CertificadoAnuladoPor", fields: [anulado_por], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "certificados_anulado_por_fk")
+  anulado_at DateTime? @db.DateTime(3)
+  anulacion_motivo String? @db.VarChar(300)
+  sustituye_a_id Int?
+  sustituye_a Certificado? @relation("CertificadoSustitucion", fields: [sustituye_a_id, matricula_id], references: [id, matricula_id], onDelete: Restrict, onUpdate: Restrict, map: "certificados_sustituye_fk")
+  sustituido_por Certificado? @relation("CertificadoSustitucion")
+  @@unique([id, matricula_id], map: "certificados_id_matricula_uq")
+  @@unique([sustituye_a_id, matricula_id], map: "certificados_sustituye_uq")
+  @@index([matricula_id, emitido_at], map: "certificados_matricula_idx")
+  @@index([emitido_por], map: "certificados_emitido_por_idx")
+  @@index([anulado_por], map: "certificados_anulado_por_idx")
+  @@map("certificados")
+}
+
+enum AcademicoEntidad {
+  estudiante
+  convocatoria
+  matricula
+  certificado
+  docente // 20261020-docentes
+  asignacion_docente // 20261020-docentes
+  sesion // 20261020-sesiones-academicas (migración RETIRADA): solo filas históricas de bases que la aplicaron; el código ya no lo escribe
+}
+
+enum AcademicoOperacion {
+  creacion
+  edicion
+  archivado
+  restauracion
+  cambio_estado
+  anulacion
+  confirmacion
+  emision
+  sustitucion
+  reprogramacion // 20261020-sesiones-academicas (migración RETIRADA): solo filas históricas; el código ya no lo escribe
+}
+
+enum AcademicoOrigen {
+  panel
+  terminal
+}
+
+// Historial de solo inserción de los cambios académicos. Se escribe en la MISMA transacción que el cambio (si falla, no se
+// aplica ninguno de los dos). Sin claves foráneas a propósito, como admin_auditoria. No guarda datos personales: `campos`
+// es un array JSON con los NOMBRES de los campos modificados, nunca sus valores; los estados son etiquetas del sistema.
+// MySQL exige actor_id si el origen es el panel y operador si es la terminal.
+model AcademicoHistorial {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  entidad AcademicoEntidad
+  entidad_id Int
+  operacion AcademicoOperacion
+  origen AcademicoOrigen
+  actor_id Int?
+  actor_rol AdminRol?
+  operador String? @db.VarChar(100)
+  estado_anterior String? @db.VarChar(30)
+  estado_nuevo String? @db.VarChar(30)
+  campos Json?
+  revision Int? // revisión del registro tras el cambio
+  motivo String? @db.VarChar(300)
+  @@index([entidad, entidad_id, createdAt], map: "academico_historial_entidad_idx")
+  @@index([actor_id, createdAt], map: "academico_historial_actor_idx")
+  @@map("academico_historial")
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Docentes y ponentes (migración 20261020-docentes). Son una entidad académica, NO una cuenta: no tienen contraseña, rol ni
+// relación con admin_users, y registrar un docente nunca crea una cuenta de acceso. Nada se borra: un docente se desactiva
+// (activo = false) y sus asignaciones se conservan (relaciones RESTRICT). Las reglas CHECK, la columna generada y las claves
+// foráneas viven en MySQL; Prisma no las valida ni las crea.
+// ---------------------------------------------------------------------------------------------------------------------------
+
+// Documento opcional y de solo DNI peruano, con la misma regla que Estudiante: doc_pais, doc_tipo y doc_numero son los tres NULL
+// o los tres completos. Duplicados: UNIQUE sobre el documento y sobre el correo (ambos admiten varios NULL, sin comparar la
+// colación unicode_ci, que ignora mayúsculas y tildes). El nombre NO es único (existen homónimos): el servicio avisa con 409
+// salvo que se confirme que es otra persona.
+model Docente {
+  id Int @id @default(autoincrement())
+  nombres String @db.VarChar(120)
+  apellidos String @db.VarChar(120)
+  doc_pais String? @db.Char(2)
+  doc_tipo DocumentoTipo?
+  doc_numero String? @db.VarChar(20)
+  especialidad String? @db.VarChar(120)
+  profesion String? @db.VarChar(120)
+  email String? @unique(map: "docentes_email_uq") @db.VarChar(254)
+  telefono String? @db.VarChar(30)
+  activo Boolean @default(true)
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  asignaciones DocenteAsignacion[]
+  @@unique([doc_pais, doc_tipo, doc_numero], map: "docentes_documento_uq")
+  @@index([apellidos, nombres], map: "docentes_nombre_idx")
+  @@map("docentes")
+}
+
+// principal = responsable de la edición (como máximo uno activo); participante = ponente o docente adicional (sin límite).
+enum DocenteRol {
+  principal
+  participante
+}
+
+// activa = figura en el equipo docente; retirada = ya no, pero la fila y su motivo se conservan (historial).
+enum DocenteAsignacionEstado {
+  activa
+  retirada
+}
+
+// Un docente y una edición tienen UNA sola fila (UNIQUE docente_id + convocatoria_id, incluidas las retiradas): retirar y volver
+// a asignar reactiva esa fila, no crea otra. Un solo principal activo por edición: MySQL mantiene la columna generada STORED
+// `principal_activo_convocatoria_id` (= convocatoria_id si rol principal y estado activa, NULL en otro caso) con UNIQUE
+// `docente_asignaciones_principal_uq`. Esa columna NO se declara aquí a propósito: Prisma no admite columnas generadas y nunca
+// debe escribirla. Sustitución: la fila nueva apunta con sustituye_a_id a la retirada; la clave foránea compuesta exige que ambas
+// sean de la MISMA edición. Que la anterior esté retirada, que el docente nuevo esté activo y que la edición admita cambios lo
+// comprueba el servicio, en una transacción con bloqueo curso → edición → docente.
+model DocenteAsignacion {
+  id Int @id @default(autoincrement())
+  docente_id Int
+  docente Docente @relation(fields: [docente_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "docente_asignaciones_docente_fk")
+  convocatoria_id Int
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "docente_asignaciones_convocatoria_fk")
+  rol DocenteRol @default(participante)
+  estado DocenteAsignacionEstado @default(activa)
+  sustituye_a_id Int?
+  sustituye_a DocenteAsignacion? @relation("DocenteSustitucion", fields: [sustituye_a_id, convocatoria_id], references: [id, convocatoria_id], onDelete: Restrict, onUpdate: Restrict, map: "docente_asignaciones_sustituye_fk")
+  sustituciones DocenteAsignacion[] @relation("DocenteSustitucion")
+  retirado_at DateTime? @db.DateTime(3)
+  retiro_motivo String? @db.VarChar(300)
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  @@unique([docente_id, convocatoria_id], map: "docente_asignaciones_docente_edicion_uq")
+  @@unique([id, convocatoria_id], map: "docente_asignaciones_id_edicion_uq")
+  @@index([convocatoria_id, estado], map: "docente_asignaciones_edicion_idx")
+  @@index([sustituye_a_id, convocatoria_id], map: "docente_asignaciones_sustituye_idx")
+  @@map("docente_asignaciones")
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Horarios recurrentes de una edición (migración 20261023-convocatoria-horarios). Cada fila es un tramo semanal en el que se dicta la
+// edición: día de la semana + hora de inicio y de fin (por ejemplo, lunes 19:00–22:00). NO son clases individuales: no tienen fecha, estado
+// ni seguimiento (el módulo de Sesiones se retiró; su tabla histórica `sesiones`, si existe, ya no tiene modelo Prisma ni código).
+//
+// dia_semana: ISO-8601, 1 = lunes … 7 = domingo (TINYINT con CHECK 1–7). hora_inicio y hora_fin son hora de pared de America/Lima (TIME,
+// sin zona horaria; ver common/lima-time.ts), en minutos exactos, sin cruzar la medianoche: inicio < fin ≤ 23:59. Intervalos [inicio, fin):
+// un tramo puede empezar justo cuando termina otro. MySQL impide dos tramos que empiecen a la misma hora el mismo día (UNIQUE); los
+// solapamientos parciales los rechaza el servicio, que reemplaza el conjunto completo en una transacción con bloqueo curso → edición.
+// Relación RESTRICT, como el resto del esquema académico: una edición con horarios no se puede borrar (las ediciones no se borran, se archivan).
+model ConvocatoriaHorario {
+  id Int @id @default(autoincrement())
+  convocatoria_id Int
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "convocatoria_horarios_convocatoria_fk")
+  dia_semana Int @db.TinyInt
+  hora_inicio DateTime @db.Time(0)
+  hora_fin DateTime @db.Time(0)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  @@unique([convocatoria_id, dia_semana, hora_inicio], map: "convocatoria_horarios_inicio_uq")
+  @@map("convocatoria_horarios")
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Preinscripciones (migración 20261020-preinscripciones). Solicitud pública de interés en una edición, hecha por el formulario web o
+// por el chatbot (el servidor fija el canal). NO es una matrícula: no ocupa cupo, no pide DNI, pagos ni comprobantes. Un
+// administrador la valida y, más tarde, la convierte en matrícula con el servicio de Matrículas. Nada se borra: los estados finales
+// son desistida, descartada y matriculada.
+//
+// recibida → validada | descartada | desistida;  validada → matriculada | descartada | desistida;  los demás son finales.
+// Cuentan para el mínimo de apertura SOLO validada y matriculada (nunca recibida).
+//
+// Duplicados: MySQL mantiene la columna generada STORED `vigente_email` (= email mientras el estado sea recibida, validada o
+// matriculada; NULL si desistida o descartada) con UNIQUE (convocatoria_id, vigente_email). Esa columna NO se declara aquí a
+// propósito: Prisma no admite columnas generadas y nunca debe escribirla. Un segundo vigente con el mismo correo falla con P2002.
+// Tras desistir o descartar, la misma persona puede volver a preinscribirse.
+//
+// Conversión: estudiante_id, matricula_id, convertida_por y convertida_at son todos NULL o todos completos (CHECK según el estado), y
+// la clave foránea compuesta (matricula_id, estudiante_id, convocatoria_id) → matriculas obliga a que la matrícula sea de la misma
+// edición y del mismo estudiante. Los datos personales viven solo aquí; preinscripciones_historial guarda NOMBRES de campos.
+// ---------------------------------------------------------------------------------------------------------------------------
+
+enum PreinscripcionEstado {
+  recibida
+  validada
+  matriculada
+  desistida
+  descartada
+}
+
+enum PreinscripcionCanal {
+  formulario
+  chatbot
+}
+
+enum PreinscripcionOperacion {
+  creacion
+  correccion
+  validacion
+  descarte
+  desistimiento
+  conversion
+}
+
+model Preinscripcion {
+  id Int @id @default(autoincrement())
+  convocatoria_id Int
+  convocatoria Convocatoria @relation(fields: [convocatoria_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_convocatoria_fk")
+  nombres String @db.VarChar(120)
+  apellidos String @db.VarChar(120)
+  email String @db.VarChar(254)
+  telefono String @db.VarChar(30)
+  canal PreinscripcionCanal
+  estado PreinscripcionEstado @default(recibida)
+  consentimiento_at DateTime @db.DateTime(3)
+  aviso_version String @db.VarChar(30)
+  estudiante_id Int?
+  matricula_id Int?
+  matricula Matricula? @relation(fields: [matricula_id, estudiante_id, convocatoria_id], references: [id, estudiante_id, convocatoria_id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_matricula_fk")
+  convertida_por Int?
+  convertidor AdminUser? @relation(fields: [convertida_por], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_convertida_por_fk")
+  convertida_at DateTime? @db.DateTime(3)
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  historial PreinscripcionHistorial[]
+  @@unique([matricula_id], map: "preinscripciones_matricula_uq")
+  @@index([convocatoria_id, estado, createdAt], map: "preinscripciones_edicion_idx")
+  @@index([email], map: "preinscripciones_email_idx")
+  @@index([estado, createdAt], map: "preinscripciones_estado_idx")
+  @@index([matricula_id, estudiante_id, convocatoria_id], map: "preinscripciones_matricula_rel_idx")
+  @@index([estudiante_id], map: "preinscripciones_estudiante_idx")
+  @@index([convertida_por], map: "preinscripciones_convertida_por_idx")
+  @@map("preinscripciones")
+}
+
+// Historial de solo inserción, en la MISMA transacción que el cambio. Propio de las preinscripciones: no toca el ENUM de
+// academico_historial. `campos` guarda los NOMBRES de los campos modificados, nunca sus valores. Sin actor en la creación (la hace el
+// visitante); con actor en todo lo demás.
+model PreinscripcionHistorial {
+  id Int @id @default(autoincrement())
+  preinscripcion_id Int
+  preinscripcion Preinscripcion @relation(fields: [preinscripcion_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "preinscripciones_historial_fk")
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  operacion PreinscripcionOperacion
+  canal PreinscripcionCanal?
+  actor_id Int?
+  actor_rol AdminRol?
+  estado_anterior PreinscripcionEstado?
+  estado_nuevo PreinscripcionEstado?
+  campos Json?
+  revision Int
+  motivo String? @db.VarChar(300)
+  @@index([preinscripcion_id, createdAt], map: "preinscripciones_historial_item_idx")
+  @@index([actor_id, createdAt], map: "preinscripciones_historial_actor_idx")
+  @@map("preinscripciones_historial")
 }

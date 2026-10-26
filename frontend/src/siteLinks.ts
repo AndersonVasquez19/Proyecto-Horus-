@@ -1,12 +1,13 @@
-// Links shared by the whole website. Social links live in the panel (CompanySettings, see hooks/useSocialLinks.ts);
-// the only global fallback is the WhatsApp short link below, used while the panel number is empty or invalid.
-// It carries the preset message ("Hola, quisiera que me brinde información sobre lo que están ofreciendo en este mes.").
-const WHATSAPP_FALLBACK_URL = 'https://wa.link/m8o5hw'
+// Links shared by the whole website. Social links come from institutional CompanySettings (see hooks/useSocialLinks.ts);
+// the global WhatsApp fallback below is used when the configured number is empty or invalid.
+// All WhatsApp links carry the same preset message.
+const WHATSAPP_MESSAGE = encodeURIComponent('Hola, quisiera que me brinde información sobre lo que están ofreciendo en este mes.')
+const WHATSAPP_FALLBACK_URL = 'https://wa.me/51972021374?text=' + WHATSAPP_MESSAGE
 
-// WhatsApp link built from the number saved in the panel (setting "whatsapp"); the panel stays the main source.
+// WhatsApp link built from the institutional setting "whatsapp".
 export const whatsappHref = (panelNumber: string) => {
   const digits = panelNumber.replace(/\D/g, '')
-  return digits.length >= 7 && digits.length <= 15 ? 'https://wa.me/' + digits : WHATSAPP_FALLBACK_URL
+  return digits.length >= 7 && digits.length <= 15 ? 'https://wa.me/' + digits + '?text=' + WHATSAPP_MESSAGE : WHATSAPP_FALLBACK_URL
 }
 
 // Single reference for the business location, shared by Home and Contactos. The embedded map and the "Cómo llegar"

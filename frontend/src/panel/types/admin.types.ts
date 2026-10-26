@@ -1,8 +1,12 @@
+// Identidad de la sesión (los campos de siempre). El rol, los permisos y el modo de acceso viven aparte, en `SessionAccess`.
 export interface AdminUser {
   id: number;
   nombre: string;
   email: string;
 }
+
+// Roles, modos y datos de acceso informados por el backend (ver context/sessionAccess.ts). Solo informativos: no autorizan nada.
+export type { AdminRole, AccessMode, SessionAccess } from '../context/sessionAccess';
 
 export interface AdminItem {
   id: number;

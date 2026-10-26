@@ -175,7 +175,7 @@ export default function Contactos() {
     }
   }
 
-  const phone = setting('telefono_principal', '+51 927 582 305')
+  const phone = setting('telefono_principal', '+51 972 021 374')
   const email = setting('email_contacto', 'horusgroupcajamarca@gmail.com')
   const { whatsapp } = useSocialLinks()
   const address = setting('direccion', 'Cajamarca - Peru')

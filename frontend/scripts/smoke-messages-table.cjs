@@ -1,7 +1,7 @@
 // Vista Tabla de Mensajes en la bandeja moderna (MessageInbox) con API simulada: nada real (ni datos, ni sesiones, ni correo). Edge por DevTools.
 // Cobertura heredada de la tabla antigua (D1, ResourceManager), migrada en D6.3 fase A: GET /admin/messages responde { messages, pagination, metrics }
 // y una respuesta paginada SIN «messages» es un error de formato, no una lista vacía.
-const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), os = require('node:os'), { spawn } = require('node:child_process');
+const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), { spawn } = require('node:child_process');
 const root = path.resolve(__dirname, '../dist'), browser = process.env.SMOKE_BROWSER || 'C:/Users/PCT40T/Documents/Proyecto-Horus-/../../../../Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const edge = process.env.SMOKE_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -10,6 +10,8 @@ const TOKEN = 'e30.' + Buffer.from(JSON.stringify({ id: 1 })).toString('base64ur
 
 // ---------- API simulada ----------
 const sim = { mode: 'ok' }; const writes = [];
+let allowedTransitions;
+const withTransitions = item => ({ ...item, transiciones_permitidas: allowedTransitions(item.estado) });
 const messages = Array.from({ length: 25 }, (_, i) => { const id = 25 - i; return { id, nombre: 'Persona ' + id, email: 'p' + id + '@example.test', telefono: '987654' + String(id).padStart(3, '0'), asunto: 'Asunto ' + id, mensaje: 'Mensaje ' + id, estado: id % 5 === 0 ? 'en_proceso' : 'nuevo', createdAt: '2026-01-' + String(id).padStart(2, '0') + 'T10:00:00.000Z' }; });
 // Textos con caracteres especiales para la seguridad del CSV
 Object.assign(messages.find(m => m.id === 24), { nombre: '=HYPERLINK("http://x.test","clic")' });
@@ -35,7 +37,7 @@ const server = http.createServer(async (req, res) => {
       if (route.startsWith('/api/admin/')) {
         if (token !== TOKEN) return json({ message: 'Unauthorized' }, 401);
         const sub = route.slice('/api/admin/'.length); let m;
-        if (req.method !== 'GET') { const data = await body(); writes.push({ method: req.method, route: sub, data }); if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/)) && req.method === 'PUT') { const cur = attention[m[1]] || { estado: 'nuevo', responsable: '', notas: 'nota previa', respuesta: '', revision: 1, historial: [] }; attention[m[1]] = { ...cur, ...data, revision: cur.revision + 1 }; return json({ ok: true, item: attention[m[1]] }); } return json({ ok: true, item: { id: 99, ...data } }); }
+        if (req.method !== 'GET') { const data = await body(); writes.push({ method: req.method, route: sub, data }); if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/)) && req.method === 'PUT') { const cur = attention[m[1]] || { estado: 'nuevo', responsable: '', notas: 'nota previa', respuesta: '', revision: 1, historial: [] }; attention[m[1]] = { ...cur, ...data, revision: cur.revision + 1 }; return json({ ok: true, item: withTransitions(attention[m[1]]) }); } return json({ ok: true, item: { id: 99, ...data } }); }
         if (sub === 'messages') {
           if (sim.mode === 'error') return json({ message: 'Internal server error ER_SECRET' }, 503);
           if (sim.mode === 'broken') return json({ ok: true, items: [], pagination: { total: 0, page: 1, limit: 8, pages: 0 } }); // formato inesperado: paginado pero sin "messages"
@@ -44,7 +46,7 @@ const server = http.createServer(async (req, res) => {
           return json({ ok: true, messages: rows.slice((page - 1) * limit, page * limit), pagination: { total: rows.length, page, limit, pages: Math.ceil(rows.length / limit) }, metrics: Object.fromEntries(['nuevo','en_proceso','atendido','archivado'].map(s=>[s,effectiveMessages().filter(m=>m.estado===s).length])) });
         }
         if ((m = sub.match(/^messages\/(\d+)$/))) return json({ ok: true, message: effectiveMessages().find(x => x.id === +m[1]) });
-        if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/))) return json({ ok: true, item: attention[m[1]] || { estado: messages.find(x => x.id === +m[1])?.estado || 'nuevo', responsable: '', notas: 'nota previa', respuesta: '', revision: 1, historial: [] } });
+        if ((m = sub.match(/^seguimiento\/messages\/(\d+)$/))) return json({ ok: true, item: withTransitions(attention[m[1]] || { estado: messages.find(x => x.id === +m[1])?.estado || 'nuevo', responsable: '', notas: 'nota previa', respuesta: '', revision: 1, historial: [] }) });
         if (sub === 'cursos') return json({ ok: true, items: cursos, pagination: { total: cursos.length, pages: 1 } });
         if ((m = sub.match(/^cursos\/(\d+)$/))) return json({ ok: true, item: cursos.find(x => x.id === +m[1]) });
         return json({ ok: true, items: [], messages: [], pagination: { page: 1, total: 0, pages: 1 }, metrics: {} });
@@ -77,17 +79,16 @@ function parseCsv(text) { // lector mínimo: comillas dobles, comas, saltos dent
   row.push(cell); rows.push(row); return rows;
 }
 
-// En Windows child.kill() solo cierra el proceso raíz de Edge y dejaba docenas de procesos huérfanos: se cierra el árbol completo.
-function killBrowser(child) { try { if (process.platform === 'win32') require('node:child_process').spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }); else child.kill(); } catch { /* ya cerrado */ } }
 async function main() {
+  ({ allowedTransitions } = await import(require('node:url').pathToFileURL(path.resolve(__dirname, '../../backend/src/attention/attention-rules.ts'))));
   if (!fs.existsSync(path.join(root, 'index.html'))) throw new Error('Falta dist/: ejecuta "npm run build".');
   if (newestMtime(path.resolve(__dirname, '../src')) > fs.statSync(path.join(root, 'index.html')).mtimeMs) throw new Error('dist/ está desactualizado respecto a src/: ejecuta "npm run build" antes del smoke.');
   if (!fs.existsSync(edge)) throw new Error('Configura SMOKE_BROWSER con una instalación de Edge/Chromium.');
   await new Promise(r => server.listen(0, '127.0.0.1', r)); const origin = 'http://127.0.0.1:' + server.address().port;
   const probe = http.createServer(); await new Promise(r => probe.listen(0, '127.0.0.1', r)); const port = probe.address().port; await new Promise(r => probe.close(r));
-  const profile = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'horus-msgtable-'));
-  const child = spawn(edge, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
-  const cleanup = require('./smoke-cleanup.cjs')(child,profile,server,killBrowser);
+  const profile = require('./smoke-cleanup.cjs').createProfile('horus-msgtable-');
+  const child = spawn(edge, ['--headless=new', '--disable-gpu', '--no-first-run', '--remote-debugging-port=' + port, '--user-data-dir=' + profile, 'about:blank'], { detached: process.platform !== 'win32', windowsHide: true, stdio: 'ignore' });
+  const cleanup = require('./smoke-cleanup.cjs')(child,profile,server);
   let version; for (let i = 0; i < 100 && !version; i++) { await sleep(100); try { version = await fetch('http://127.0.0.1:' + port + '/json/version').then(r => r.json()); } catch { /* arrancando */ } }
   const bc = connect(version.webSocketDebuggerUrl); await bc.ready;
   const jsErrors = [], blocked = [], pages = []; let fails = 0;
@@ -171,10 +172,10 @@ async function main() {
     ck(!/nota previa|mensaje/i.test(rows[0].join('|')), 'el CSV no incluye notas ni el cuerpo del mensaje');
     await p.close(); }
 
-  { // otro recurso con «items» (ResourceManager sigue intacto para el resto de secciones)
-    const p = await session('/admin/dashboard?section=cursos&seccion=cursos&vista=tabla'); await p.wait('document.querySelectorAll(".hp-table tbody tr").length === 3', 'tabla de cursos');
-    const rows = await p.evaluate("[...document.querySelectorAll('.hp-table tbody tr')].map(tr => tr.querySelector('.hp-record strong')?.textContent)");
-    ck(rows.join('|') === 'Curso 1|Curso 2|Curso 3' && (await p.evaluate("document.querySelector('.hp-card-heading .hp-count')?.textContent")) === '3', 'cursos (respuesta con «items»): sigue mostrando sus registros y su total en ResourceManager', { rows }); await p.close(); }
+  { // vista=tabla en otra sección no abre la tabla de mensajes. Cursos ya no se gestiona en el panel (separación del contenido
+    // institucional): su dirección antigua muestra el aviso, sin tabla ni bandeja.
+    const p = await session('/admin/dashboard?section=cursos&seccion=cursos&vista=tabla'); await p.wait('document.querySelector("[data-panel-editorial-retired]")', 'aviso de cursos retirados');
+    ck(await p.evaluate('!document.querySelector(".hw-inbox") && !document.querySelector(".hp-table")'), 'cursos con vista=tabla: aviso de gestión retirada, sin tabla de registros ni bandeja de mensajes'); await p.close(); }
 
   console.log('\n== FUNCIONES CONSERVADAS');
   { const p = await session(TABLE); await waitRows(p, 20, 'tabla');
