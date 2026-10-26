@@ -64,7 +64,7 @@ export const PANEL_ACTIONS = Object.freeze({
   restaurarContenidoOriginal: 'contenido_original:restaurar', // POST /admin/contenido-original/:section
   crearConvenio: 'convenios:crear', editarConvenio: 'convenios:editar', eliminarConvenio: 'convenios:eliminar', // también fotos (editar)
   crearCotizacion: 'cotizaciones:crear', editarCotizacion: 'cotizaciones:editar', enviarCotizacion: 'cotizaciones:enviar', anularCotizacion: 'cotizaciones:anular',
-  crearMensaje: 'mensajes:crear', eliminarMensaje: 'mensajes:eliminar',
+  crearMensaje: 'mensajes:crear', eliminarMensaje: 'mensajes:eliminar', exportarMensajes: 'mensajes:exportar',
   leerSeguimiento: 'seguimiento_mensajes:leer', editarSeguimiento: 'seguimiento_mensajes:editar', enviarSeguimiento: 'seguimiento_mensajes:enviar',
   editarConfiguracion: 'configuracion:editar', // PUT /admin/settings
   asignarRol: 'cuentas:asignar_rol', // PUT /admin/users/:id/rol (Roles y usuarios)

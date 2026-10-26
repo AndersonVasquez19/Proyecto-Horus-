@@ -28,6 +28,19 @@ const legacyBackend = () => parseSession({ ok: true, user: identity }).access
 const WORK = PANEL_SECTIONS.filter(rule => rule.anyOf.length && rule.available !== false && !rule.requiresRolesMode).map(rule => rule.key)
 const visible = nav => PANEL_SECTIONS.map(rule => rule.key).filter(key => nav.canOpen(key))
 
+test('exportar consultas exige el permiso efectivo, sin concederlo por leer ni por el nombre del rol', () => {
+  assert.equal(PANEL_ACTIONS.exportarMensajes, 'mensajes:exportar')
+  for (const role of Object.keys(PERMISOS)) {
+    const nav = panelNavigation(session(role, 'por_roles'))
+    assert.equal(nav.canOpen('mensajes'), true, role)
+    assert.equal(nav.can(PANEL_ACTIONS.exportarMensajes), role === 'GERENTE_GENERAL', role)
+    const limited = panelNavigation(session(role, 'por_roles', ['mensajes:leer']))
+    assert.equal(limited.canOpen('mensajes'), true)
+    assert.equal(limited.can(PANEL_ACTIONS.exportarMensajes), false)
+  }
+  assert.equal(panelNavigation(null).can(PANEL_ACTIONS.exportarMensajes), false)
+})
+
 test('cursos y capacitaciones nunca ofrecen DELETE, independientemente del rol, modo o estado', () => {
   for (const mode of ['heredado', 'por_roles']) for (const rol of [null, ...Object.keys(PERMISOS)]) {
     const nav = panelNavigation(session(rol, mode))
@@ -225,6 +238,7 @@ test('las demás operaciones del panel coinciden con sus rutas', () => {
   assert.equal(routePermission('POST', 'admin/cotizaciones/:id/correo'), A.enviarCotizacion)
   assert.deepEqual(routeByField('POST', 'admin/cotizaciones/:id/estado'), { field: 'estado', base: A.editarCotizacion, when: { anulada: A.anularCotizacion, enviada: A.enviarCotizacion } })
   assert.equal(routePermission('POST', 'admin/messages'), A.crearMensaje)
+  assert.equal(routePermission('GET', 'admin/messages/exportar'), A.exportarMensajes)
   assert.equal(routePermission('DELETE', 'admin/messages/:id'), A.eliminarMensaje)
   assert.equal(routePermission('PUT', 'admin/settings'), A.editarConfiguracion)
   assert.equal(routePermission('PUT', 'admin/users/:id/rol'), A.asignarRol)

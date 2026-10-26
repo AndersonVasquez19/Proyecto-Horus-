@@ -29,6 +29,7 @@ export default function MessageInbox() {
   // envíos, eliminación y el enlace para preparar una cotización (exige poder abrir Cotizaciones y crear).
   const access = usePanelAccess();
   const canCreate = access.can(PANEL_ACTIONS.crearMensaje), canDelete = access.can(PANEL_ACTIONS.eliminarMensaje);
+  const canExport = access.can(PANEL_ACTIONS.exportarMensajes);
   const canReadFollowUp = access.can(PANEL_ACTIONS.leerSeguimiento), canEditFollowUp = canReadFollowUp && access.can(PANEL_ACTIONS.editarSeguimiento);
   const canSendFollowUp = access.can(PANEL_ACTIONS.enviarSeguimiento);
   const canQuote = access.canOpen('cotizaciones') && access.can(PANEL_ACTIONS.crearCotizacion);
@@ -92,22 +93,25 @@ export default function MessageInbox() {
   };
   // Exportación de los resultados filtrados: páginas en serie con el endpoint paginado; nada se descarga si alguna página falla o los datos cambian.
   const latestToken = useLatest(token);
+  const latestCanExport = useLatest(canExport);
   const exportController = useRef<AbortController | null>(null);
   const [exporting, setExporting] = useState(false), [exportNote, setExportNote] = useState(''), [exportError, setExportError] = useState('');
   useEffect(() => () => exportController.current?.abort(), []);
+  useEffect(() => { if (!canExport) exportController.current?.abort(); }, [canExport]);
   const exportResults = async () => {
-    if (exporting || !token) return;
+    if (!latestCanExport.current || !token || latestToken.current !== token || exportController.current) return;
     const startToken = token, controller = new AbortController(); exportController.current = controller;
     const filters = { search: search.trim(), status, channel }; // foto de los filtros al pulsar: cambiarlos después no mezcla resultados
     setExporting(true); setExportError(''); setExportNote('Preparando la exportación…');
     try {
       const rows = await fetchAllPages<Row>(async page => {
-        if (latestToken.current !== startToken) throw new ExportError('aborted', 'La sesión cambió durante la exportación. No se descargó ningún archivo.');
+        if (latestToken.current !== startToken || !latestCanExport.current) throw new ExportError('aborted', 'La sesión o sus permisos cambiaron durante la exportación. No se descargó ningún archivo.');
         const query = new URLSearchParams({ page: String(page), limit: String(EXPORT_PAGE_SIZE), ...(filters.search ? { search: filters.search } : {}), ...(filters.status ? { estado: filters.status } : {}), ...(filters.channel ? { channel: filters.channel } : {}) });
         const data = await panelRequest<CollectionResponse>('messages?' + query, startToken, 'GET', undefined, AbortSignal.any([controller.signal, AbortSignal.timeout(EXPORT_PAGE_TIMEOUT_MS)]));
         return { rows: recordsOf<Row>('messages', data), total: data.pagination?.total ?? NaN, pages: data.pagination?.pages ?? NaN };
       }, { signal: controller.signal, onProgress: (done, pages) => setExportNote('Exportando… página ' + done + ' de ' + pages) });
       if (controller.signal.aborted) throw new ExportError('aborted', 'Exportación cancelada. No se descargó ningún archivo.');
+      if (latestToken.current !== startToken || !latestCanExport.current) throw new ExportError('aborted', 'La sesión o sus permisos cambiaron durante la exportación. No se descargó ningún archivo.');
       const csv = buildCsv([...MESSAGE_EXPORT_COLUMNS], toExportRows(rows)); // misma protección D1 contra fórmulas (=, +, -, @)
       const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
       const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'consultas-' + new Date().toLocaleDateString('en-CA') + '.csv'; anchor.click();
@@ -169,7 +173,7 @@ export default function MessageInbox() {
       <div className="hp-card-heading"><div><h2>Bandeja de atención</h2><p role="status">{loading ? 'Cargando…' : error ? 'Datos no disponibles' : total + ' consultas coinciden con tus filtros'}</p></div><div className="hp-actions">
         <div className="hw-tabs" role="group" aria-label="Vista del listado"><button aria-pressed={view === 'bandeja'} disabled={savePending} onClick={() => setView('bandeja')}>Bandeja</button><button aria-pressed={view === 'tabla'} disabled={savePending} onClick={() => setView('tabla')}>Tabla</button></div>
         {exporting && <button className="hp-btn" onClick={() => exportController.current?.abort()}>Cancelar exportación</button>}
-        <button className="hp-btn" onClick={() => void exportResults()} disabled={exporting || loading || !!error || !total}><PanelIcon name="download" />{exporting ? 'Exportando…' : 'Exportar resultados'}</button>
+        {canExport && <button className="hp-btn" onClick={() => void exportResults()} disabled={exporting || loading || !!error || !total}><PanelIcon name="download" />{exporting ? 'Exportando…' : 'Exportar resultados'}</button>}
         </div></div>
       {exportNote && <p className="hp-notice" role="status">{exportNote}</p>}{exportError && <p className="hp-error" role="alert">{exportError}</p>}
       <div className="hp-toolbar"><div className="hp-search"><PanelIcon name="search" /><input aria-label="Buscar consultas" placeholder="Nombre, correo, asunto o mensaje…" value={search} onChange={e => { const value = e.target.value; confirmLeave(() => { setPage(1); setSearch(value); }); }} /></div>
